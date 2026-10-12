@@ -9,7 +9,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,6 +21,7 @@ jobs:
           node --check scripts/serve.mjs
           node --check src/catalog.mjs
           node --check src/quote.mjs
+          node --check scripts/browser-test.mjs
       - name: Unit tests
         run: npm test
       - name: Local server route checks
@@ -33,3 +34,11 @@ jobs:
           grep -q 'id="screen-config"' /tmp/order-home.html
           curl --silent --show-error --fail http://127.0.0.1:4173/src/catalog.mjs | grep -q normalizePricebook
           curl --silent --show-error --fail http://127.0.0.1:4173/data/offers.json | grep -q '"offers": \[\]'
+      - name: Install browser test runner
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install --with-deps chromium
+      - name: Browser interaction and responsive checks
+        run: |
+          npm run dev > /tmp/order-browser.log 2>&1 &
+          node scripts/browser-test.mjs
