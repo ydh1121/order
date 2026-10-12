@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "status": "DRAFT",
+  "source": "CODE1/UIUX/order.ooo screen flow v0.1",
+  "figmaFileKey": "OGc2SUKEvckzYhhowzX7tD",
+  "figmaPageNodeId": "906:7544",
+  "note": "Figma page is currently empty; create graph only after low-fi implementation.",
+  "screens": [
+    {
+      "id": "S00",
+      "route": "/",
+      "name": "견적 조건",
+      "actions": [
+        {
+          "id": "calculate",
+          "type": "navigate",
+          "to": "/quote"
+        },
+        {
+          "id": "suppliers",
+          "type": "navigate",
+          "to": "/suppliers"
+        },
+        {
+          "id": "partners",
+          "type": "navigate",
+          "to": "/partners"
+        }
+      ]
+    },
+    {
+      "id": "S01",
+      "route": "/quote",
+      "name": "가격 견적 결과",
+      "actions": [
+        {
+          "id": "edit",
+          "type": "navigate",
+          "to": "/"
+        },
+        {
+          "id": "apply",
+          "type": "navigate",
+          "to": "/apply",
+          "requires": "approved-price"
+        },
+        {
+          "id": "negotiate",
+          "type": "navigate",
+          "to": "/negotiate"
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "route": "/apply",
+      "name": "납품 신청",
+      "actions": [
+        {
+          "id": "validate",
+          "type": "validation-preview",
+          "requires": "business-proof"
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "route": "/application/status",
+      "name": "심사상태",
+      "actions": [],
+      "status": "UNIMPLEMENTED"
+    },
+    {
+      "id": "S04",
+      "route": "/negotiate",
+      "name": "증빙 기반 가격 재검토",
+      "actions": [
+        {
+          "id": "validate",
+          "type": "validation-preview",
+          "requires": "purchase-documents"
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "route": "/suppliers",
+      "name": "농가 신청",
+      "actions": [
+        {
+          "id": "validate",
+          "type": "validation-preview",
+          "requires": "supplier-documents"
+        }
+      ]
+    },
+    {
+      "id": "S06",
+      "route": "/partners",
+      "name": "공동구매 파트너",
+      "actions": [
+        {
+          "id": "validate",
+          "type": "validation-preview"
+        }
+      ]
+    },
+    {
+      "id": "S07",
+      "route": "/market/:slug",
+      "name": "실적승인 파트너 판매",
+      "status": "FUTURE_DISABLED",
+      "actions": []
+    },
+    {
+      "id": "S08",
+      "route": "/today",
+      "name": "오늘의 계란",
+      "status": "FUTURE_DISABLED",
+      "actions": []
+    },
+    {
+      "id": "S09",
+      "route": "/admin",
+      "name": "관리자",
+      "status": "PLANNED_PROTECTED",
+      "actions": []
+    }
+  ]
+}
