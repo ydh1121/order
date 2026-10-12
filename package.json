@@ -4,5 +4,9 @@
   "type": "module",
   "version": "0.0.1",
   "description": "Backend-independent B2B egg quote low-fi",
-  "scripts": {"dev": "node scripts/serve.mjs", "test": "node --test"}
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:browser": "node scripts/browser-test.mjs"
+  }
 }

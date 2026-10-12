@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="사업자용 계란 납품 견적 조건 확인. 승인된 공급 정보가 있는 경우에만 가격을 표시합니다.">
+  <title>order.ooo | 사업자용 계란 견적</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="site-header"><a class="logo" href="/" aria-label="order.ooo 견적 조건으로 이동">order.ooo</a><span class="site-label">사업자용 계란 견적</span></header>
+  <main id="main">
+    <div id="app-loading" role="status" aria-live="polite">승인된 상품 정보를 불러오는 중입니다.</div>
+    <div id="app-error" class="notice notice-error" role="alert" hidden>
+      <p>상품 정보를 불러오지 못했습니다.</p><button type="button" id="retry-catalog">다시 불러오기</button>
+    </div>
+    <section id="screen-config" class="screen" aria-labelledby="config-heading" hidden>
+      <h1 id="config-heading">납품 조건으로 견적 확인</h1>
+      <p class="lead">현재 승인된 납품 조건에 맞는 상품만 가격을 안내합니다.</p>
+      <form id="quote-form" novalidate>
+        <div class="fields">
+          <label>사육환경번호<select id="housing" name="housing" required><option value="">선택</option></select></label>
+          <label>계란 규격<select id="size" name="size" required><option value="">선택</option></select></label>
+          <label>포장 단위<select id="pack" name="pack" required><option value="">선택</option></select></label>
+          <label>납품 지역<select id="region" name="region" required><option value="">선택</option></select></label>
+          <label>월 예상 수량(판)<input id="monthlyTrays" name="monthlyTrays" type="number" min="1" step="1" inputmode="numeric" required></label>
+          <label>회당 납품 수량(판)<input id="dropTrays" name="dropTrays" type="number" min="1" step="1" inputmode="numeric" required></label>
+          <label>현재 판당 구매가(원, 선택)<input id="currentTrayPrice" name="currentTrayPrice" type="number" min="0" step="1" inputmode="numeric"></label>
+        </div>
+        <p id="form-error" class="error-text" role="alert" hidden></p>
+        <button type="submit" id="calculate">견적 확인</button>
+      </form>
+      <p id="catalog-message" class="notice" aria-live="polite"></p>
+      <nav aria-label="추가 신청"><a href="/suppliers">농가 신청 안내</a><a href="/partners">공동구매 파트너 안내</a></nav>
+    </section>
+    <section id="screen-result" class="screen" aria-labelledby="result-heading" hidden>
+      <h1 id="result-heading">견적 결과</h1>
+      <div id="quote-card" class="quote-card" aria-live="off">
+        <p id="quote-state" role="status" aria-live="polite"></p>
+        <div id="quote-prices" hidden>
+          <dl><div><dt>판당 납품가격</dt><dd><output id="tray-price" aria-live="polite"></output></dd></div>
+          <div><dt>예상 월 납품금액</dt><dd><output id="monthly-price" aria-live="polite"></output></dd></div>
+          <div><dt>현재가 대비 월 차액</dt><dd><output id="monthly-saving" aria-live="polite"></output></dd></div></dl>
+          <p class="muted">실제 발주 및 가격 확정은 사업자 검증과 별도 승인이 필요합니다.</p>
+        </div>
+      </div>
+      <div class="actions"><a href="/" id="edit">조건 변경</a><a href="/apply" id="apply" aria-disabled="true" tabindex="-1">납품 신청</a><a href="/negotiate" id="negotiate">가격 재검토 안내</a></div>
+    </section>
+    <section id="screen-hold" class="screen" hidden>
+      <h1 id="hold-title">서비스 준비 중</h1>
+      <p id="hold-explanation">신청 및 증빙 접수 기능을 준비하고 있습니다. 현재는 어떤 서류도 전송되지 않습니다.</p>
+      <a href="/">견적 조건으로 돌아가기</a>
+    </section>
+  </main>
+  <footer><p>현재 실제 주문·대금 결제·증빙 접수는 지원하지 않습니다.</p></footer>
+</body>
+</html>

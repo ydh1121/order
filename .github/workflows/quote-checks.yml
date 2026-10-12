@@ -1,0 +1,44 @@
+name: order quote checks
+on:
+  push:
+    branches:
+      - "feat/order-quote-*"
+  pull_request:
+    branches:
+      - main
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Source syntax
+        run: |
+          node --check app/app.mjs
+          node --check scripts/serve.mjs
+          node --check src/catalog.mjs
+          node --check src/quote.mjs
+          node --check scripts/browser-test.mjs
+      - name: Unit tests
+        run: npm test
+      - name: Local server route checks
+        run: |
+          npm run dev > /tmp/order-server.log 2>&1 &
+          for attempt in 1 2 3 4 5; do
+            if curl --silent --fail http://127.0.0.1:4173/ -o /tmp/order-home.html; then break; fi
+            sleep 1
+          done
+          grep -q 'id="screen-config"' /tmp/order-home.html
+          curl --silent --show-error --fail http://127.0.0.1:4173/src/catalog.mjs | grep -q normalizePricebook
+          curl --silent --show-error --fail http://127.0.0.1:4173/data/offers.json | grep -q '"offers": \[\]'
+      - name: Install browser test runner
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install --with-deps chromium
+      - name: Browser interaction and responsive checks
+        run: |
+          npm run dev > /tmp/order-browser.log 2>&1 &
+          node scripts/browser-test.mjs
