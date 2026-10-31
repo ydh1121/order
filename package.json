@@ -4,5 +4,12 @@
   "type": "module",
   "version": "0.0.1",
   "description": "Backend-independent B2B egg quote low-fi",
-  "scripts": {"dev": "node scripts/serve.mjs", "test": "node --test"}
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "test": "node scripts/engine/run-tests.mjs --all",
+    "test:engine": "node scripts/engine/run-tests.mjs",
+    "example:engine": "node scripts/engine/example.mjs",
+    "smoke:dns": "node scripts/engine/dns-smoke.mjs",
+    "update:iana": "node scripts/engine/update-iana.mjs"
+  }
 }
