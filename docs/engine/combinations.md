@@ -1,0 +1,15 @@
+# Combination enumeration contract 1.0.0
+
+`enumerateCombinations(input)` is independent of UI, offers, clocks and storage. It returns the shared engine result envelope plus `accepted` and `excluded`. No recommendation, preferred product, price ranking, or optimum is chosen.
+
+Input requires `ruleVersion`, `dataVersion`, and `axes`. Each axis has a unique identifier, its own `dataVersion`, and a nonempty array of unique JSON scalar values. Numeric values are safe integers; use exact decimal strings and a separately defined arithmetic rule for fractional quantities. Empty or missing axes are `UNAVAILABLE / AXIS_DATA_UNAVAILABLE`. Wrong types, duplicate choices, missing versions, unsupported constraints or invalid bounds are `INVALID`.
+
+Constraints are declarative objects with unique `id` and `reasonCode`: `eq`, `neq`, `in`, `gte`, `lte` name one `axis`; the first two take `value`, `in` takes `values`, and integer inequalities take an integer `value`. `allowedTuples` names `axes` and lists complete `tuples`. A row must satisfy every constraint. Every failed constraint is retained, in declared order, on the excluded row.
+
+Traversal follows axis order, last axis fastest. `order: 'seeded'` first permutes each axis with the versioned xorshift32/Fisher–Yates algorithm and an explicit uint32 `seed`; zero uses documented internal state `0x9e3779b9`. Seeded traversal is a reproducible permutation, not statistically unbiased sampling. No seed-driven recommendation is made. `order: 'declared'` is default. Ties retain declared axis positions.
+
+`maxCandidates` defaults to 10,000 and accepts 0–100,000. At most 32 axes, 100,000 values per axis, 1,000 constraints and 10,000 rows per tuple table are accepted. Tuple membership is compiled to lookup sets before traversal. Cardinality is calculated as BigInt before traversal and serialized as a decimal string. Each visited candidate, including excluded ones, consumes budget. At budget exhaustion status is `UNKNOWN / SEARCH_BUDGET_EXHAUSTED`; evidence includes total, visited, accepted, excluded and unexplored counts. `VALID` describes completed enumeration with at least one feasible candidate. An exhaustive search with every candidate excluded is `UNAVAILABLE / NO_FEASIBLE_COMBINATIONS`, with all exclusion evidence preserved. None of these statuses claims any candidate is commercially approved. This version does not prune or optimize and never claims a global minimum.
+
+Replay needs the complete input (including axis value order), all version identifiers, engine/contract version, declared budget and seed. Output has no implicit current time. Caller approval/availability gates and quantity/date/price calculation are separate.
+
+Run `node --test test/engine/calculation-combinations.test.mjs`. The 2×2×2 synthetic fixture explicitly hand-lists its two accepted and six excluded rows; it is not a production catalog. Tests also cover exact 10^20 cardinality with budget two, complete seeded replay, no mutation, all supported constraints, malformed input and data absence.

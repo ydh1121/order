@@ -1,0 +1,52 @@
+name: preserve Astra source history
+on:
+  push:
+    branches: [feat/order-astra-engine-20261101]
+    paths: [.github/workflows/astra-history-import.yml]
+permissions:
+  contents: write
+concurrency:
+  group: order-astra-history-import
+  cancel-in-progress: false
+jobs:
+  import-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/order-astra-engine-20261101
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify and merge exact existing source history
+        env:
+          BOOTSTRAP_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BOOTSTRAP_SHA"
+          cat .handoff/astra-history.bundle.part-* > /tmp/order-astra-history.bundle
+          echo '5fc718ec0a299733da3a6b4a025cb29a743f5f27d358625fe6d485a1602482d7  /tmp/order-astra-history.bundle' | sha256sum --check
+          git bundle verify /tmp/order-astra-history.bundle
+          test "$(git bundle list-heads /tmp/order-astra-history.bundle HEAD | cut -d ' ' -f 1)" = '240546fce7a86da29fed41b69cda59f768d1b0ad'
+          git fetch /tmp/order-astra-history.bundle HEAD
+          test "$(git rev-parse FETCH_HEAD)" = '240546fce7a86da29fed41b69cda59f768d1b0ad'
+          git -c user.name=Codex -c user.email=codex@openai.com merge --no-ff --no-commit '240546fce7a86da29fed41b69cda59f768d1b0ad'
+          git diff --cached --exit-code -- .github/workflows
+          git diff --exit-code '240546fce7a86da29fed41b69cda59f768d1b0ad' -- . ':!.handoff' ':!.github/workflows/astra-history-import.yml'
+          git -c user.name=Codex -c user.email=codex@openai.com commit -m 'chore: preserve original Astra commits through verified bundle import'
+          for original in 09df344 7db07bd c527d6c 544b8ff '240546fce7a86da29fed41b69cda59f768d1b0ad'; do git merge-base --is-ancestor "$original" HEAD; done
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:engine
+      - name: Push only the same feature branch without force
+        env:
+          BOOTSTRAP_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/feat/order-astra-engine-20261101 | cut -f 1)" = "$BOOTSTRAP_SHA"
+          git push origin HEAD:refs/heads/feat/order-astra-engine-20261101
+          git rev-parse HEAD
