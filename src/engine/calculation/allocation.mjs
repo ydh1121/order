@@ -1,0 +1,255 @@
+import {engineResult} from '../contracts/result.mjs';
+import {exact,fromRatio,add,subtract,multiply,divide,compare,toJSON} from './exact.mjs';
+
+export const ALLOCATION_RULE_VERSION='monthly-allocation-1.0.0';
+const zero=()=>exact(0);
+const id=value=>typeof value==='string'&&value.length>0&&value.length<=200;
+const copy=value=>structuredClone(value);
+const out=(status,reasons,normalized=null,extra={})=>engineResult({status,reasonCodes:reasons,normalized,field:'monthlyAllocation',ruleVersion:ALLOCATION_RULE_VERSION,dataVersion:extra.dataVersion??null,evidence:{storageCommitPerformed:false,...extra.evidence},...extra});
+const fail=code=>{throw new TypeError(code);};
+const uniq=values=>new Set(values).size===values.length;
+const pair=(lineId,locationId)=>JSON.stringify([lineId,locationId]);
+function canonical(value){
+  if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
+  if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical(value[k])).join(',')+'}';
+  return JSON.stringify(value);
+}
+function stateShape(state){
+  if(!state||!Number.isSafeInteger(state.revision)||state.revision<0||!Array.isArray(state.lines)||!Array.isArray(state.locations)||!Array.isArray(state.allocations))fail('ALLOCATION_STATE_INVALID');
+  if(!state.lines.every(l=>id(l?.lineId))||!uniq(state.lines.map(l=>l.lineId))||!state.locations.every(l=>id(l?.locationId))||!uniq(state.locations.map(l=>l.locationId)))fail('ALLOCATION_IDS_INVALID');
+  if(state.allocations.some(a=>!a||!id(a.lineId)||!id(a.locationId))||!uniq(state.allocations.map(a=>pair(a.lineId,a.locationId))))fail('ALLOCATION_PAIRS_INVALID');
+  if(state.receipts!=null&&(!Array.isArray(state.receipts)||state.receipts.some(r=>!id(r?.transactionId))||!uniq(state.receipts.map(r=>r.transactionId))))fail('ALLOCATION_RECEIPTS_INVALID');
+  if(state.allocations.some(a=>!state.lines.some(l=>l.lineId===a.lineId&&Array.isArray(l.locationIds)&&l.locationIds.includes(a.locationId))))fail('ORPHAN_ALLOCATION');
+}
+function shape(state,lineId){
+  stateShape(state);
+  const line=state.lines.find(l=>l.lineId===lineId);
+  if(!line)fail('LINE_NOT_FOUND');
+  if(!id(line.specVersion)||!Array.isArray(line.locationIds)||!line.locationIds.every(id)||!uniq(line.locationIds)||line.locationIds.some(key=>!state.locations.some(l=>l.locationId===key)))fail('LINE_LINKS_INVALID');
+  if(line.minimums!=null&&(!Array.isArray(line.minimums)||line.minimums.some(m=>!m||!line.locationIds.includes(m.locationId))||!uniq(line.minimums.map(m=>m.locationId))))fail('LINE_MINIMUMS_INVALID');
+  const units=line.unitTable;
+  if(!units||!id(units.version)||!id(units.baseUnit)||!units.factors||typeof units.factors!=='object')fail('UNIT_TABLE_REQUIRED');
+  if(compare(unitFactor(units,units.baseUnit),exact(1))!==0)fail('BASE_UNIT_FACTOR_NOT_ONE');
+  return line;
+}
+function unitFactor(table,unit){
+  if(!id(unit)||!Object.hasOwn(table.factors,unit))fail('UNIT_CONVERSION_UNAVAILABLE');
+  const factor=fromRatio(table.factors[unit]);if(factor.n<=0n)fail('UNIT_FACTOR_INVALID');return factor;
+}
+function parseQuantity(quantity,line,{minimum=false}={}){
+  if(!quantity||typeof quantity.raw!=='string'||!id(quantity.unit))return {status:'INVALID',reason:'QUANTITY_CONTRACT_INVALID'};
+  let factor;try{factor=unitFactor(line.unitTable,quantity.unit);}catch(error){return {status:'INVALID',reason:error.message};}
+  if(quantity.composing===true||quantity.phase==='editing'&&/^[0-9]+\.$/.test(quantity.raw))return {status:'INCOMPLETE',reason:'QUANTITY_EDITING'};
+  if(quantity.raw==='')return {status:'EMPTY',reason:'QUANTITY_EMPTY'};
+  try{
+    let value;
+    if(quantity.representation==='rational'){
+      if(quantity.conversionReviewed!==true||!/^\d+\/[1-9]\d*$/.test(quantity.raw))fail('RATIONAL_INPUT_REQUIRES_EXPLICIT_CONVERSION');
+      const [numerator,denominator]=quantity.raw.split('/');value=fromRatio({numerator,denominator});
+    }else{
+      if(!/^\d+(?:\.\d+)?$/.test(quantity.raw))fail('QUANTITY_SYNTAX_INVALID');
+      value=exact(quantity.raw);
+      if(value.d!==1n&&line.quantityPolicy?.allowFractionalMonthly!==true)return {status:'POLICY_UNRESOLVED',reason:'FRACTIONAL_MONTHLY_POLICY_REQUIRED'};
+    }
+    if(value.n<0n||(!minimum&&value.n===0n))fail('QUANTITY_NOT_POSITIVE');
+    return {status:'VALID',value,base:multiply(value,factor),factor};
+  }catch(error){return {status:'INVALID',reason:error.message};}
+}
+function displayQuantity(base,unit,line){
+  const value=divide(base,unitFactor(line.unitTable,unit));
+  if(value.d===1n)return {raw:value.n.toString(),unit};
+  return {raw:value.n.toString()+'/'+value.d.toString(),unit,representation:'rational',conversionReviewed:true};
+}
+function baseFingerprint(state,line){
+  return canonical({revision:state.revision,line,locations:state.locations.filter(l=>line.locationIds.includes(l.locationId)).sort((a,b)=>a.locationId<b.locationId?-1:1),allocations:state.allocations.filter(a=>a.lineId===line.lineId).sort((a,b)=>a.locationId<b.locationId?-1:1)});
+}
+function draftShape(draft,line){
+  const scope=draft?.scope??[];
+  const entries=draft?.entries??[];
+  if(!Array.isArray(scope)||!scope.every(key=>line.locationIds.includes(key))||!uniq(scope)||!Array.isArray(entries)||entries.some(e=>!e||!scope.includes(e.locationId)||!['manual','derived'].includes(e.source))||!uniq(entries.map(e=>e.locationId)))fail('ALLOCATION_DRAFT_INVALID');
+  return {scope,entries};
+}
+
+/** Read-only proposal. Saved entries outside the explicit edit scope are fixed. */
+export function evaluateAllocation({state,lineId,draft}={}){
+  try{
+    const line=shape(state,lineId),{scope,entries}=draftShape(draft,line);
+    if(!line.locationIds.length)return out('UNAVAILABLE',['NO_LINKED_LOCATIONS']);
+    if(state.locations.some(l=>line.locationIds.includes(l.locationId)&&l.required===false))return out('POLICY_UNRESOLVED',['OPTIONAL_LOCATION_POLICY_REQUIRED']);
+    const total=parseQuantity(line.total,line);
+    const records=line.locationIds.map(locationId=>{
+      const saved=state.allocations.find(a=>a.lineId===lineId&&a.locationId===locationId);
+      const entry=entries.find(a=>a.locationId===locationId);
+      const active=entry??saved;
+      const editable=scope.includes(locationId);
+      const source=active?.source??'manual';
+      if(!['manual','derived'].includes(source))fail('ALLOCATION_SOURCE_INVALID');
+      const quantity=active?.quantity??{raw:'',unit:line.total.unit};
+      const parsed=parseQuantity(quantity,line);
+      const free=editable&&(source==='derived'||parsed.status==='EMPTY');
+      const locationMinimum=state.locations.find(l=>l.locationId===locationId)?.minimum;
+      if(locationMinimum&&state.lines.filter(l=>l.locationIds.includes(locationId)).length>1&&!line.minimums?.some(m=>m.locationId===locationId))fail('MINIMUM_REQUIRES_LINE_SCOPE');
+      const minimum=line.minimums?.find(m=>m.locationId===locationId)?.quantity??locationMinimum;
+      const min=minimum?parseQuantity(minimum,line,{minimum:true}):null;
+      return {locationId,saved,active,source,quantity,parsed,editable,free,min,mode:active?.mode??'FLEX'};
+    });
+    if(records.some(r=>r.mode==='ONCE'))return out('POLICY_UNRESOLVED',[records.every(r=>r.mode==='ONCE')?'USE_ONCE_QUANTITY_EVALUATOR':'MIXED_MODE_MONTHLY_POLICY_REQUIRED']);
+    if(records.some(r=>!['FLEX','FIXED'].includes(r.mode)))return out('INVALID',['ALLOCATION_MODE_INVALID']);
+    const invalid=records.filter(r=>!['VALID','EMPTY'].includes(r.parsed.status)||(r.min&&r.min.status!=='VALID'));
+    const blocked=total.status!=='VALID'||invalid.length>0;
+    if(blocked){
+      const reasons=[...(total.status==='VALID'?[]:[total.reason]),...invalid.map(r=>r.min&&r.min.status!=='VALID'?r.min.reason:r.parsed.reason)];
+      const status=reasons.some(r=>/POLICY/.test(r))?'POLICY_UNRESOLVED':total.status==='INCOMPLETE'||invalid.some(r=>r.parsed.status==='INCOMPLETE')?'INCOMPLETE':total.status==='EMPTY'&&!invalid.length?'EMPTY':'INVALID';
+      return out(status,[...new Set(reasons)],{lineId,baseUnit:line.unitTable.baseUnit,fixedSum:null,residualBeforeSuggestions:null,projectedResidual:null,proposals:[],sites:records.map(r=>({locationId:r.locationId,raw:r.quantity.raw,unit:r.quantity.unit,status:r.parsed.status,currentMaximum:null,additionalCapacity:null})),projectedComplete:false,storedComplete:false,canConfirm:false},{dataVersion:line.unitTable.version});
+    }
+    const fixed=records.filter(r=>!r.free&&r.parsed.status==='VALID');
+    const fixedSum=fixed.reduce((sum,r)=>add(sum,r.parsed.base),zero());
+    const residual=subtract(total.base,fixedSum);
+    const unfilled=records.filter(r=>r.free||r.parsed.status==='EMPTY');
+    const proposals=[];
+    if(unfilled.length===1&&unfilled[0].editable&&residual.n>0n&&(!unfilled[0].min||compare(residual,unfilled[0].min.base)>=0)){
+      const row=unfilled[0];
+      proposals.push({locationId:row.locationId,source:'derived',quantity:displayQuantity(residual,row.quantity.unit,line),baseQuantity:toJSON(residual),reason:records.length===1?'SINGLE_SITE_TOTAL_REUSE':'SINGLE_REMAINING_LOCATION'});
+    }
+    const proposedSum=proposals.reduce((sum,p)=>add(sum,fromRatio(p.baseQuantity)),zero());
+    const projectedResidual=subtract(residual,proposedSum);
+    const sites=records.map(row=>{
+      const otherFixed=fixed.filter(r=>r.locationId!==row.locationId).reduce((sum,r)=>add(sum,r.parsed.base),zero());
+      const reservedMinimum=records.filter(r=>r.locationId!==row.locationId&&!fixed.includes(r)&&r.min).reduce((sum,r)=>add(sum,r.min.base),zero());
+      const maximum=subtract(subtract(total.base,otherFixed),reservedMinimum);
+      const proposal=proposals.find(p=>p.locationId===row.locationId);
+      const current=proposal?fromRatio(proposal.baseQuantity):row.parsed.status==='VALID'?row.parsed.base:null;
+      return {locationId:row.locationId,source:row.source,raw:row.quantity.raw,unit:row.quantity.unit,editable:row.editable,status:row.parsed.status,baseQuantity:row.parsed.status==='VALID'?toJSON(row.parsed.base):null,currentMaximum:toJSON(maximum),additionalCapacity:current?toJSON(subtract(maximum,current)):toJSON(maximum),reservedMinimum:toJSON(reservedMinimum),proposal:proposal??null};
+    });
+    const minFailures=records.filter(r=>!r.free&&r.parsed.status==='VALID'&&r.min&&compare(r.parsed.base,r.min.base)<0);
+    const projectedComplete=unfilled.length===proposals.length&&projectedResidual.n===0n&&!minFailures.length;
+    const storedRows=records.map(r=>r.saved?parseQuantity(r.saved.quantity,line):{status:'EMPTY'});
+    const storedComplete=storedRows.every((r,i)=>r.status==='VALID'&&(!records[i].min||compare(r.base,records[i].min.base)>=0))&&compare(storedRows.reduce((sum,r)=>add(sum,r.base),zero()),total.base)===0;
+    const reasonCodes=residual.n<0n?['MONTHLY_ALLOCATION_EXCEEDED']:minFailures.length?['LOCATION_MINIMUM_UNSATISFIED']:proposals.length?['DERIVED_PROPOSAL_AWAITING_CONFIRMATION']:unfilled.length?['MONTHLY_ALLOCATION_INCOMPLETE']:projectedResidual.n>0n?['MONTHLY_ALLOCATION_SHORT']:[];
+    const status=residual.n<0n||minFailures.length?'INVALID':reasonCodes.length?'INCOMPLETE':'VALID';
+    return out(status,reasonCodes,{lineId,specVersion:line.specVersion,totalRaw:copy(line.total),baseUnit:line.unitTable.baseUnit,totalBase:toJSON(total.base),fixedSum:toJSON(fixedSum),residualBeforeSuggestions:toJSON(residual),proposals,projectedResidual:toJSON(projectedResidual),excess:toJSON(residual.n<0n?subtract(zero(),residual):zero()),sites,projectedComplete,storedComplete,canConfirm:projectedComplete},{dataVersion:line.unitTable.version,evidence:{storageCommitPerformed:false,scope,monthlyOnly:true,deliveryQuantityModified:false}});
+  }catch(error){return out('INVALID',[error.message]);}
+}
+
+export function beginAllocationEdit(state,{lineId,scope,transactionId,exposure={}}={}){
+  try{
+    const line=shape(state,lineId);if(!id(transactionId))fail('TRANSACTION_ID_REQUIRED');
+    const checked=draftShape({scope:scope??line.locationIds,entries:[]},line);
+    const entries=checked.scope.map(locationId=>{
+      const saved=state.allocations.find(a=>a.lineId===lineId&&a.locationId===locationId);
+      return {locationId,quantity:copy(saved?.quantity??{raw:'',unit:line.total.unit}),source:saved?.source??'manual',mode:saved?.mode??'FLEX'};
+    });
+    const session={transactionId,lineId,baseRevision:state.revision,baseFingerprint:baseFingerprint(state,line),revision:0,scope:checked.scope,entries,exposureBefore:copy(exposure),exposure:copy(exposure),closed:false};
+    session.integrityToken=sessionToken(session);
+    return out('VALID',[],null,{session});
+  }catch(error){return out('INVALID',[error.message]);}
+}
+function sessionValid(session){
+  if(!session||!id(session.transactionId)||!id(session.lineId)||!Number.isSafeInteger(session.revision)||session.revision<0||!Number.isSafeInteger(session.baseRevision)||typeof session.baseFingerprint!=='string'||session.closed)fail('ALLOCATION_SESSION_INVALID');
+  if(session.integrityToken!==sessionToken(session))fail('DRAFT_CONTENT_STALE');
+}
+export function editAllocation(state,session,operation){
+  try{
+    sessionValid(session);const line=shape(state,session.lineId);draftShape(session,line);
+    const next=copy(session);
+    const entry=locationId=>{if(!next.scope.includes(locationId))fail('EDIT_OUTSIDE_SCOPE');return next.entries.find(e=>e.locationId===locationId);};
+    if(operation?.type==='set'){
+      const current=entry(operation.locationId);if(!current)fail('DRAFT_ENTRY_REQUIRED');
+      if(current.quantity.unit!==operation.quantity?.unit)fail('UNIT_CHANGE_REQUIRES_CONVERSION');
+      current.quantity=copy(operation.quantity);current.source='manual';
+    }else if(operation?.type==='clear'){
+      const current=entry(operation.locationId);if(!current)fail('DRAFT_ENTRY_REQUIRED');
+      current.quantity={raw:'',unit:current.quantity.unit};current.source='manual';
+    }else if(operation?.type==='clone'){
+      const source=entry(operation.from);if(!source||!Array.isArray(operation.targets)||!operation.targets.length||!uniq(operation.targets))fail('CLONE_TARGETS_INVALID');
+      for(const locationId of operation.targets){const target=entry(locationId);if(!target)fail('CLONE_TARGETS_INVALID');target.quantity=copy(source.quantity);target.source='manual';}
+    }else if(operation?.type==='convertUnit'){
+      const current=entry(operation.locationId);if(!current||operation.reviewed!==true)fail('UNIT_CONVERSION_REVIEW_REQUIRED');
+      const parsed=parseQuantity(current.quantity,line);if(parsed.status!=='VALID')fail('UNIT_CONVERSION_SOURCE_INVALID');
+      const original=copy(current.quantity);current.quantity={...displayQuantity(parsed.base,operation.unit,line),conversionFrom:original};
+    }else if(operation?.type==='refreshDerived'){
+      const evaluation=evaluateAllocation({state,lineId:session.lineId,draft:next});
+      if(!evaluation.normalized)fail('ALLOCATION_NOT_EVALUABLE');
+      for(const current of next.entries){
+        const proposal=evaluation.normalized.proposals.find(p=>p.locationId===current.locationId);
+        if(proposal){current.quantity=copy(proposal.quantity);current.source='derived';}
+        else if(current.source==='derived')current.quantity={raw:'',unit:current.quantity.unit};
+      }
+    }else if(operation?.type==='exposure')next.exposure=copy(operation.value);
+    else fail('ALLOCATION_OPERATION_UNSUPPORTED');
+    if(!Number.isSafeInteger(next.revision+1))fail('DRAFT_REVISION_RANGE');next.revision++;
+    next.integrityToken=sessionToken(next);
+    return out('VALID',[],null,{session:next,evaluation:evaluateAllocation({state,lineId:session.lineId,draft:next})});
+  }catch(error){return out('INVALID',[error.message],null,{session:copy(session)});}
+}
+function sessionToken(session){return canonical({transactionId:session.transactionId,lineId:session.lineId,baseRevision:session.baseRevision,baseFingerprint:session.baseFingerprint,revision:session.revision,scope:session.scope,entries:session.entries,exposureBefore:session.exposureBefore,exposure:session.exposure});}
+export function confirmAllocation(state,session,{expectedDraftRevision,acceptProposals=false}={}){
+  const unchanged=(status,reasons,extra={})=>out(status,reasons,null,{state:copy(state),committed:false,writes:0,...extra});
+  try{
+    sessionValid(session);const token=sessionToken(session);
+    const receipt=state.receipts?.find(r=>r.transactionId===session.transactionId);
+    if(receipt)return receipt.token===token?unchanged('VALID',['ALLOCATION_ALREADY_COMMITTED'],{idempotent:true}):unchanged('INVALID',['TRANSACTION_ID_REUSED']);
+    const line=shape(state,session.lineId);draftShape(session,line);
+    if(expectedDraftRevision!==session.revision)return unchanged('INVALID',['DRAFT_REVISION_STALE']);
+    if(state.revision!==session.baseRevision||baseFingerprint(state,line)!==session.baseFingerprint)return unchanged('INVALID',['ALLOCATION_SNAPSHOT_STALE']);
+    const evaluation=evaluateAllocation({state,lineId:session.lineId,draft:session});
+    if(!evaluation.normalized?.canConfirm)return unchanged(evaluation.status,['ALLOCATION_NOT_CONFIRMABLE'],{evaluation});
+    if(evaluation.normalized.proposals.length&&!acceptProposals)return unchanged('INCOMPLETE',['PROPOSAL_CONFIRMATION_REQUIRED'],{evaluation});
+    const next=copy(state);
+    for(const locationId of session.scope){
+      const entry=session.entries.find(e=>e.locationId===locationId);const proposal=evaluation.normalized.proposals.find(p=>p.locationId===locationId);
+      if(!entry)fail('DRAFT_ENTRY_REQUIRED');
+      const index=next.allocations.findIndex(a=>a.lineId===session.lineId&&a.locationId===locationId);
+      const saved=index<0?{}:next.allocations[index];
+      const updated={...saved,lineId:session.lineId,locationId,quantity:copy(proposal?.quantity??entry.quantity),source:proposal?'derived':entry.source,mode:entry.mode??saved.mode??'FLEX'};
+      if(index<0)next.allocations.push(updated);else next.allocations[index]=updated;
+    }
+    if(!Number.isSafeInteger(next.revision+1))fail('REVISION_RANGE');next.revision++;
+    next.receipts=[...(next.receipts??[]),{transactionId:session.transactionId,token,committedRevision:next.revision}];
+    return out('VALID',[],null,{state:next,committed:true,writes:1,idempotent:false,evaluation,evidence:{storageCommitPerformed:false,pureStateCommit:true}});
+  }catch(error){return unchanged('INVALID',[error.message]);}
+}
+export function cancelAllocation(state,session){
+  try{sessionValid(session);return out('VALID',[],null,{state:copy(state),session:{...copy(session),closed:true},exposure:copy(session.exposureBefore),committed:false,writes:0});}
+  catch(error){return out('INVALID',[error.message],null,{state:copy(state),committed:false,writes:0});}
+}
+
+/** ONCE quantities have a confirmation threshold, never the monthly hard cap. */
+export function evaluateOnceAllocation({state,lineId,entries,confirmedFingerprint=null}={}){
+  try{
+    const line=shape(state,lineId),total=parseQuantity(line.total,line);
+    if(total.status!=='VALID')return out(total.status,[total.reason]);
+    if(!Array.isArray(entries)||entries.length!==line.locationIds.length||!uniq(entries.map(e=>e.locationId))||entries.some(e=>!line.locationIds.includes(e.locationId)))fail('ONCE_TARGETS_INVALID');
+    const values=entries.map(e=>parseQuantity(e.quantity,line));
+    if(values.some(v=>v.status!=='VALID'))return out(values.some(v=>v.status==='INVALID')?'INVALID':values.some(v=>v.status==='POLICY_UNRESOLVED')?'POLICY_UNRESOLVED':'INCOMPLETE',[...new Set(values.filter(v=>v.status!=='VALID').map(v=>v.reason))]);
+    const sum=values.reduce((n,v)=>add(n,v.base),zero());
+    const fingerprint=canonical({lineId,specVersion:line.specVersion,total:line.total,unitTable:line.unitTable,entries:[...entries].sort((a,b)=>a.locationId<b.locationId?-1:1)});
+    const required=compare(sum,total.base)>=0;
+    return out(required&&confirmedFingerprint!==fingerprint?'INCOMPLETE':'VALID',required&&confirmedFingerprint!==fingerprint?['ONCE_AT_LEAST_MONTH_CONFIRMATION_REQUIRED']:[],{lineId,sum:toJSON(sum),monthlyTotal:toJSON(total.base),confirmationRequired:required,confirmationSatisfied:!required||confirmedFingerprint===fingerprint,fingerprint,monthlyHardCapApplied:false},{dataVersion:line.unitTable.version});
+  }catch(error){return out('INVALID',[error.message]);}
+}
+
+/** Explicit structural operation; returns a new state and never persists it. */
+export function changeAllocationTopology(state,operation){
+  try{
+    const next=copy(state);
+    stateShape(next);
+    for(const current of next.lines)shape(next,current.lineId);
+    const line=()=>{const value=next.lines.find(l=>l.lineId===operation.lineId);if(!value)fail('LINE_NOT_FOUND');return value;};
+    if(operation?.type==='link'){
+      const target=line();if(!next.locations.some(l=>l.locationId===operation.locationId))fail('LOCATION_NOT_FOUND');if(target.locationIds.includes(operation.locationId))fail('LOCATION_ALREADY_LINKED');target.locationIds.push(operation.locationId);
+    }else if(operation?.type==='unlink'){
+      const target=line();if(!target.locationIds.includes(operation.locationId))fail('LOCATION_NOT_LINKED');target.locationIds=target.locationIds.filter(key=>key!==operation.locationId);next.allocations=next.allocations.filter(a=>!(a.lineId===operation.lineId&&a.locationId===operation.locationId));
+    }else if(operation?.type==='deleteLocation'){
+      if(!next.locations.some(l=>l.locationId===operation.locationId))fail('LOCATION_NOT_FOUND');next.locations=next.locations.filter(l=>l.locationId!==operation.locationId);for(const l of next.lines)l.locationIds=l.locationIds.filter(key=>key!==operation.locationId);next.allocations=next.allocations.filter(a=>a.locationId!==operation.locationId);
+    }else if(operation?.type==='deleteLine'){
+      line();next.lines=next.lines.filter(l=>l.lineId!==operation.lineId);next.allocations=next.allocations.filter(a=>a.lineId!==operation.lineId);
+    }else if(operation?.type==='reorder'){
+      const target=line();if(!Array.isArray(operation.locationIds)||!uniq(operation.locationIds)||operation.locationIds.length!==target.locationIds.length||operation.locationIds.some(key=>!target.locationIds.includes(key)))fail('REORDER_IDS_INVALID');target.locationIds=[...operation.locationIds];
+    }else fail('TOPOLOGY_OPERATION_UNSUPPORTED');
+    if(!Number.isSafeInteger(next.revision+1))fail('REVISION_RANGE');next.revision++;
+    stateShape(next);
+    for(const l of next.lines)shape(next,l.lineId);
+    return out('VALID',[],null,{state:next,writes:0,evidence:{pureStateChange:true,storageCommitPerformed:false}});
+  }catch(error){return out('INVALID',[error.message],null,{state:copy(state),writes:0});}
+}
