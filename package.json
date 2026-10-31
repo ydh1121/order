@@ -10,6 +10,11 @@
     "test:engine": "node scripts/engine/run-tests.mjs",
     "example:engine": "node scripts/engine/example.mjs",
     "smoke:dns": "node scripts/engine/dns-smoke.mjs",
-    "update:iana": "node scripts/engine/update-iana.mjs"
+    "update:iana": "node scripts/engine/update-iana.mjs",
+    "build": "node scripts/build-pages.mjs",
+    "build:engine": "node scripts/build-pages.mjs --engine-only"
+  },
+  "devDependencies": {
+    "acorn": "8.15.0"
   }
 }

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "status": "AWAITING_UX_HANDOFF",
+  "repository": "ydh1121/order",
+  "project": "order-ooo",
+  "canonicalUrl": "https://order-ooo.pages.dev/",
+  "productionBranch": "main",
+  "productionAutomaticDeployment": true,
+  "previewBranchDeployment": "none",
+  "uxParent": {
+    "fileId": "1e6BuwKzqiVBu6F2VDzFqOpKeVtE58IUD",
+    "bytes": 489401,
+    "sha256": "e13f200945b9277e986b1994fc4f91998fc68f18d1bcbc0b69cb8dc6dd54d6a8"
+  },
+  "uxHandoff": null,
+  "frontendFiles": [],
+  "engineEntry": "src/browser/engine.mjs",
+  "outputDirectory": "dist"
+}

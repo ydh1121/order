@@ -26,7 +26,7 @@ MSG0497 was produced after the directive. Both exact sources were read and
 compared without editing or copying the full UI into this branch. Its existence
 does not imply user acceptance. See compatibility.md for semantic differences.
 
-## Remote-write preflight
+## Historical MSG0499 remote-write preflight
 
 Read-only GitHub settings observations at approximately 02:16–02:19 KST:
 
@@ -41,7 +41,7 @@ Read-only GitHub settings observations at approximately 02:16–02:19 KST:
 | Render deployment branch/settings | Not verified; installed app alone proves neither deployment nor absence |
 | Connected provider tooling | Render plugin discoverable but not installed; no Cloudflare deployment tool exposed |
 
-Remote write is held per MSG0499 §2.3 because the external deployment target is
+At the MSG0499 checkpoint, remote write was held per §2.3 because the external deployment target was
 unverified. No permission to deploy is inferred from push permission. This is a
 preflight hold, not a rejected Git push or an automatic approval rejection.
 No remote branch, PR, merge, protection-rule change or provider setting change
@@ -55,3 +55,7 @@ Astra owns only independent modules/reference data/tests/docs, the test runner,
 and deploy-free CI. UX continues HTML/CSS/events/copy/popup/date fixes.
 PENDING-26 remains IN_REVIEW; prices, business rules, operational scheduling,
 user LOWFI acceptance, main merge, production, new server/DB are not granted.
+
+## MSG0504 superseding authority
+
+The above is historical. MSG0504 now authorizes this same branch/PR/CI, reviewed main integration and exact Cloudflare Pages `order-ooo` canonical publication. Installed Render app evidence is not a blanket Git hold. Latest intake is e13f/489401 bytes; eab019 is an intermediate source only. UX U1–U4 handoff must precede Astra frontend edits. See [current integration checkpoint](integration-0504.md) for actual scope and remaining gates. USER_APPROVED_LOWFI=NONE and G11=FAIL_USER_REWORK remain unchanged.

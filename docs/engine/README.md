@@ -1,16 +1,18 @@
-# Astra independent engine — contract 1.0.0 / engine 0.1.0
+# Astra independent engine — contract 1.1.0 / engine 0.2.0
 
-WO-ORDER-20261101-ASTRA-ENGINE-001, MSG-20261101-0499, PENDING-26.
-This is an isolated Node ESM core, not a product release or UX replacement.
+WO-ORDER-20261101-ASTRA-ENGINE-001, MSG-20261101-0499 / MSG-20261101-0504, PENDING-26.
+Pure ESM core plus Node and browser adapters. See [current integration boundary](integration-0504.md); UX handoff and actual Pages publication remain separate gates.
 
 ## Run
 
 Node 22 or newer, no third-party runtime packages required.
 
 ```sh
+npm ci
 npm test
 npm run test:engine
 npm run example:engine
+npm run build:engine
 # Optional online observation, never part of deterministic tests:
 npm run smoke:dns -- example.com iana.org
 # Explicit maintenance operation; changes pinned reference files:
@@ -33,6 +35,9 @@ secrets, new endpoints or database resources. Workflow presence is not a CI run.
 | enumerateCombinations | [combinations](combinations.md) |
 | calculateQuote / exact arithmetic / periodQuantity / monthlyDayIntent | [calculation](calculation.md) |
 | loadIanaSnapshot / update helper | [reference provenance](references.md) |
+| createOrderPhoneAdapter / createBrowserEmailService | [browser email](browser-email.md), [phone](phone.md) |
+| evaluateAllocation / revision-aware edit and confirmation | [monthly allocation](allocation.md) |
+| browser-only build / Pages publication boundary | [integration](integration-0504.md), [deployment](deployment-0504.md) |
 | Existing HTML / quote differences | [compatibility](compatibility.md) |
 
 All result envelopes carry `status`, `reasonCodes`, exact `raw`, `normalized`,
