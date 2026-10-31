@@ -49,6 +49,7 @@ export async function updateIana({ directory = new URL('../../src/engine/referen
   try { prior = JSON.parse(await readFile(manifestUrl, 'utf8')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (prior && (parsed.version < prior.version || parsed.tldCount < prior.tldCount * 0.95)) throw new Error('IANA_REGRESSION_REQUIRES_REVIEW');
+  if (prior && parsed.version === prior.version && parsed.sourceSha256 !== prior.sourceSha256) throw new Error('IANA_SAME_VERSION_HASH_CONFLICT');
   const rawFile = `iana-tlds-${parsed.version}-${parsed.sourceSha256.slice(0, 12)}.txt`;
   const { tlds, ...metadata } = parsed;
   const manifest = {
