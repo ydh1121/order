@@ -1,5 +1,5 @@
-export const ENGINE_VERSION = '0.1.0';
-export const CONTRACT_VERSION = '1.0.0';
+export const ENGINE_VERSION = '0.2.0';
+export const CONTRACT_VERSION = '1.1.0';
 export const STATUSES = Object.freeze(['EMPTY','INCOMPLETE','VALID','INVALID','UNSUPPORTED','UNKNOWN','UNAVAILABLE','POLICY_UNRESOLVED','PARTIAL']);
 
 /** JSON-safe versioned envelope. Validation never grants business authority. */

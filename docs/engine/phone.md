@@ -1,4 +1,4 @@
-# Phone contract 1.0.0
+# Phone rules 1.1.0 / MSG0504 browser adapter 1.0.0
 
 MSG-20261101-0499 / E02–E04. Pure ESM; no DOM, contact directory, SMS, call, storage, or current clock.
 
@@ -18,7 +18,9 @@ Only `VALID` has `normalized: {type,digits,formatted,segments}`. Display, get, s
 | Internet 070 | 3-4-4 | 11 | 3,4,4 |
 | Representative 15xx/16xx/18xx | 4-4 | 8 | 4,4 |
 
-These are supported syntax families, not a claim every prefix/subscriber block is allocated. Other domestic types (including 050/080), international +82, short service numbers and extensions return `UNSUPPORTED` when distinguishable. Unsupported is not “invalid under the national numbering plan.” Known incomplete input returns `INCOMPLETE`; empty required/optional input returns `EMPTY` with different reason codes. Letters are not stripped to manufacture a valid number. Spaces, hyphens and a prefix wrapped in parentheses are presentation separators; digit order is invariant.
+These are supported syntax families, not a claim every prefix/subscriber block is allocated. MSG0504 preserves the latest UX's `+82` domestic normalization: `+82 10 …`, `+82 010 …`, `+82 (0)10 …`, `+82 2 …` and `+82 70 …` become the corresponding domestic trunk-zero format. The original input remains in `raw`; the normalization is recorded in evidence. A partial `+`, `+8`, or `+82` is `INCOMPLETE`. Other countries, unsupported domestic types (including 050/080), short service numbers and extensions return `UNSUPPORTED` when distinguishable. A representative number is not assumed to become internationally reachable by adding `+82`.
+
+Unsupported is not “invalid under the national numbering plan.” Known incomplete input returns `INCOMPLETE`; empty required/optional input returns `EMPTY` with different reason codes. Letters are not stripped to manufacture a valid number. Spaces, hyphens and a prefix wrapped in parentheses are presentation separators; domestic subscriber digit order is invariant. Double hyphens in a raw restored/pasted value are rejected consistently with MSG0497 UX; internal segmented editing can still represent empty middle/last groups explicitly.
 
 ## Restore and edit
 
@@ -35,7 +37,27 @@ const result = finalizePhone(state); // VALID, 02-234-5678
 
 `createPhoneState` retains `originalRaw` even if corrupt, including `010-1234-12345678`. Explicit user repair changes `raw`/segments without erasing recovery provenance. `{type:'clear',explicit:true}` records a deliberate whole-field clear. Implicit clear is rejected; whole-field empty paste has `explicitClear:false`. The shared `completionGate` allows optional empty completion only with explicit clear. Raw recovery content must remain private when this contract later integrates with real contacts; fixtures here are synthetic.
 
-The reducer does not manipulate focus, selection/caret, IME, keyboard events, undo stacks or browser autofill. UX owns those adapters and real OS/browser tests. First-segment changes revalidate the number type and shape; changing a three-segment number to representative or the reverse does not silently discard/create remaining number digits.
+The pure reducer does not manipulate focus, selection/caret, IME, keyboard events, undo stacks or browser autofill. The MSG0504 browser adapter below owns those operations. First-segment changes revalidate the number type and shape; changing a three-segment number to representative or the reverse does not silently discard/create remaining number digits.
+
+## MSG0504 browser adapter and integration
+
+`src/engine/adapters/phone-browser.mjs` imports only browser-compatible modules. `createOrderPhoneAdapter()` provides the existing `OrderPhone` interface: `parse`, `mount`, `get`, `set`, and `instance`. Mount creates the same existing shell/part/separator classes and preserves the e13f event ownership for cursor, selection, explicit middle intent, automatic focus, paste/drop, composition, fallback input, undo and clear. The e13f source is the 489,401-byte file with SHA256 `e13f200945b9277e986b1994fc4f91998fc68f18d1bcbc0b69cb8dc6dd54d6a8`; it was read without modifying its HTML/CSS.
+
+The old independent phone regex/parser is replaced by `validatePhone`. Browser `parse` returns legacy `valid/kind/prefix/parts/limits/formatted` fields plus the exact `contract` envelope. Each mounted control exposes `contract()`, `projection(options)`, and `snapshot()` in addition to the existing interface. Snapshot preserves original restoration input separately from editable/normalized display and returns caret/selection/intent/composition state. A rejected insertion restores the selection and prior digits.
+
+`projectPhone` derives field completeness, parent completeness, badge count and save permission from the same contract. `editing:true` is neutral, contributes no red error/badge, and does not authorize saving incomplete data. `errorExposed:true` shows a confirmed non-complete field error only outside editing. Optional initial-empty data is accepted through the explicit `initialEmpty` flag; an automatic replacement of previously nonempty data with empty is not treated as a deliberate user clear. Mounted controls derive this distinction from their source snapshot and explicit delete action. No engine reason codes are converted to customer-facing text.
+
+```js
+import {createOrderPhoneAdapter} from '../../src/engine/adapters/phone-browser.mjs';
+const OrderPhone = createOrderPhoneAdapter();
+const control = OrderPhone.mount(document.querySelector('#site-contact-phone'));
+control.set('+82 10 2345 6789');
+control.commit();
+const projection = control.projection({editing:false,errorExposed:false});
+// Same projection feeds field/parent/badge/CTA; save reads normalized only when saveAllowed.
+```
+
+This module is prepared for root integration after the UX handoff. Extracting the adapter does not by itself connect the product page or establish final browser/OS acceptance.
 
 ## Official reference and limits
 
@@ -47,4 +69,6 @@ The reducer does not manipulate focus, selection/caret, IME, keyboard events, un
 
 ## Reproduction and independent expectations
 
-`node --test test/engine/phone.test.mjs` runs manually specified canonical forms, explicit/automatic intent, prefix changes, corrupt restoration, scope-sensitive paste, clear/gate handling, shared parser parity and a fixed-seed digit-preservation invariant. Fixture version is `phone-fixtures-1.0.0`. The deterministic corpus uses seed 499 and 500 generated inputs; it is a bounded invariant check, not exhaustive numbering-plan or real keyboard/OS coverage.
+`node --test test/engine/phone.test.mjs test/engine/phone-browser.test.mjs test/engine/phone-browser-dom.test.mjs` runs manually specified canonical forms, explicit/automatic intent, prefix changes, corrupt restoration, scope-sensitive paste, clear/gate handling, shared parser parity, +82 preservation and a fixed-seed digit-preservation invariant. Fixture version is `phone-fixtures-1.1.0`. The deterministic corpus uses seed 499 and 500 generated domestic inputs; it is a bounded invariant check, not exhaustive numbering-plan or real keyboard/OS coverage.
+
+The five `DOM MOCK` cases use a bounded event/selection harness, explicitly **not** a real browser. The separate executable `test/engine/phone-browser.smoke.mjs` uses actual Playwright/Chromium and local HTTP. Supply `PLAYWRIGHT_MODULE` and `CHROME_PATH` only when modules/executable are not on the default path. On this MSG0504 run a Chromium executable was found and attempted, but startup failed with `process_singleton_posix.cc:297 socket() failed: Operation not permitted (1)`. Therefore actual Chromium interaction is **BLOCKED**, not PASS. Windows, iPhone, HTTPS hosting and real phone activation/ownership checks remain NOT_RUN.

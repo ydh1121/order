@@ -1,5 +1,5 @@
 /** Syntax coverage, not a directory of allocated/active subscriber numbers. */
-export const PHONE_RULE_VERSION = 'phone-rules-1.0.0';
+export const PHONE_RULE_VERSION = 'phone-rules-1.1.0';
 export const PHONE_DATA_VERSION = 'kr-number-reference-20261101-partial';
 export const AREA_PREFIXES = Object.freeze([
   '031', '032', '033', '041', '042', '043', '044', '051', '052', '053',

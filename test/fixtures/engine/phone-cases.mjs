@@ -1,5 +1,5 @@
 // Synthetic examples only; no call, SMS, ownership claim, or subscriber lookup.
-export const PHONE_FIXTURE_VERSION = 'phone-fixtures-1.0.0';
+export const PHONE_FIXTURE_VERSION = 'phone-fixtures-1.1.0';
 export const phoneCases = [
   ['SEOUL_9', '022345678', 'VALID', '02-234-5678'],
   ['SEOUL_10', '0223456789', 'VALID', '02-2345-6789'],
@@ -13,7 +13,8 @@ export const phoneCases = [
   ['IP_MIDDLE_3', '070-234-5678', 'INVALID', null],
   ['RESTORE_OVERLONG', '010-1234-12345678', 'INVALID', null],
   ['TYPE_UNSUPPORTED', '050512345678', 'UNSUPPORTED', null],
-  ['INTERNATIONAL', '+82 10 2345 6789', 'UNSUPPORTED', null],
+  ['PLUS82_MOBILE', '+82 10 2345 6789', 'VALID', '010-2345-6789'],
+  ['OTHER_INTERNATIONAL', '+81 10 2345 6789', 'UNSUPPORTED', null],
   ['LETTER_NOT_STRIPPED', '010abc23456789', 'INVALID', null],
-  ['DOUBLE_HYPHEN', '02--234-5678', 'VALID', '02-234-5678'],
+  ['DOUBLE_HYPHEN', '02--234-5678', 'INVALID', null],
 ];

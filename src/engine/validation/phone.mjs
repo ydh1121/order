@@ -27,13 +27,14 @@ export function validatePhone(input) {
     reference: PHONE_REFERENCE.version,
     assignment: { status: 'UNKNOWN', reason: 'CURRENT_ALLOCATION_NOT_VERIFIED' },
     activation: 'NOT_CHECKED', ownership: 'NOT_CHECKED',
+    countryNormalization: 'NONE',
   };
   const result = (status, reason, normalized = null) => engineResult({
     status, reasonCodes: [reason], raw, normalized, field: opts.field ?? 'phone',
     ruleVersion: PHONE_RULE_VERSION, dataVersion: PHONE_DATA_VERSION,
     evidence: { ...evidence, intent: clone(intent), limits: spec ? clone(spec) : null },
     candidate: { segments: Array.isArray(segments) ? [...segments] : [], digits },
-    support: 'KR_DOMESTIC_02_AREA_010_070_15_16_18_SYNTAX',
+    support: 'KR_DOMESTIC_AND_PLUS82_02_AREA_010_070_15_16_18_SYNTAX',
   });
   if ((typeof input !== 'string' && (input === null || typeof input !== 'object' || Array.isArray(input))) ||
       typeof raw !== 'string' || !['editing', 'complete'].includes(phase) ||
@@ -45,12 +46,20 @@ export function validatePhone(input) {
   if (!segments && raw.trim() === '') {
     segments = []; return result('EMPTY', opts.required === false ? 'PHONE_OPTIONAL_EMPTY' : 'PHONE_REQUIRED_EMPTY');
   }
-  if (/^\s*\+/.test(raw)) return result('UNSUPPORTED', 'PHONE_INTERNATIONAL_UNSUPPORTED');
-  if (/[^0-9\s()-]/.test(raw)) return result('INVALID', 'PHONE_CHARACTER_INVALID');
-  if (/[()]/.test(raw) && !/^\s*\([0-9]{2,4}\)[ -]*[0-9]+[ -][0-9]+\s*$/.test(raw)) {
+  let domesticRaw = raw;
+  if (/^\s*\+/.test(raw)) {
+    const compact = raw.trim().replace(/[()\s-]/g, '');
+    if (['+', '+8', '+82'].includes(compact)) return result('INCOMPLETE', 'PHONE_COUNTRY_PREFIX_INCOMPLETE');
+    if (!compact.startsWith('+82')) return result('UNSUPPORTED', 'PHONE_INTERNATIONAL_UNSUPPORTED');
+    if (!/^\+82[0-9]+$/.test(compact) || /--/.test(raw)) return result('INVALID', 'PHONE_CHARACTER_INVALID');
+    domesticRaw = '0' + compact.slice(3).replace(/^0/, '');
+    evidence.countryNormalization = 'PLUS82_TO_DOMESTIC_TRUNK';
+  }
+  if (/[^0-9\s()-]/.test(domesticRaw) || /--/.test(domesticRaw) && opts.segments === undefined) return result('INVALID', 'PHONE_CHARACTER_INVALID');
+  if (/[()]/.test(domesticRaw) && !/^\s*\([0-9]{2,4}\)[ -]*[0-9]+[ -][0-9]+\s*$/.test(domesticRaw)) {
     return result('INVALID', 'PHONE_SEPARATOR_INVALID');
   }
-  const text = raw.trim().replace(/^\(([0-9]+)\)/, '$1-');
+  const text = domesticRaw.trim().replace(/^\(([0-9]+)\)/, '$1-');
   if (text !== '' && !/^[0-9]+(?:[ -]+[0-9]*){0,2}$/.test(text)) return result('INVALID', 'PHONE_SEPARATOR_INVALID');
   if (segments !== undefined) {
     if (!Array.isArray(segments) || segments.length > 3 ||
@@ -58,7 +67,7 @@ export function validatePhone(input) {
       segments = []; return result('INVALID', 'PHONE_SEGMENTS_INVALID');
     }
     digits = segments.join('');
-    if (raw.replace(/[\s()-]/g, '') !== digits) return result('INVALID', 'PHONE_RAW_SEGMENTS_MISMATCH');
+    if (domesticRaw.replace(/[\s()-]/g, '') !== digits) return result('INVALID', 'PHONE_RAW_SEGMENTS_MISMATCH');
   } else {
     digits = text.replace(/[\s-]/g, '');
     if (/[ -]/.test(text)) {
