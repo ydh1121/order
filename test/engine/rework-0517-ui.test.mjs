@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {parse} from 'acorn';
 import {validMonthlyQuantity} from '../../web/quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/allocation-ui.mjs';
+import {addressStatus} from '../../web/address-contract.mjs';
 
 // Production owners are evaluated with controlled DOM/DNS/storage doubles.
 // These checks do not claim browser layout, real DNS, OS or user acceptance.
@@ -51,11 +52,12 @@ test('F05 shared comparison keeps labeled current→after semantics, escaping, a
  }
 });
 
-function draftHarness({missingContact=false,unknownEmail=false}={}){
+function draftHarness({missingContact=false,unknownEmail=false,address=null}={}){
  const state={lines:[{id:'L',housing:'1',size:'대란',pack:'30',qty:'200',qtyUnit:'each',price:'10000'}],locations:[{id:'A',name:'사업장 A',road:'',contactPhone:'01023456789',email:'test@example.com',storePhone:''}],allocations:[{id:'AL',lineId:'L',locationId:'A',mode:'FLEX',modeExplicit:true,qty:'2',monthlyDemandQty:'200',monthlyDemandUnit:'each',advanced:{contactChannels:['phone'],flexOrderProcess:'store'}}]};
  if(missingContact)state.locations[0].contactPhone='';
+ if(address)Object.assign(state.locations[0],address);
  const nodes=new Map();let writes=0;
- const context=vm.createContext({S:structuredClone(state),validMonthlyQuantity,inspectMonthlyAllocations,inspectOnceAllocations,structuredClone,JSON,
+ const context=vm.createContext({S:structuredClone(state),validMonthlyQuantity,inspectMonthlyAllocations,inspectOnceAllocations,addressStatus,structuredClone,JSON,
   window:{OrderDatePolicy:{validate:()=>({valid:true})}},
   OrderPhone:{parse:value=>({valid:/^0\d{9,10}$/.test(value||'')})},OrderEmail:{parse:value=>({valid:/^[^@]+@[^@]+\.[^@]+$/.test(value||'')})},
   OrderEmailDomain:{status:()=>({state:unknownEmail?'UNKNOWN':'VALID'}),isHard:()=>false,isSuccess:proof=>proof.state==='VALID'},
@@ -72,7 +74,7 @@ function draftHarness({missingContact=false,unknownEmail=false}={}){
 test('F06 production Q4 commit saves addressless stable-ID delivery draft while Q3/final/row completion remain blocked',async()=>{
  const h=draftHarness(),before=h.subject.source();
  assert.equal(h.subject.verdict().valid,false);
- assert.ok(h.subject.verdict().fieldErrors.some(issue=>issue.stage==='q3'&&issue.code==='ADDRESS_UI_PENDING'));
+ assert.ok(h.subject.verdict().fieldErrors.some(issue=>issue.stage==='q3'&&issue.code==='ADDRESS_REQUIRED'));
  assert.equal(h.subject.isAllocationComplete(),false);
  const patches=h.subject.patches();patches[0].qty='3';
  assert.equal((await h.subject.commit(patches)).ok,true);assert.equal(h.writes,1);
@@ -83,11 +85,20 @@ test('F06 production Q4 commit saves addressless stable-ID delivery draft while 
 
 test('F06 missing contacts and UNKNOWN proof remain strict final blockers while delivery draft edits are independent',async()=>{
  for(const kind of ['missing-contact','unknown-email']){
-  const h=draftHarness({missingContact:kind==='missing-contact',unknownEmail:kind==='unknown-email'});
+  const h=draftHarness({missingContact:kind==='missing-contact',unknownEmail:kind==='unknown-email',address:{road:'합성시 가상로 10',postal:'08843',providerId:'1'.repeat(25),addressProvider:'JUSO'}});
   // The final validator is not modified or replaced by the draft commit path.
   const initial=h.subject.verdict();assert.ok(initial.fieldErrors.some(issue=>issue.stage==='q3'&&(kind==='missing-contact'?issue.field.endsWith('contactPhone'):issue.code==='DOMAIN_UNCONFIRMED')));
   assert.equal((await h.subject.commit(h.subject.patches())).ok,true);assert.equal(h.subject.verdict().resultStatus,'BLOCK_REQUIRED');
  }
+});
+
+test('A11 production Q3/final gate distinguishes restored text from provider selection and keeps optional detail empty',()=>{
+ const unverified=draftHarness({address:{road:'합성시 가상로 10',postal:'08843',providerId:'1'.repeat(25)}});
+ assert.equal(unverified.subject.verdict().valid,false);
+ assert.ok(unverified.subject.verdict().fieldErrors.some(issue=>issue.code==='ADDRESS_SELECTION_REQUIRED'));
+ const verified=draftHarness({address:{road:'합성시 가상로 10',postal:'08843',providerId:'1'.repeat(25),addressProvider:'JUSO',detail:'',dropoff:''}});
+ assert.equal(verified.subject.verdict().valid,true);
+ assert.equal(verified.subject.isAllocationComplete(),true);
 });
 
 test('F06 assignment checkbox and next use stable identity, allowing addressless drafts without writes',()=>{
@@ -128,6 +139,7 @@ test('F08 customer title and address field retain labels without work-order or i
  assert.match(html,/<title>order\.ooo<\/title>/);
  assert.doesNotMatch(html,/<title>[^<]*MSG/);
  assert.doesNotMatch(html,/소재지 검색은 아직 연결되지 않았습니다|q3-address-note/);
- assert.match(html,/id="q3-address-slot"[^>]*aria-label="사업장 소재지"[^>]*aria-required="true"/);
- assert.match(common,/사업장 소재지를 입력해 주세요\./);
+ assert.match(html,/<label for="q3-address-slot"[^>]*>사업장 소재지 <span class="ui-required"/);
+ assert.match(html,/<button id="q3-address-slot"[^>]*aria-haspopup="dialog"[^>]*aria-controls="address-editor-dialog"[^>]*aria-label="소재지 검색"/);
+ assert.equal(addressStatus({}).issue.message,'사업장 소재지를 입력해 주세요.');
 });

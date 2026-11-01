@@ -1,7 +1,9 @@
 /** Confirmed Q1–Q4 persistence. All writers must share the origin's Web Lock.
- * Domain validity, DNS, UI drafts and provider approval remain outside storage.
+ * Domain validity, DNS, UI drafts and delivery approval remain outside storage.
+ * Address provenance records the selected provider result, not a live validation.
  */
-export const STORAGE_SCHEMA_VERSION=2;
+import {isVerifiedAddress} from './address-contract.mjs';
+export const STORAGE_SCHEMA_VERSION=3;
 export const STORAGE_KEY='order_q1_q4_v1';
 export const STORAGE_LOCK='order-q1-q4-storage';
 export const LEGACY_KEYS=Object.freeze(['order_v015R2_draft','order_v015R1_draft']);
@@ -39,18 +41,24 @@ const review=object({version:oneOf(['0460']),pack:short,profile:oneOf(['FLEX','F
  // This is committed inactive-mode input, not the live modal's working draft.
  draft:object({mode,process:short,values:object({base:raw,monthly:raw,min:raw,max:raw,once:raw}),variable:boolean,contact,holiday,repeat,quality:boolean})},['version']);
 const line=object({id,housing:short,size:short,pack:short,qty:raw,qtyUnit:unit,qtyDisplayUnit:unit,price:raw,qtyExact:ratio},['id','housing','size','pack','qty','price']);
-const location=object({id,name:text(1024),road:text(4096),postal:short,detail:text(4096),jibun:text(4096),region:text(1024),providerId:text(1024),contactPhone:raw,email:raw,storePhone:raw,addressState:short,basicInfoDraft:boolean,
- status:omit,emailDomainState:omit,mailboxVerified:omit,dns:omit,dnsResult:omit,validation:omit},['id','name']);
+const locationSpec={id,name:text(1024),road:text(4096),postal:short,detail:text(4096),jibun:text(4096),region:text(1024),providerId:text(1024),contactPhone:raw,email:raw,storePhone:raw,addressState:short,basicInfoDraft:boolean,
+ status:omit,emailDomainState:omit,mailboxVerified:omit,dns:omit,dnsResult:omit,validation:omit};
+const legacyLocation=object(locationSpec,['id','name']);
+const selectedLocation=object({...locationSpec,dropoff:text(4096),addressProvider:oneOf(['','JUSO'])},['id','name']);
+const location=(value,path)=>{const out=selectedLocation(value,path);if(out.addressProvider==='JUSO'&&!isVerifiedAddress(out))fail(path,'INVALID_PROVIDER_SELECTION');return out;};
 const allocation=object({id,lineId:id,locationId:id,qty:raw,mode,modeExplicit:boolean,freq:integer,days,intervalWeeks:integer,cycleCount:integer,scheduleDetail:short,weekPlans,qtySource:short,variableQty:boolean,qtyMin:raw,qtyMax:raw,qualityTest:boolean,oneTimeDeliveryQty:raw,deliveryQtyUnit:unit,monthlyDemandQty:raw,monthlyDemandUnit:unit,monthlyDemandSource:oneOf(['manual','derived']),monthlyDemandExact:monthlyExact,repeatSemantics:short,frequencyPerWeek:nullable(integer),monthDay:(v,p)=>typeof v==='number'?integer(v,p):short(v,p),advanced,q4Review:review,onceConfirmedFingerprint:text(32768),cycleAnchorDate:short,calendarPolicy:object({kind:short},['kind']),monthlyAllocationContract:short,
  suggestedQty:omit,monthlyAllocationComplete:omit,monthlyAllocationDraftRevision:omit},['id','lineId','locationId']);
-const payloadShape=object({lines:list(line),current:nullable(id),locations:list(location),allocations:list(allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
+const payloadShape=(schemaVersion=STORAGE_SCHEMA_VERSION)=>object({lines:list(line),current:nullable(id),locations:list(schemaVersion<3?legacyLocation:location),allocations:list(allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
  stage:omit,errorExposure:omit,validation:omit,dnsCache:omit,pendingRequests:omit},['lines','locations','allocations']);
 export const emptyStoredPayload=()=>({lines:[],current:null,locations:[],allocations:[],open:'q1',allocationRevision:0});
 function canonical(value){return Array.isArray(value)?'['+value.map(canonical).join(',')+']':plain(value)?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);}
 const clone=value=>JSON.parse(JSON.stringify(value));
 /** Structural validation and explicit exclusion of transient evidence. No input coercion. */
 export function projectStoredPayload(input){
- const result=payloadShape(input,'data');
+ return projectPayload(input,STORAGE_SCHEMA_VERSION);
+}
+function projectPayload(input,schemaVersion){
+ const result=payloadShape(schemaVersion)(input,'data');
  const unique=(rows,field)=>{const set=new Set(rows.map(row=>row.id));if(set.size!==rows.length)fail('data.'+field,'DUPLICATE_ID');return set;};
  const lines=unique(result.lines,'lines'),sites=unique(result.locations,'locations');unique(result.allocations,'allocations');
  const pairs=new Set();for(const row of result.allocations){if(!lines.has(row.lineId)||!sites.has(row.locationId))fail('data.allocations','ORPHAN_REFERENCE');const pair=JSON.stringify([row.lineId,row.locationId]);if(pairs.has(pair))fail('data.allocations','DUPLICATE_ASSIGNMENT');pairs.add(pair);}
@@ -67,7 +75,7 @@ function migrateLegacy(input,key){
   if(source.locations?.length||source.allocations?.length)fail('legacy','AMBIGUOUS_ADDRESS');
   const address=source.address;const delivery=object({mode,freq:integer,days},[])(source.delivery??{},'legacy.delivery');
   if(!plain(address))fail('legacy.address','OBJECT');
-  const site=location({...address,id:address.id||'legacy-r1-site-1',name:address.name||'기본 사업장'},'legacy.address');
+  const site=legacyLocation({...address,id:address.id||'legacy-r1-site-1',name:address.name||'기본 사업장'},'legacy.address');
   const populated=['name','road','postal','detail','jibun','region','providerId','contactPhone','email','storePhone'].some(field=>typeof address[field]==='string'&&address[field].trim()!=='');
   if(!populated&&source.lines.some(row=>row.drop!==undefined&&row.drop!==''))fail('legacy.drop','ADDRESS_REQUIRED');
   source.locations=populated?[site]:[];source.allocations=populated?source.lines.map((row,i)=>({id:'legacy-r1-allocation-'+(i+1),lineId:row.id,locationId:site.id,qty:legacyNumber(row.drop??'','legacy.drop'),mode:delivery.mode||'FLEX',freq:delivery.freq??1,days:delivery.days??[]})):[];
@@ -75,18 +83,21 @@ function migrateLegacy(input,key){
  }
  if(r1)for(const row of source.lines){if(Object.hasOwn(row,'drop')){legacyNumber(row.drop,'legacy.drop');delete row.drop;}}
  if(source.locations===undefined)source.locations=[];if(source.allocations===undefined)source.allocations=[];if(source.current===undefined)source.current=null;if(source.open===undefined)source.open='q1';if(source.allocationRevision===undefined)source.allocationRevision=0;
- return projectStoredPayload(source);
+ // Historical sessions cannot introduce schema3 provider provenance or dropoff.
+ // Missing new fields are read as empty by the address contract; no address is
+ // silently upgraded. The first successful explicit commit writes schema3.
+ return projectPayload(source,2);
 }
 const receiptShape=object({transactionId:id,fingerprint:text(64),revision:integer,operation:oneOf(['commit','reset'])},['transactionId','fingerprint','revision','operation']);
 const migrationShape=nullable(object({source:oneOf(['session-R2','session-R1']),legacyKey:oneOf(LEGACY_KEYS)},['source','legacyKey']));
-const envelopeShape=object({schemaVersion:oneOf([1,2]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
+const envelopeShape=object({schemaVersion:oneOf([1,2,3]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
 function decode(rawValue){
  if(typeof rawValue!=='string'||new TextEncoder().encode(rawValue).length>MAX_BYTES)fail('record','SIZE_LIMIT');
- const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
+ const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
  const envelope=envelopeShape(value,'record');if(envelope.revision<1)fail('record.revision');
  if(envelope.state==='reset'){if(envelope.data!==null)fail('record.data');}else{
   if(envelope.schemaVersion===1&&envelope.data?.lines?.some(row=>Object.hasOwn(row,'qtyDisplayUnit')))fail('record.data.lines','UNKNOWN_FIELD');
-  const projected=projectStoredPayload(envelope.data);if(canonical(projected)!==canonical(envelope.data))fail('record.data','NON_CANONICAL_SCHEMA');envelope.data=projected;
+  const projected=projectPayload(envelope.data,envelope.schemaVersion);if(canonical(projected)!==canonical(envelope.data))fail('record.data','NON_CANONICAL_SCHEMA');envelope.data=projected;
  }
  const ids=new Set();for(const receipt of envelope.receipts){if(ids.has(receipt.transactionId)||receipt.revision<1||receipt.revision>envelope.revision||!/^[a-f0-9]{64}$/.test(receipt.fingerprint))fail('record.receipts');ids.add(receipt.transactionId);}
  return envelope;

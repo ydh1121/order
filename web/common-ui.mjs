@@ -1,4 +1,5 @@
 import {validMonthlyQuantity} from './quantity-contract.mjs';
+import {addressStatus} from './address-contract.mjs';
 import './contact-ui.mjs';
 /* MSG0481 reimplementation from verified MSG0478 bytes.
  * Pure weekly/month-day contract shared by rendering, selection, bridge and page verdict.
@@ -61,7 +62,7 @@ window.OrderInputFocus=Object.freeze((()=>{
 
 window.OrderSiteContract=Object.freeze((()=>{
  const phone=v=>OrderPhone.parse(v).valid,email=v=>OrderEmail.parse(v).valid;
- function issues(s,{address=true,allowUnverified=false}={}){const out=[];if(!String(s?.name||'').trim())out.push({key:'name',message:'사업장 명칭을 입력해 주세요.'});if(address&&!String(s?.road||'').trim())out.push({key:'address',code:'ADDRESS_UI_PENDING',message:'사업장 소재지를 입력해 주세요.'});if(!phone(s?.contactPhone))out.push({key:'contactPhone',message:'담당자 전화번호를 확인해 주세요.'});
+ function issues(s,{address=true,allowUnverified=false}={}){const out=[];if(!String(s?.name||'').trim())out.push({key:'name',message:'사업장 명칭을 입력해 주세요.'});const location=addressStatus(s);if(address&&!location.valid)out.push(location.issue);if(!phone(s?.contactPhone))out.push({key:'contactPhone',message:'담당자 전화번호를 확인해 주세요.'});
   if(!email(s?.email)){const syntax=OrderEmail.parse(s?.email);out.push({key:'email',code:syntax.unsupported?'UNSUPPORTED_LOCAL':'INVALID_SYNTAX',message:syntax.unsupported?'현재 지원하지 않는 이메일 형식입니다.':'이메일 형식을 확인해 주세요.'});}else{const proof=OrderEmailDomain.status(s.email);if(OrderEmailDomain.isHard(proof))out.push({key:'email',code:proof.state,message:'이메일 주소를 확인해 주세요.'});else if(!allowUnverified&&!OrderEmailDomain.isSuccess(proof))out.push({key:'email',code:'DOMAIN_UNCONFIRMED',message:'현재 이메일 주소를 확인할 수 없습니다.'});}
   if(String(s?.storePhone||'').trim()&&!phone(s.storePhone))out.push({key:'storePhone',message:'매장 대표번호를 확인해 주세요.'});return out;}
  return {phone,email,issues,isAwaiting:issue=>issue?.code==='DOMAIN_UNCONFIRMED',basicIssues:s=>issues(s,{allowUnverified:true}),valid:s=>issues(s).length===0};
@@ -95,7 +96,7 @@ window.OrderAccordionView=Object.freeze((()=>{
 })());
 
 window.OrderIcons=Object.freeze({
- definitions:Object.freeze({forward:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_DIRECTION_LINES_0505',body:'<path d="M3 10h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},unlink:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_UNLINK_LINES_0491',body:'<path d="m7 6 2-2a3 3 0 0 1 4.2 4.2l-1 1M13 14l-2 2a3 3 0 0 1-4.2-4.2l1-1M3 3l14 14M3 8H1M8 3V1M17 12h2M12 17v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},swap:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SWAP_LINES_0487',body:'<path d="M3 6h13m-3-3 3 3-3 3M17 14H4m3-3-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},clone:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_RECTANGLES_0481',body:'<path d="M3 2h9a1 1 0 0 1 1 1v2H6a2 2 0 0 0-2 2v7H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/><rect x="6" y="7" width="12" height="11" rx="1.5"/>'}}),
+ definitions:Object.freeze({search:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SEARCH_CIRCLE_LINE_0519',body:'<circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m12.5 12.5 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'},close:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_CLOSE_LINES_0519',body:'<path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'},forward:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_DIRECTION_LINES_0505',body:'<path d="M3 10h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},unlink:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_UNLINK_LINES_0491',body:'<path d="m7 6 2-2a3 3 0 0 1 4.2 4.2l-1 1M13 14l-2 2a3 3 0 0 1-4.2-4.2l1-1M3 3l14 14M3 8H1M8 3V1M17 12h2M12 17v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},swap:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SWAP_LINES_0487',body:'<path d="M3 6h13m-3-3 3 3-3 3M17 14H4m3-3-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},clone:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_RECTANGLES_0481',body:'<path d="M3 2h9a1 1 0 0 1 1 1v2H6a2 2 0 0 0-2 2v7H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/><rect x="6" y="7" width="12" height="11" rx="1.5"/>'}}),
  svg(name){const d=this.definitions[name];if(!d)return '';return `<svg viewBox="${d.viewBox}" width="17" height="17" data-project-icon="${name}" fill="currentColor" aria-hidden="true" focusable="false">${d.body}</svg>`;}
 });
 
@@ -142,15 +143,65 @@ window.OrderModalShell=Object.freeze((()=>{
  const entries=new Map(),bound=new WeakMap();let saved=null,version=0;
  const root=document.documentElement,body=document.body;
  const less=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const time=(name,fallback)=>{const value=getComputedStyle(root).getPropertyValue(name).trim(),n=parseFloat(value);return Number.isFinite(n)?n*(value.endsWith('ms')?1:1000):fallback;};
+ const ease=()=>getComputedStyle(root).getPropertyValue('--ui-ease').trim()||'ease-out';
+ const rgb=value=>{const n=String(value).match(/[\d.]+/g)?.map(Number);return n?.length>=3?[...n.slice(0,3),n[3]??1]:null;};
  const capture=(el,names)=>Object.fromEntries(names.map(k=>[k,[el.style.getPropertyValue(k),el.style.getPropertyPriority(k)]]));
  const restore=(el,values)=>Object.entries(values).forEach(([k,[v,p]])=>v?el.style.setProperty(k,v,p):el.style.removeProperty(k));
  const top=()=>[...entries.keys()].filter(d=>d.open).at(-1)||null;
+ // Opt-in modal history owns only tokens created in this document. Serial
+ // unwinding prevents an asynchronous Back from consuming a rapid new open.
+ const historyEntries=new Map(),historyKey='__orderModal0519',historySession=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+ let historySerial=0,historyPending=null;
+ const historyToken=state=>state&&typeof state==='object'?state[historyKey]:null;
+ const historyURL=()=>window.location?.href;
+ function reconcileHistory(){
+  const nav=window.history;if(!nav||historyPending)return;
+  const current=historyEntries.get(historyToken(nav.state));
+  if(current?.registered&&!current.active&&current.url===historyURL()){
+   historyPending=current;
+   try{nav.back();}catch{historyPending=null;current.registered=false;nav.replaceState(current.previousState,'',current.url);reconcileHistory();}
+   return;
+  }
+  for(const [dialog,rec] of entries){const item=rec.historyEntry;if(!item?.active||!item.waiting||rec.closing||!dialog.open)continue;
+   item.previousState=nav.state;item.url=historyURL();
+   const state=item.previousState&&typeof item.previousState==='object'&&!Array.isArray(item.previousState)?{...item.previousState}:{};
+   try{nav.pushState({...state,[historyKey]:item.token},'',item.url);item.registered=true;item.waiting=false;}catch{item.active=false;item.waiting=false;}
+  }
+ }
+ function registerHistory(dialog,rec,old,enabled){
+  if(!enabled||!window.history?.pushState)return;
+  if(old?.historyEntry?.active){rec.historyEntry=old.historyEntry;rec.historyEntry.rec=rec;return;}
+  const item={token:historySession+'-'+(++historySerial),dialog,rec,active:true,registered:false,waiting:true,url:historyURL(),previousState:null};
+  historyEntries.set(item.token,item);rec.historyEntry=item;reconcileHistory();
+ }
+ function retireHistory(rec){const item=rec?.historyEntry;if(!item)return;item.active=false;item.waiting=false;reconcileHistory();}
+ window.addEventListener('popstate',event=>{
+  const url=historyURL(),pending=historyPending;historyPending=null;
+  if(pending)pending.registered=false;
+  const destination=historyEntries.get(historyToken(event.state));
+  const active=[...entries.values()].map(r=>r.historyEntry).filter(h=>h?.active&&h.registered);
+  const own=(pending?.url===url)||active.some(h=>h.url===url)||destination?.url===url;
+  if(!own){if(pending)reconcileHistory();return;}
+  event.stopImmediatePropagation();
+  // Forward into a retired, same-document entry is undone to its recorded
+  // predecessor. It cannot reopen an editor or strand a duplicate parent token.
+  if(destination&&!destination.active&&destination.url===url)destination.registered=true;
+  // A forward traversal to an already cancelled token only identifies its live
+  // ancestor; a discarded domain draft is never reconstructed from history.
+  let target=destination;const seen=new Set();while(target&&!target.active&&!seen.has(target.token)){seen.add(target.token);target=historyEntries.get(historyToken(target.previousState));}
+  const targetIndex=active.findIndex(h=>h===target);
+  for(let i=active.length-1;i>targetIndex;i--){const item=active[i];item.registered=false;item.active=false;item.waiting=false;bound.get(item.dialog)?.requestClose?.('back');}
+  reconcileHistory();
+ },{capture:true});
  function paintLock(){
   const open=[...entries.keys()].filter(d=>d.open);
   if(open.length){
-   if(!saved){saved={root:capture(root,['--ui-modal-gutter']),x:scrollX,y:scrollY,rootClass:root.classList.contains('ui-modal-locked'),bodyClass:body.classList.contains('ui-modal-body-locked'),base:getComputedStyle(body).backgroundColor.match(/[\d.]+/g)?.slice(0,3).map(Number)||[255,255,255]};}
-   const alpha=1-Math.pow(1-.48,open.length),dim=[17,30,46];
-   root.style.setProperty('--ui-modal-gutter',`rgb(${saved.base.map((c,i)=>Math.round(c*(1-alpha)+dim[i]*alpha)).join(',')})`);
+   if(!saved){saved={root:capture(root,['--ui-modal-gutter']),x:scrollX,y:scrollY,rootClass:root.classList.contains('ui-modal-locked'),bodyClass:body.classList.contains('ui-modal-body-locked'),base:(rgb(getComputedStyle(body).backgroundColor)||rgb(getComputedStyle(root).backgroundColor)||[255,255,255]).slice(0,3)};}
+   // Native backdrops do not consistently paint reserved root gutters. Composite
+   // their actual shared token over the saved canvas; nested close leaves one dim.
+   let color=[...saved.base];for(const dialog of open){const dim=rgb(getComputedStyle(dialog,'::backdrop').backgroundColor)||rgb(getComputedStyle(root).getPropertyValue('--ui-modal-backdrop'));if(dim)color=color.map((c,i)=>c*(1-dim[3])+dim[i]*dim[3]);}
+   root.style.setProperty('--ui-modal-gutter',`rgb(${color.map(Math.round).join(',')})`);
    root.classList.add('ui-modal-locked');body.classList.add('ui-modal-body-locked');return;
   }
   if(saved){const old=saved;saved=null;restore(root,old.root);root.classList.toggle('ui-modal-locked',old.rootClass);body.classList.toggle('ui-modal-body-locked',old.bodyClass);window.scrollTo({left:old.x,top:old.y,behavior:'instant'});}
@@ -161,8 +212,10 @@ window.OrderModalShell=Object.freeze((()=>{
  }
  function release(dialog,after){
   const rec=entries.get(dialog);if(!rec){after?.();return;}
-  entries.delete(dialog);rec.animation?.cancel();dialog.classList.remove('is-open','is-closing');
+  retireHistory(rec);
+  entries.delete(dialog);rec.animation?.cancel();rec.sizeAnimation?.cancel();dialog.classList.remove('is-open','is-closing');
   dialog.style.opacity='';dialog.style.transform='';
+  restore(dialog,rec.geometry);delete dialog.dataset.modalContentSize;delete dialog.dataset.modalResizing;
   dialog.querySelector(':scope > .q4-regular-panel')?.style.removeProperty('--ui-modal-editor-session-block');
   paintLock();after?.();const current=version;
   requestAnimationFrame(()=>{if(current===version)restoreFocus(rec);});
@@ -170,7 +223,7 @@ window.OrderModalShell=Object.freeze((()=>{
  function bind(dialog,requestClose){
   const current=bound.get(dialog);if(current){current.requestClose=requestClose;return;}
   const cfg={requestClose};bound.set(dialog,cfg);
-  dialog.addEventListener('cancel',event=>{event.preventDefault();cfg.requestClose?.('escape');});
+  dialog.addEventListener('cancel',event=>{event.preventDefault();event.stopPropagation();if(top()===dialog)cfg.requestClose?.('escape');});
   dialog.addEventListener('keydown',event=>{
    if(event.key!=='Tab'||event.defaultPrevented||top()!==dialog)return;
    const candidates=[...dialog.querySelectorAll('button,input,select,textarea,a[href],summary,[tabindex],[contenteditable="true"]')].filter(el=>el.tabIndex>=0&&!el.matches(':disabled')&&!el.closest('[hidden],[inert]')&&el.getClientRects().length&&getComputedStyle(el).visibility==='visible');
@@ -178,42 +231,73 @@ window.OrderModalShell=Object.freeze((()=>{
    if(!candidates.length){event.preventDefault();if(!dialog.hasAttribute('tabindex'))dialog.tabIndex=-1;dialog.focus({preventScroll:true});return;}
    if(event.shiftKey&&(index<=0)||!event.shiftKey&&(index<0||index===candidates.length-1)){event.preventDefault();candidates[event.shiftKey?candidates.length-1:0].focus({preventScroll:true});}
   });
-  dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)cfg.requestClose?.('backdrop');});
+  dialog.addEventListener('click',event=>{if(event.target!==dialog||top()!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)cfg.requestClose?.('backdrop');});
   // Supports existing native .close() callers, including the nested ONCE confirmation.
   dialog.addEventListener('close',()=>{if(!dialog.open)release(dialog);});
  }
- function sizeEditor(dialog){
-  const panel=dialog.querySelector(':scope > .q4-regular-panel');if(!panel)return;
-  panel.style.removeProperty('--ui-modal-editor-session-block');
-  const rootPx=parseFloat(getComputedStyle(root).fontSize)||16;
-  const height=Math.min(panel.getBoundingClientRect().height,innerHeight*.92);
-  if(height>0)panel.style.setProperty('--ui-modal-editor-session-block',(height/rootPx)+'rem');
+ function viewport(dialog){
+  const view=window.visualViewport,height=view?.height||innerHeight;
+  dialog.style.setProperty('--ui-modal-max-block',(height*.92)+'px');
+  dialog.style.setProperty('--ui-modal-viewport-top',(view?.offsetTop||0)+'px');
+  dialog.style.setProperty('--ui-modal-viewport-bottom',Math.max(0,innerHeight-(view?.offsetTop||0)-height)+'px');
  }
- function open(dialog,{variant='compact',returnFocus=document.activeElement,initialFocus=null}={}){
-  const old=entries.get(dialog);if(old){old.epoch++;old.animation?.cancel();}
-  const rec={epoch:(old?.epoch||0)+1,animation:null,returnFocus,variant,closing:false};entries.set(dialog,rec);version++;
+ function revealFocusedControl(dialog){
+  if(top()!==dialog)return;
+  const scroll=dialog.querySelector(':scope > .q4-regular-panel .q4-regular-scroll'),active=document.activeElement;
+  if(!scroll?.contains(active)||!scroll.getBoundingClientRect||!active?.getBoundingClientRect)return;
+  const box=scroll.getBoundingClientRect(),field=active.getBoundingClientRect(),view=window.visualViewport;
+  const visibleTop=Math.max(box.top,view?.offsetTop||0),visibleBottom=Math.min(box.bottom,(view?.offsetTop||0)+(view?.height||innerHeight));
+  if(visibleBottom<=visibleTop)return;
+  const delta=field.top<visibleTop?field.top-visibleTop:field.bottom>visibleBottom?field.bottom-visibleBottom:0;
+  if(delta)scroll.scrollTop=Math.max(0,Math.min(scroll.scrollHeight-scroll.clientHeight,scroll.scrollTop+delta));
+ }
+ // One explicit content-size owner. Callers patch DOM inside mutate; no observer
+ // loop or page-specific height timer is needed. Existing editors remain fixed
+ // for their session unless they request a resize.
+ function resize(dialog,mutate=null,{animate=true}={}){
+  const rec=entries.get(dialog),panel=dialog.querySelector(':scope > .q4-regular-panel');
+  if(!rec||!dialog.open||rec.closing||!panel)return false;
+  const from=panel.getBoundingClientRect().height,scroll=panel.querySelector('.q4-regular-scroll'),scrollTop=scroll?.scrollTop||0;
+  rec.sizeAnimation?.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;
+  mutate?.();if(entries.get(dialog)!==rec||!dialog.open||rec.closing)return false;
+  viewport(dialog);panel.style.removeProperty('--ui-modal-editor-session-block');
+  const to=Math.min(panel.getBoundingClientRect().height,(window.visualViewport?.height||innerHeight)*.92);
+  if(to<=0)return false;
+  panel.style.setProperty('--ui-modal-editor-session-block',to+'px');if(scroll)scroll.scrollTop=scrollTop;
+  if(!animate||less()||Math.abs(from-to)<1){revealFocusedControl(dialog);return true;}
+  const a=panel.animate([{height:from+'px'},{height:to+'px'}],{duration:time('--ui-motion',250),easing:ease()});
+  rec.sizeAnimation=a;dialog.dataset.modalResizing='true';
+  const finish=()=>{if(entries.get(dialog)===rec&&rec.sizeAnimation===a){a.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;revealFocusedControl(dialog);}};
+  a.finished.then(finish,()=>{});return true;
+ }
+ function open(dialog,{variant='compact',returnFocus=document.activeElement,initialFocus=null,contentSize='session',history=false}={}){
+  const old=entries.get(dialog);if(old){old.epoch++;old.animation?.cancel();old.sizeAnimation?.cancel();}
+  const rec={epoch:(old?.epoch||0)+1,animation:null,sizeAnimation:null,returnFocus,variant,closing:false,contentSize,geometry:old?.geometry||capture(dialog,['--ui-modal-max-block','--ui-modal-viewport-top','--ui-modal-viewport-bottom'])};entries.set(dialog,rec);version++;
   dialog.dataset.modalVariant=variant;dialog.classList.remove('is-closing');dialog.style.opacity='';dialog.style.transform='';
+  dialog.dataset.modalContentSize=contentSize;delete dialog.dataset.modalResizing;
   if(!bound.has(dialog))bind(dialog,()=>close(dialog));
-  if(!dialog.open)dialog.showModal();paintLock();if(variant==='editor')sizeEditor(dialog);
+  viewport(dialog);if(!dialog.open)dialog.showModal();paintLock();if(variant==='editor')resize(dialog,null,{animate:false});
+  registerHistory(dialog,rec,old,history);
   dialog.classList.add('is-open');
-  if(!less()){const a=dialog.animate([{opacity:0},{opacity:1}],{duration:200,easing:'cubic-bezier(.22,1,.36,1)'});rec.animation=a;a.finished.then(()=>{if(entries.get(dialog)===rec){a.cancel();rec.animation=null;}},()=>{});}
-  if(initialFocus){const t=typeof initialFocus==='function'?initialFocus():initialFocus;t?.focus({preventScroll:true});}
+  if(!less()){const a=dialog.animate([{opacity:0},{opacity:1}],{duration:time('--ui-modal-fade-open',200),easing:ease()});rec.animation=a;a.finished.then(()=>{if(entries.get(dialog)===rec&&rec.animation===a){a.cancel();rec.animation=null;}},()=>{});}
+  if(initialFocus){const t=typeof initialFocus==='function'?initialFocus():initialFocus;t?.focus({preventScroll:true});revealFocusedControl(dialog);}
   return rec.epoch;
  }
  function close(dialog,{after=null,immediate=false}={}){
   const rec=entries.get(dialog);if(!dialog.open){release(dialog,after);return;}
   if(!rec){dialog.close();after?.();return;}
-  if(rec.closing)return;rec.closing=true;version++;const epoch=++rec.epoch;
-  const opacity=getComputedStyle(dialog).opacity;rec.animation?.cancel();rec.animation=null;
+  if(rec.closing)return;rec.closing=true;retireHistory(rec);version++;const epoch=++rec.epoch;
+  const opacity=getComputedStyle(dialog).opacity;rec.animation?.cancel();rec.animation=null;rec.sizeAnimation?.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;
   dialog.classList.remove('is-open');dialog.classList.add('is-closing');
   const finish=()=>{if(entries.get(dialog)!==rec||rec.epoch!==epoch)return;if(dialog.open)dialog.close();release(dialog,after);};
   // The verified desktop close strategy is synchronous. Mobile has one opacity-only owner.
   if(immediate||less()||matchMedia('(min-width:768px)').matches){finish();return;}
-  const a=dialog.animate([{opacity:Number(opacity)||1},{opacity:0}],{duration:150,easing:'ease-in',fill:'forwards'});rec.animation=a;
+  const a=dialog.animate([{opacity:Number(opacity)||1},{opacity:0}],{duration:time('--ui-modal-fade-close',150),easing:'ease-in',fill:'forwards'});rec.animation=a;
   a.finished.then(finish,()=>{});
  }
- let resizeFrame=0;window.addEventListener('resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{entries.forEach((r,d)=>{if(d.open&&r.variant==='editor'&&!r.closing)sizeEditor(d);});});});
- return {open,close,bind,sync:paintLock,get activeIds(){return [...entries.keys()].filter(d=>d.open).map(d=>d.id);}};
+ let resizeFrame=0;const resizeViewport=()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{entries.forEach((r,d)=>{if(d.open&&!r.closing){viewport(d);if(r.variant==='editor')resize(d,null,{animate:false});else revealFocusedControl(d);}});});};
+ window.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('scroll',resizeViewport);
+ return {open,close,bind,resize,sync:paintLock,get activeIds(){return [...entries.keys()].filter(d=>d.open).map(d=>d.id);}};
 })());
 /* MSG0465: one optional desired-date policy for renderer, keyboard, draft and committed state.
    This is a user preference, NOT a delivery reservation or supplier-calendar engine. */

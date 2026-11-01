@@ -1,4 +1,4 @@
-import {readFile,writeFile,mkdir,rm,lstat,realpath,rename} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,rm,lstat,realpath,rename,readdir} from 'node:fs/promises';
 import {resolve,dirname,relative,sep,extname} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
@@ -10,12 +10,37 @@ import {buildBrowserReference} from './engine/build-browser-reference.mjs';
 const repositoryRoot=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const safeRelative=value=>typeof value==='string'&&value&&!value.includes('\\')&&!value.split('/').some(p=>!p||p==='.'||p==='..')&&!value.startsWith('/');
+const addressFunction='functions/api/address/search.js';
+const addressRoute='/api/address/search';
 async function readInside(root,path){
   if(!safeRelative(path))throw Error('BUILD_PATH_INVALID');
   const full=resolve(root,path),real=await realpath(full);
   let cursor=root;for(const part of path.split('/')){cursor=resolve(cursor,part);if((await lstat(cursor)).isSymbolicLink())throw Error('BUILD_SYMLINK_FORBIDDEN');}
   if(!real.startsWith(await realpath(root)+sep))throw Error('BUILD_SYMLINK_FORBIDDEN');
   return readFile(full);
+}
+
+/** Functions are compiled by Pages from the repository, never copied as public assets. */
+export async function reviewedFunctions(root,config){
+  const declared=config.functions??[];
+  if(!Array.isArray(declared)||declared.length>1||declared.some(item=>item.source!==addressFunction||item.route!==addressRoute||!/^[a-f0-9]{64}$/.test(item.sha256??'')))throw Error('BUILD_FUNCTION_SCOPE_INVALID');
+  const found=[];
+  async function scan(path){
+    let entries;try{entries=await readdir(resolve(root,path),{withFileTypes:true});}catch(error){if(error.code==='ENOENT')return;throw error;}
+    for(const entry of entries){const child=path+'/'+entry.name;if(entry.isSymbolicLink())throw Error('BUILD_SYMLINK_FORBIDDEN');if(entry.isDirectory())await scan(child);else found.push(child);}
+  }
+  await scan('functions');
+  if(found.length!==declared.length||found.some(path=>!declared.some(item=>item.source===path)))throw Error('BUILD_FUNCTION_SCOPE_INVALID');
+  const result=[];
+  for(const item of declared){
+    const bytes=await readInside(root,item.source);if(digest(bytes)!==item.sha256)throw Error('BUILD_FUNCTION_HASH_MISMATCH:'+item.source);
+    const ast=parse(bytes.toString('utf8'),{ecmaVersion:2024,sourceType:'module'});
+    // The small handler has no imported dependency or dynamic code path. This
+    // prevents an unreviewed server bundle from escaping the explicit scope.
+    const walk=node=>{if(!node||typeof node!=='object')return;if(node.type==='ImportExpression'||(['ImportDeclaration','ExportNamedDeclaration','ExportAllDeclaration'].includes(node.type)&&node.source))throw Error('BUILD_FUNCTION_IMPORT_NOT_REVIEWED');for(const value of Object.values(node))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);};walk(ast);
+    result.push({source:item.source,route:item.route,bytes:bytes.length,sha256:digest(bytes)});
+  }
+  return result;
 }
 
 /** Explicit ESM closure; imports outside the reviewed source roots fail the build. */
@@ -49,6 +74,7 @@ export async function buildPages({root=repositoryRoot,engineOnly=false,outputDir
   // Output is deliberately fixed; never delete a caller-supplied directory.
   if(output!==resolve(root,engineOnly?'.build-engine':'dist'))throw Error('BUILD_OUTPUT_MUST_BE_FIXED_DIRECTORY');
   const modules=await browserClosure(root,config.engineEntry),files=new Map(modules);
+  const serverFunctions=engineOnly?[]:await reviewedFunctions(root,config);
   if(!engineOnly){
     for(const item of config.frontendFiles){
       if(!safeRelative(item.source)||!item.source.startsWith('web/')||!safeRelative(item.output)||/\b(?:qa|fixture|evidence|private|secret|test)\b/i.test(item.output)||!['.html','.css','.mjs','.js','.svg','.png','.webp','.woff2'].includes(extname(item.output)))throw Error('BUILD_FRONTEND_ALLOWLIST_INVALID');
@@ -75,10 +101,11 @@ export async function buildPages({root=repositoryRoot,engineOnly=false,outputDir
   }
   const reference=await buildBrowserReference({now});
   files.set('assets/iana-reference.json',Buffer.from(JSON.stringify(reference)+'\n'));
+  if(serverFunctions.length)files.set('_routes.json',Buffer.from(JSON.stringify({version:1,include:[addressRoute],exclude:[]},null,2)+'\n'));
   const sha=commitSha??process.env.CF_PAGES_COMMIT_SHA??execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   if(!/^[a-f0-9]{40}$/.test(sha))throw Error('BUILD_COMMIT_SHA_INVALID');
   const fileList=[...files].map(([path,bytes])=>({path,bytes:bytes.length,gzipBytes:gzipSync(bytes).length,sha256:digest(bytes)})).sort((a,b)=>a.path.localeCompare(b.path));
-  const identity={schemaVersion:1,repository:config.repository,project:config.project,commitSha:sha,canonicalUrl:config.canonicalUrl,scope:engineOnly?'ENGINE_MODULES_ONLY':'INTEGRATED_PRODUCT',uxHandoff:config.uxHandoff,reference:{version:reference.manifest.version,sha256:reference.manifest.sourceSha256,collectedAt:reference.manifest.collectedAt},files:fileList};
+  const identity={schemaVersion:1,repository:config.repository,project:config.project,commitSha:sha,canonicalUrl:config.canonicalUrl,scope:engineOnly?'ENGINE_MODULES_ONLY':'INTEGRATED_PRODUCT',uxHandoff:config.uxHandoff,reference:{version:reference.manifest.version,sha256:reference.manifest.sourceSha256,collectedAt:reference.manifest.collectedAt},files:fileList,...(serverFunctions.length?{serverFunctions}: {})};
   files.set('build-identity.json',Buffer.from(JSON.stringify(identity,null,2)+'\n'));
   files.set('_headers',Buffer.from('/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n/assets/iana-reference.json\n  Cache-Control: no-store\n/build-identity.json\n  Cache-Control: no-store\n'));
   const staging=output+'.pending';await rm(staging,{recursive:true,force:true});await mkdir(staging,{recursive:true});

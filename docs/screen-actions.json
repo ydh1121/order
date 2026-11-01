@@ -151,6 +151,83 @@
           "purpose": "Write a serialized revisioned reset tombstone; preserve data on failure/conflict."
         }
       ]
+    },
+    {
+      "id": "Q3_ADDRESS_PATTERN_1",
+      "route": "/#/form",
+      "contract": "MSG0519_ADDRESS_PARENT_DRAFT_V1",
+      "actions": [
+        {
+          "id": "q3-address-slot",
+          "type": "open-child-dialog",
+          "target": "address-editor-dialog",
+          "durableWrites": 0
+        },
+        {
+          "id": "address-query",
+          "type": "same-origin-search",
+          "target": "/api/address/search",
+          "requires": "IME settled, 2+ characters, 300 ms; cancel/generation guarded",
+          "durableWrites": 0
+        },
+        {
+          "id": "address-results [role=option]",
+          "type": "select-child-draft",
+          "target": "address-detail",
+          "durableWrites": 0
+        },
+        {
+          "id": "address-detail/address-dropoff",
+          "type": "optional-child-fields",
+          "durableWrites": 0,
+          "searchCalls": 0
+        },
+        {
+          "id": "address-retry",
+          "type": "retry-search",
+          "durableWrites": 0
+        },
+        {
+          "id": "address-next-page",
+          "type": "next-search-page",
+          "durableWrites": 0
+        },
+        {
+          "id": "address-clear",
+          "type": "clear-child-address",
+          "durableWrites": 0
+        },
+        {
+          "id": "address-confirm",
+          "type": "patch-parent-address-fields",
+          "requires": "same stableID + parent edit generation; verified selection or explicit clear",
+          "durableWrites": 0
+        },
+        {
+          "id": "address-cancel/address-close/Escape/back",
+          "type": "cancel-child-draft",
+          "target": "q3-address-slot",
+          "durableWrites": 0
+        },
+        {
+          "id": "save-site",
+          "type": "serialized-revisioned-parent-save",
+          "durableWrites": 1
+        },
+        {
+          "id": "cancel-site/site-editor-close/Escape/back",
+          "type": "discard-parent-and-address-draft",
+          "durableWrites": 0
+        }
+      ],
+      "gates": {
+        "q3AndFinal": "provider selection + postal + identity + mandatory contacts",
+        "q4Draft": "stable ID; address may be incomplete",
+        "optional": [
+          "detail",
+          "dropoff"
+        ]
+      }
     }
   ]
 }

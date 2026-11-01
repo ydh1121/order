@@ -20,6 +20,21 @@
   },
   "frontendFiles": [
     {
+      "source": "web/address-contract.mjs",
+      "output": "address-contract.mjs",
+      "sha256": "408d07178923562a14be4981fc29e00d4df37eeac4287ab5baf022ad8f324211"
+    },
+    {
+      "source": "web/address-service.mjs",
+      "output": "address-service.mjs",
+      "sha256": "6b677b75578340bb77bffea251fdd1de86a930f30b07b4d8e2781d1909077b3c"
+    },
+    {
+      "source": "web/address-ui.mjs",
+      "output": "address-ui.mjs",
+      "sha256": "fa2fa9b72acaaf7278633785cd3a41efe545be7c8ecef8a67257d558f08de5ce"
+    },
+    {
       "source": "web/allocation-ui.mjs",
       "output": "allocation-ui.mjs",
       "sha256": "a74549e006fb7722632e3f4bffed44bcd5d036342d402ef1780c3786e392e6ac"
@@ -27,12 +42,12 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "9862c511095265606c4774884d006af4cc36c2699db1fb76c115b2365f08e082"
+      "sha256": "8c50a9b243e16015d169ab97f13c98ae38ad5c414423ca287c2fc41d00c593f4"
     },
     {
       "source": "web/common-ui.mjs",
       "output": "common-ui.mjs",
-      "sha256": "691f943ed62b12d75b7b073c500c43c6f6c89559a72edcdfa29e15fce9b20d2a"
+      "sha256": "8f133b06d85357c6dcc6f5f3faa42a8d90552144cde31f9e71e64c06e353aadd"
     },
     {
       "source": "web/contact-ui.mjs",
@@ -42,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "93f5f44ee5c125a376603d4abfb5ec5640b9dc49def63142e71869ba3f07a09f"
+      "sha256": "8a9c2f6d2d9799d07946ed7f9f888e960d7c1b4ca458684f5000633e4d39c9e3"
     },
     {
       "source": "web/main.mjs",
@@ -62,14 +77,21 @@
     {
       "source": "web/storage.mjs",
       "output": "storage.mjs",
-      "sha256": "d4c19b5fcc07e757d319b1beee7f070d2a3db5565e38a2a9398f3e4779a17e31"
+      "sha256": "027a81935b8ebc6f98b0d521fbeeb4a1256486d06fe97269ace75dbd3a828163"
     },
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "77a14d509f77707f279e0e84ae8c2167bf704234ad4bb0339a642940cc0c90bc"
+      "sha256": "2957e1a1caab3d47c7004f2fce316c9b8b09135c9145c0f0848c8fed82d3a547"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "functions": [
+    {
+      "source": "functions/api/address/search.js",
+      "route": "/api/address/search",
+      "sha256": "5c66eecd1bf94329a6c79e0742da5ad8795d6e29c33ab8cdaed6692016a8b1b3"
+    }
+  ]
 }

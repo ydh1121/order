@@ -4,6 +4,8 @@ import {compare,fromRatio,multiply} from '../src/engine/calculation/exact.mjs';
 import {quantityUnit,quantityDisplayUnit,quantityInputText,quantityDisplayNote,numericInput,moneyDisplay,quantityLabel,validMonthlyQuantity,monthlyQuantityText,convertMonthlyUnit,currentPurchaseCost,totalPurchaseCost,exactDisplay,baseQuantity,quantityFactor} from './quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from './allocation-ui.mjs';
 import {CODE1_UI,CODE1_ORDER_VALIDATION,CODE1_ORDER_ERRORS} from './common-ui.mjs';
+import {addressFields,addressStatus,addressLines} from './address-contract.mjs';
+import {createAddressEditor} from './address-ui.mjs';
 (()=>{'use strict';
 const $=id=>document.getElementById(id),w=n=>moneyDisplay(n)+'원';const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const valid=n=>/^[1-9]\d*$/.test(String(n))&&Number.isSafeInteger(+n); const sum=(a,b)=>{let n=Number(a)*Number(b);return Number.isSafeInteger(n)&&n>=0?n:null};const DAYS=['월','화','수','목','금','토','일'];const H=['1','2','3','4'],SZ=['왕란','특란','대란','중란','소란'],PK=['10','20','30'];const unit=x=>String(x)==='30'?'판':'팩';const selected=l=>l?.housing&&l?.size&&l?.pack;const sku=l=>selected(l)?`${l.housing}번 · ${l.size} · ${l.pack}구`:'';
@@ -24,7 +26,7 @@ const showComma=n=>{const raw=numericInput(n);return raw===null?String(n??''):ra
 // v0.15R2 independent delivery domain: quote lines are purchasing items;
 // allocations are separate logistics destinations (do not multiply buyer qty).
 const ident=(prefix)=>`${prefix}-${crypto.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}`;
-const blankSite=()=>({id:ident('loc'),name:'',road:'',postal:'',detail:'',jibun:'',status:'NONE',region:'',providerId:'',contactPhone:'',email:'',storePhone:'',addressState:'ADDRESS_UI_PENDING',basicInfoDraft:true});
+const blankSite=()=>({id:ident('loc'),name:'',...addressFields(),status:'NONE',contactPhone:'',email:'',storePhone:'',addressState:'EMPTY',basicInfoDraft:true});
 const blankAllocation=(lineId,locationId)=>({id:ident('alloc'),lineId,locationId,qty:'',mode:'FLEX',modeExplicit:false,freq:1,days:[],intervalWeeks:1,cycleCount:1,scheduleDetail:'count',weekPlans:[],qtySource:'auto',suggestedQty:null,variableQty:false,qtyMin:'',qtyMax:'',qualityTest:false,advanced:{contactChannels:['phone','sms','kakao'],orderProcess:'store',storeOffDays:[],memo:'',flexOrderProcess:'store',fixedOrderProcess:'seller',weekend:'ask',holiday:'ask',substituteHoliday:'ask',storeOffPolicy:'ask'}});
 const locationById=id=>S.locations.find(l=>l.id===id);
 const allocationById=id=>S.allocations.find(a=>a.id===id);
@@ -120,7 +122,7 @@ resetDialog.querySelector('[data-reset-confirm]').onclick=async()=>{
 let current='home';
 // Field-owned error state, never animate or paint the entire accordion/dialog.
 function legacyErrorState(id,message){
- const candidates=id==='err-q1'?[...document.querySelectorAll('#sku-editor .picks')]:id==='err-q2'?[...document.querySelectorAll('#q2-lines input')]:id==='err-q3'?[...document.querySelectorAll('#site-editor input:not([type=hidden]),#site-editor button#find-address,#site-editor button#site-detail-popup-open')]:[];
+ const candidates=id==='err-q1'?[...document.querySelectorAll('#sku-editor .picks')]:id==='err-q2'?[...document.querySelectorAll('#q2-lines input')]:id==='err-q3'?[...document.querySelectorAll('#site-editor input:not([type=hidden]),#q3-address-slot')]:[];
  for(const target of candidates){
   for(const control of [target,...target.querySelectorAll('[data-pick]')]){control.removeAttribute('aria-invalid');control.removeAttribute('aria-describedby');control.classList.remove('legacy-error-shake');}
   if(id==='err-q1')target.previousElementSibling?.removeAttribute('data-order-invalid');
@@ -129,7 +131,7 @@ function legacyErrorState(id,message){
  let invalid=[];
  if(id==='err-q1'&&message.includes('난각번호'))invalid=[!editing.housing?$('picks-housing'):null,!editing.size?$('picks-size'):null,!editing.pack?$('picks-pack'):null].filter(Boolean);
  if(id==='err-q2')invalid=S.lines.flatMap(l=>[!validMonthlyQuantity(l)?document.getElementById('qty-'+l.id):null,!valid(l.price)?document.getElementById('price-'+l.id):null]).filter(Boolean);
- if(id==='err-q3'&&siteEditing){invalid=[!siteEditing.name?$('site-name'):null,!siteEditing.road||!/^[0-9]{5}$/.test(siteEditing.postal)?$('find-address'):null,!siteEditing.detail?$('site-detail-popup-open'):null].filter(Boolean);}
+ if(id==='err-q3'&&siteEditing){invalid=OrderSiteContract.issues(siteEditing).filter(i=>!OrderSiteContract.isAwaiting(i)).map(i=>$(q3FieldId(i.key))).filter(Boolean);}
  for(const target of invalid){
   if(!target||target.closest('[hidden]'))continue;
   target.setAttribute('aria-invalid','true');target.setAttribute('aria-describedby',id);
@@ -467,14 +469,27 @@ function paintPageFieldIssues(issues,{shake=false,projection=orderValidationProj
 
 function updateLineSpend(){const l=lineById(S.current);$('line-total').textContent=l&&validMonthlyQuantity(l)&&valid(l.price)&&sum(l.qty,l.price)!==null?w(sum(l.qty,l.price)):'—';}
 // Owns Q3 and Q4 only. v0.15R1 Q1/Q2 layout code remains from baseline.
-let siteEditing=null;let siteEditOriginal=null;let primarySiteId=null;let focusedDetailDraft=null;let siteManagementOpen=false;let connectingLineId=null;let editingAllocationId=null;let deliveryDraft=null;
+let siteEditing=null;let siteEditOriginal=null;let siteEditGeneration=0;let primarySiteId=null;let focusedDetailDraft=null;let siteManagementOpen=false;let connectingLineId=null;let editingAllocationId=null;let deliveryDraft=null;
 const q3Expanded=new Map();let q3EditorReturn=null,q3EditorSelector='#add-site',q4AssignmentDraft=null;const addressTrace=[];
+const addressMarkup=site=>addressLines(site).map(line=>`<span>${esc(line)}</span>`).join('');
+const addressEditor=createAddressEditor({
+ getParent:()=>siteEditing&&$('site-editor-dialog').open&&!$('site-editor-dialog').classList.contains('is-closing')?{siteId:siteEditing.id,generation:siteEditGeneration,site:siteEditing}:null,
+ onInvalid:control=>orderShake(control),
+ onConfirm:({siteId,generation,address})=>{
+  if(!siteEditing||siteEditing.id!==siteId||siteEditGeneration!==generation||!$('site-editor-dialog').open||q3SaveBusy)return false;
+  if(siteEditOriginal&&!locationById(siteId))return false;
+  Object.assign(siteEditing,addressFields(address));siteEditing.addressState=addressStatus(siteEditing).state;
+  q3PaintAddress();q3SyncSaveAction();
+  const exposed=[...$('site-editor-dialog').querySelectorAll('[data-q3-field][data-error="true"]')].map(g=>g.dataset.q3Field);
+  q3PaintErrors(OrderSiteContract.issues(siteEditing).filter(i=>exposed.includes(i.key)),{focus:false});refreshCompletionBadges();return true;
+ }
+});
 function renderAddress(){
  const host=$('q3-sites');if(!host)return;const ids=new Set(S.locations.map(s=>s.id));for(const id of q3Expanded.keys())if(!ids.has(id))q3Expanded.delete(id);
  host.innerHTML=S.locations.map(site=>{
   const savedItems=S.allocations.filter(a=>a.locationId===site.id&&a.modeExplicit===true&&a.q4Review?.version==='0460');
   const itemCount=new Set(savedItems.map(a=>a.lineId)).size;
-  const address=String(site.road||'').trim()?`<div class="q3-address-value" data-q3-summary-value="address">${esc(site.road)}${site.detail?' · '+esc(site.detail):''}</div>`:'<div class="q3-address-value" data-q3-summary-value="address" aria-label="사업장 소재지 입력 대기">—</div>';
+  const address=String(site.road||'').trim()?`<div class="q3-address-value ui-location-lines" data-q3-summary-value="address">${addressMarkup(site)}</div>`:'<div class="q3-address-value" data-q3-summary-value="address">소재지 미입력</div>';
   const contacts=`<div class="q3-contact-grid"><div class="q3-contact-cell" data-q3-summary-field="contactPhone"><span class="q3-info-label">담당자</span><span>${esc(site.contactPhone||'—')}</span></div><div class="q3-contact-cell" data-q3-summary-field="storePhone"><span class="q3-info-label">대표번호</span><span>${esc(site.storePhone||'—')}</span></div><div class="q3-contact-cell q3-contact-cell--email" data-q3-summary-field="email"><span class="q3-info-label">이메일</span><span>${esc(site.email||'—')}</span></div></div>`;
   const actions=`<div class="q3-info-management"><div class="q3-copy-slot">${S.locations.length>1?`<button class="ui-copy-action" data-copy-align="start" type="button" data-contact-copy="${esc(site.id)}">${OrderIcons.svg('clone')}<span>다른 사업장에 연락처 복사</span></button>`:''}</div><div class="q3-site-actions code1-text-actions">${CODE1_UI.textAction('수정','site-edit',esc(site.id))}${CODE1_UI.textAction('삭제','site-delete',esc(site.id),true)}</div></div>`;
   const items=itemCount?`<section class="q3-products-frame" aria-label="납품받을 품목"><h4 class="q3-delivered-title"><span>납품받을 품목</span><span class="q3-product-count">${itemCount}종</span></h4>${savedItems.map(a=>{const line=lineById(a.lineId);return `<div class="q3-delivered-item" data-q3-item="${esc(a.id)}"><div class="q3-item-copy"><strong>${esc(itemIdentity(line))}</strong><span>${esc(deliveryLabel(a))}</span><span>${esc(a.mode==='ONCE'?'1회':'회당')} ${esc(a.qty)}${esc(unit(line?.pack))}</span></div><div class="code1-text-actions">${CODE1_UI.textAction('수정','q3-q4-edit',esc(a.id))}${CODE1_UI.textAction('해제','q3-unlink',esc(a.id),true)}</div></div>`;}).join('')}</section>`:'';
@@ -513,7 +528,7 @@ function renderDelivery(){
   const content=rows.map(a=>{
   const name=siteName(locationById(a.locationId));
   const qtyLabel=a.mode!=='ONCE'&&q4SitesForLine(a.lineId).length>=2&&!valid(a.qty)?'회당 수량 미설정':a.mode==='ONCE'&&q4SitesForLine(a.lineId).length>=2?`1회 ${esc(a.oneTimeDeliveryQty||'미입력')}${unit(lineById(a.lineId)?.pack)}`:a.variableQty&&valid(a.qtyMin)&&valid(a.qtyMax)?`1회 ${esc(a.qtyMin)}~${esc(a.qtyMax)}${unit(l.pack)}`:valid(a.qty)?`1회 ${esc(a.qty)}${unit(l.pack)}`:'회당 수량 미설정';
-  return `<div class="allocation-item q4-body-site" data-allocation="${esc(a.id)}"><div class="allocation-summary"><div class="allocation-summary-copy"><h4 class="q4-body-site-title">${esc(name)}</h4><span class="q4-body-site-detail" data-q4-summary-fields="mode repeat">${esc(deliveryLabel(a))}</span><span class="allocation-quantity q4-body-site-detail" data-q4-summary-fields="monthly qty min max">${a.mode!=='ONCE'&&q4SitesForLine(a.lineId).length>=2?(valid(a.monthlyDemandQty)?'월 '+esc(a.monthlyDemandQty)+({each:'개',tray:'판',pack:'팩'}[a.monthlyDemandUnit||quantityUnit(l)])+' · ':'월 사용량 미입력 · '):''}${qtyLabel}</span></div><div class="q4-allocation-item-actions code1-text-actions">${CODE1_UI.textAction(a.modeExplicit||a.q4Review?.version==='0460'?'수정':'설정하기','edit-allocation',esc(a.id))}${CODE1_UI.textAction('삭제','delete-allocation',esc(a.id),false)}</div></div></div>`;
+  return `<div class="allocation-item q4-body-site" data-allocation="${esc(a.id)}"><div class="allocation-summary"><div class="allocation-summary-copy"><h4 class="q4-body-site-title">${esc(name)}</h4>${addressLines(locationById(a.locationId)).length?`<span class="q4-body-site-detail ui-location-lines">${addressMarkup(locationById(a.locationId))}</span>`:''}<span class="q4-body-site-detail" data-q4-summary-fields="mode repeat">${esc(deliveryLabel(a))}</span><span class="allocation-quantity q4-body-site-detail" data-q4-summary-fields="monthly qty min max">${a.mode!=='ONCE'&&q4SitesForLine(a.lineId).length>=2?(valid(a.monthlyDemandQty)?'월 '+esc(a.monthlyDemandQty)+({each:'개',tray:'판',pack:'팩'}[a.monthlyDemandUnit||quantityUnit(l)])+' · ':'월 사용량 미입력 · '):''}${qtyLabel}</span></div><div class="q4-allocation-item-actions code1-text-actions">${CODE1_UI.textAction(a.modeExplicit||a.q4Review?.version==='0460'?'수정':'설정하기','edit-allocation',esc(a.id))}${CODE1_UI.textAction('삭제','delete-allocation',esc(a.id),false)}</div></div></div>`;
   }).join('')||'';
   return `<div class="delivery-product q4-body-item" data-q4-body-line="${esc(key)}" data-expanded="${expanded}" data-complete="${complete}" data-error="${error}"><h3 class="q4-body-heading"><button type="button" class="q4-body-toggle" id="${esc(id)}-header" data-q4-body-toggle="${esc(key)}" aria-expanded="${expanded}" aria-controls="${esc(id)}-panel"><span class="q4-body-heading-copy"><strong class="q4-body-title">${esc(itemIdentity(l))}</strong><span class="q4-body-subtitle">${esc(summary)}</span></span><span class="q4-body-chevron" aria-hidden="true">${CODE1_UI.chevron}</span></button></h3><div class="q4-body-panel" id="${esc(id)}-panel" role="region" aria-labelledby="${esc(id)}-header" aria-hidden="${!expanded}"><div class="q4-body-panel-inner"${expanded?'':' inert'}>${content}<button type="button" class="q4-body-assignment-action" data-q4-select-sites="${esc(key)}">${OrderIcons.svg('swap')}<span>${rows.length?'납품 사업장 변경':'납품 사업장 선택'}</span></button></div></div></div>`;
  }).join('');
@@ -526,7 +541,7 @@ function invoiceDetails(stats){
   return `<div class="invoice-row invoice-buy" role="row"><span class="invoice-item">${esc(label)}</span><span class="invoice-meta">월 ${validMonthlyQuantity(l)?esc(monthlyQuantityText(l)):'—'}${unitName} · ${valid(l.price)?w(Number(l.price)):'입력 필요'}/${unit(l.pack)}</span><strong>${sub===null?'입력 필요':w(sub)}</strong></div>`;
  }).join('');
  const groups=S.locations.map(site=>({site,allocations:S.allocations.filter(a=>a.locationId===site.id)})).filter(x=>x.allocations.length);
- const bySite=groups.map(({site,allocations})=>`<div class="result-site-group invoice-site"><strong>${esc(siteName(site))}</strong><div class="site-delivery-address">${esc(site.road||'')}${site.detail?' · '+esc(site.detail):''}${site.postal?' ('+esc(site.postal)+')':''}</div>${allocations.map(a=>{const l=lineById(a.lineId);return l?`<div class="invoice-row invoice-assignment"><span>${esc(itemIdentity(l))}</span><strong>1회 ${valid(a.mode==='ONCE'&&S.allocations.filter(x=>x.lineId===a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty)?esc(Number(a.mode==='ONCE'&&S.allocations.filter(x=>x.lineId===a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty).toLocaleString('ko-KR')):'입력 필요'}${unit(l.pack)}</strong></div>`:''}).join('')}</div>`).join('');
+ const bySite=groups.map(({site,allocations})=>`<div class="result-site-group invoice-site"><strong>${esc(siteName(site))}</strong><div class="site-delivery-address ui-location-lines">${addressMarkup(site)}</div>${allocations.map(a=>{const l=lineById(a.lineId);return l?`<div class="invoice-row invoice-assignment"><span>${esc(itemIdentity(l))}</span><strong>1회 ${valid(a.mode==='ONCE'&&S.allocations.filter(x=>x.lineId===a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty)?esc(Number(a.mode==='ONCE'&&S.allocations.filter(x=>x.lineId===a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty).toLocaleString('ko-KR')):'입력 필요'}${unit(l.pack)}</strong></div>`:''}).join('')}</div>`).join('');
  const terms=shippingRows().map(({line,allocation:a,site})=>`<div class="invoice-term"><span>${esc(siteName(site))} · ${esc(itemIdentity(line))}</span><strong>${esc(deliveryLabel(a))}</strong><span>1회 ${valid(a.mode==='ONCE'&&q4SitesForLine(a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty)?esc(Number(a.mode==='ONCE'&&q4SitesForLine(a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty).toLocaleString('ko-KR')):'입력 필요'}${unit(line.pack)}</span></div>`).join('');
  const comparable=stats.comparable&&stats.supply!==null&&stats.buyer!==null;
  const comparison=`<div class="invoice-row invoice-compare"><span>현재 월 구매비용</span><strong>${stats.buyer===null?'입력 필요':w(stats.buyer)}</strong></div><div class="invoice-row invoice-compare"><span>예시 월 납품 상품대금</span><strong>${comparable?w(stats.supply):'비교 조건 확인 필요'}</strong></div>${comparable?`<div class="invoice-row invoice-compare"><span>예시 월 차액</span><strong>${w(Math.abs(stats.buyer-stats.supply))} ${stats.buyer>=stats.supply?'절감':'증가'}</strong></div>`:'<p class="invoice-pending">월간 납품 수량·기간·예시 단가 조건을 확인한 후 비교할 수 있습니다.</p>'}`;
@@ -625,7 +640,7 @@ $('sku-delete-commit').onclick=()=>closeSkuDeleteDialog(true);
 window.OrderModalShell.bind($('sku-delete-dialog'),()=>closeSkuDeleteDialog(false));
 
 
-// MSG0481: Q3 basic records, copy variant and Q4 assignment boundary. No address provider calls.
+// Q3 parent owns the durable transaction; address selection edits only its child draft.
 function siteFocusDirty(){return false;}
 function siteEditingDirty(){return !!siteEditing;}
 function q4DraftActive(){return !!deliveryDraft||!!q4AssignmentDraft;}
@@ -642,30 +657,36 @@ function guardPendingEdits(destination){
 }
 function q3FieldId(key){return {name:'site-name',address:'q3-address-slot',contactPhone:'site-contact-phone',email:'site-email',storePhone:'site-store-phone'}[key];}
 function q3ReadInputs(){if(!siteEditing)return;for(const [key,id] of [['name','site-name'],['contactPhone','site-contact-phone'],['email','site-email'],['storePhone','site-store-phone']])siteEditing[key]=key.endsWith('Phone')?OrderPhone.get($(id)):$(id).value;}
+function q3PaintAddress(){
+ const trigger=$('q3-address-slot'),hasAddress=!!String(siteEditing?.road||'').trim();
+ trigger.innerHTML=hasAddress?`${OrderIcons.svg('search')}<span class="ui-location-lines">${addressMarkup(siteEditing)}</span>`:`${OrderIcons.svg('search')}<span>소재지 검색</span>`;
+ trigger.classList.toggle('ui-field-trigger--multiline',hasAddress);trigger.setAttribute('aria-label',hasAddress?'사업장 소재지 변경: '+addressLines(siteEditing).join(', '):'소재지 검색');
+}
 function q3PaintErrors(issues,{focus=true}={}){
  issues=issues.filter(i=>!OrderSiteContract.isAwaiting(i));const dialog=$('site-editor-dialog');dialog.querySelectorAll('[data-q3-field]').forEach(g=>{const issue=issues.find(i=>i.key===g.dataset.q3Field),input=$(q3FieldId(g.dataset.q3Field));g.dataset.error=String(!!issue);input?.setAttribute('aria-invalid',String(!!issue));if(g.dataset.q3Field.endsWith('Phone'))OrderPhone.instance(input)?.setInvalid(!!issue);
   const note=g.querySelector('.ui-field-error');if(!note)return;const visual=issue?.key==='email'&&issue?.code==='INVALID_SYNTAX';note.classList.toggle('ui-feedback-sr',!visual);note.textContent=visual?'이메일 형식을 확인해 주세요.':issue?.message||'';note.hidden=!issue;note.id='q3-'+g.dataset.q3Field+'-error';if(issue)input?.setAttribute('aria-describedby',note.id);else input?.removeAttribute('aria-describedby');
  });if(focus&&issues.length){const el=$(q3FieldId(issues[0].key));el?.scrollIntoView({block:'nearest',behavior:'instant'});el?.focus({preventScroll:true});orderShake(el?.closest('.ui-phone-shell')||el);}
 }
 function q3MountEditor(trigger){
+ addressEditor.invalidate();siteEditGeneration++;
  const dialog=$('site-editor-dialog');q3EditorReturn=trigger||document.activeElement;q3EditorSelector=siteEditOriginal?`[data-site-edit="${CSS.escape(siteEditOriginal)}"]`:'#add-site';
  $('site-editor-title').textContent=siteEditOriginal?'사업장 수정':'사업장 추가';
  OrderPhone.mount($('site-contact-phone'));OrderPhone.mount($('site-store-phone'));OrderEmailUI.mount($('site-email'));
  for(const [key,id] of [['name','site-name'],['contactPhone','site-contact-phone'],['email','site-email'],['storePhone','site-store-phone']]){if(key.endsWith('Phone'))OrderPhone.set($(id),siteEditing[key]||'');else if(key==='email')OrderEmailUI.instance($(id)).reset(String(siteEditing[key]||''));else $(id).value=String(siteEditing[key]||'');}
- $('q3-address-slot').textContent=siteEditing.road?[siteEditing.road,siteEditing.detail].filter(Boolean).join(' · '):'—';
+ q3PaintAddress();
  q3SyncSaveAction();$('site-editor-error').textContent='';q3PaintErrors([]);
- OrderModalShell.open(dialog,{variant:'compact',returnFocus:()=>q3EditorReturn?.isConnected?q3EditorReturn:document.querySelector(q3EditorSelector),initialFocus:()=>$('site-name')});refreshCompletionBadges();
+ OrderModalShell.open(dialog,{variant:'compact',history:true,returnFocus:()=>q3EditorReturn?.isConnected?q3EditorReturn:document.querySelector(q3EditorSelector),initialFocus:()=>$('site-name')});refreshCompletionBadges();
 }
 function addSite(){if(!guardPendingEdits('site-add'))return;siteEditOriginal=null;siteEditing=blankSite();q3MountEditor(document.activeElement);}
 function editSite(id){if(!guardPendingEdits('site-edit'))return;const site=locationById(id);if(!site)return;siteEditOriginal=id;siteEditing=JSON.parse(JSON.stringify(site));q3MountEditor(document.activeElement);}
-function closeSiteEditor(){OrderEmailUI.instance($('site-email'))?.cancel();siteEditing=null;siteEditOriginal=null;q3SaveRevision++;q3SaveBusy=false;$('save-site').disabled=false;OrderModalShell.close($('site-editor-dialog'),{after:()=>{renderAddress();renderDelivery();refreshCompletionBadges();if(q4AssignmentDraft)paintQ4Assignment();}});}
+function closeSiteEditor(){addressEditor.invalidate();siteEditGeneration++;OrderEmailUI.instance($('site-email'))?.cancel();siteEditing=null;siteEditOriginal=null;q3SaveRevision++;q3SaveBusy=false;$('save-site').disabled=false;OrderModalShell.close($('site-editor-dialog'),{after:()=>{renderAddress();renderDelivery();refreshCompletionBadges();if(q4AssignmentDraft)paintQ4Assignment();}});}
 let q3SaveRevision=0,q3SaveBusy=false;
 function q3SyncSaveAction(){const button=$('save-site');if(!siteEditing){button.disabled=false;return;}const value=$('site-email').value,parsed=OrderEmail.parse(value),proof=OrderEmailDomain.status(value),checking=$('site-email').dataset.domainState==='CHECKING';
- const draft=!String(siteEditing.road||'').trim()||parsed.valid&&!OrderEmailDomain.isSuccess(proof)&&!OrderEmailDomain.isHard(proof);
+ const draft=!addressStatus(siteEditing).valid||parsed.valid&&!OrderEmailDomain.isSuccess(proof)&&!OrderEmailDomain.isHard(proof);
  button.dataset.saveIntent=draft?'draft':'valid';button.textContent=q3SaveBusy||checking?'확인 중':draft?'초안 저장':'저장';button.disabled=q3SaveBusy||checking;
 }
 async function saveSite(){
- if(!siteEditing||q3SaveBusy)return false;OrderPhone.instance($('site-contact-phone'))?.commit();OrderPhone.instance($('site-store-phone'))?.commit();q3ReadInputs();const data=JSON.parse(JSON.stringify(siteEditing));data.name=String(data.name||'').trim();for(const k of ['contactPhone','email','storePhone'])data[k]=String(data[k]||'');
+ if(!siteEditing||q3SaveBusy||addressEditor.isOpen)return false;OrderPhone.instance($('site-contact-phone'))?.commit();OrderPhone.instance($('site-store-phone'))?.commit();q3ReadInputs();const data=JSON.parse(JSON.stringify(siteEditing));data.name=String(data.name||'').trim();for(const k of ['contactPhone','email','storePhone'])data[k]=String(data[k]||'');
  const issues=OrderSiteContract.issues(data,{address:false,allowUnverified:true});if(issues.length){q3PaintErrors(issues);return false;}
  const intent=$('save-site').dataset.saveIntent||'valid',fingerprint=JSON.stringify(siteEditing),id=data.id,storedFingerprint=JSON.stringify(S.locations.find(x=>x.id===data.id)||null),revision=++q3SaveRevision;q3SaveBusy=true;q3SyncSaveAction();
  try{
@@ -674,7 +695,7 @@ async function saveSite(){
   if(JSON.stringify(S.locations.find(x=>x.id===id)||null)!==storedFingerprint){$('site-editor-error').textContent='사업장 정보가 변경되었습니다. 취소 후 다시 열어 주세요.';return false;}
   const confirmedIssues=OrderSiteContract.issues(data,{address:false,allowUnverified:intent==='draft'});if(confirmedIssues.length){q3PaintErrors(confirmedIssues);return false;}
   data.emailDomainState=OrderEmailDomain.status(data.email).state;data.mailboxVerified=false;
-  data.addressState=String(data.road||'').trim()?'PRESENT_REQUIRES_PROVIDER_POLICY':'ADDRESS_UI_PENDING';data.basicInfoDraft=!String(data.road||'').trim()||!OrderEmailDomain.isSuccess(OrderEmailDomain.status(data.email));
+  data.addressState=addressStatus(data).state;data.basicInfoDraft=!addressStatus(data).valid||!OrderEmailDomain.isSuccess(OrderEmailDomain.status(data.email));
   if(intent!=='draft'&&data.basicInfoDraft){q3PaintErrors([{key:'email',code:'DOMAIN_UNCONFIRMED',message:'현재 이메일 주소를 확인할 수 없습니다.'}]);return false;}
   const index=S.locations.findIndex(x=>x.id===data.id);if(siteEditOriginal&&index<0){$('site-editor-error').textContent='사업장이 변경되었습니다. 취소 후 다시 열어 주세요.';return false;}
   const candidate={...S,locations:index<0?[...S.locations,data]:S.locations.map(x=>x.id===data.id?data:x)};
@@ -683,6 +704,7 @@ async function saveSite(){
  }finally{if(revision===q3SaveRevision){q3SaveBusy=false;q3SyncSaveAction();}}
 }
 $('add-site').onclick=addSite;$('save-site').onclick=saveSite;$('cancel-site').onclick=closeSiteEditor;$('site-editor-close').onclick=closeSiteEditor;
+$('q3-address-slot').onclick=()=>{if(siteEditing&&!q3SaveBusy)addressEditor.open($('q3-address-slot'));};
 OrderModalShell.bind($('site-editor-dialog'),closeSiteEditor);
 $('site-editor-dialog').addEventListener('input',e=>{if(!e.target.matches('input'))return;q3ReadInputs();const g=e.target.closest('[data-q3-field]');if(g?.dataset.error==='true'){const issue=OrderSiteContract.issues(siteEditing,{address:false}).find(i=>i.key===g.dataset.q3Field);if(!issue){g.dataset.error='false';e.target.removeAttribute('aria-invalid');g.querySelector('.ui-field-error').hidden=true;}}});
 $('site-editor-dialog').addEventListener('order-phone-input',()=>{q3ReadInputs();if(!siteEditing)return;const exposed=[...$('site-editor-dialog').querySelectorAll('[data-q3-field][data-error="true"]')].map(g=>g.dataset.q3Field);q3PaintErrors(OrderSiteContract.issues(siteEditing,{address:false,allowUnverified:true}).filter(i=>exposed.includes(i.key)),{focus:false});});
@@ -894,7 +916,7 @@ $('to-result').onclick=()=>{if(!guardPendingEdits('result'))return;if(!orderVali
 
 
 
-function fromHash(){if(!guardPendingEdits('browser-back')){history.replaceState({},'',`#/${current}`);return;}let name=location.hash.replace('#/','');if(name==='result'&&!complete())show('form',false);else show(['home','form','result'].includes(name)?name:'home',false)}window.addEventListener('popstate',fromHash);
+function fromHash(){if(addressEditor.isOpen){addressEditor.cancel('back');history.replaceState({},'',`#/${current}`);return;}if(siteEditing){closeSiteEditor();history.replaceState({},'',`#/${current}`);return;}if(!guardPendingEdits('browser-back')){history.replaceState({},'',`#/${current}`);return;}let name=location.hash.replace('#/','');if(name==='result'&&!complete())show('form',false);else show(['home','form','result'].includes(name)?name:'home',false)}window.addEventListener('popstate',fromHash);
 // MSG0460: explicit regular-state boundary. No provider, price or DB writes.
 let q4ReviewContext=null,q4ReviewPending=null,q4ReviewCommitCount=0;
 const q4ReviewClone=x=>JSON.parse(JSON.stringify(x));

@@ -8,7 +8,8 @@ import {execFileSync} from 'node:child_process';
 import {createHash,webcrypto} from 'node:crypto';
 import {parse} from 'acorn';
 import {buildQaLab,collectQaModules} from '../../scripts/build-qa-lab.mjs';
-import {allocationFixture,syntheticDns} from '../fixtures/qa-lab.mjs';
+import {allocationFixture,syntheticDns,syntheticAddressResult} from '../fixtures/qa-lab.mjs';
+import {createAddressSearchService} from '../../web/address-service.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const sha=source=>createHash('sha256').update(source).digest('hex');
@@ -50,7 +51,7 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   const edits=ast.body.filter(node=>node.type==='ImportDeclaration'||node.type==='ExportNamedDeclaration').map(node=>({start:node.start,end:node.type==='ImportDeclaration'?node.end:node.declaration.start}));
   for(const edit of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,edit.start)+source.slice(edit.end);
   const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
-  const runtime=await new AsyncFunction('createBrowserStorage','allocationFixture','syntheticDns','document','location','crypto','window',source+'\nreturn {createQaStorage,qaFetch};')(createBrowserStorage,allocationFixture,syntheticDns,document,location,webcrypto,{});
+  const runtime=await new AsyncFunction('createBrowserStorage','createAddressSearchService','allocationFixture','syntheticDns','syntheticAddressResult','document','location','crypto','window',source+'\nreturn {createQaStorage,createQaAddressService,qaFetch};')(createBrowserStorage,createAddressSearchService,allocationFixture,syntheticDns,syntheticAddressResult,document,location,webcrypto,{});
   assert.equal(document.documentElement.dataset.qaLabStorage,'ISOLATED_MEMORY');assert.equal(document.documentElement.dataset.qaLabFixture,'none');
   const adapter=runtime.createQaStorage();let loaded=await adapter.load();assert.equal(loaded.status,'EMPTY');assert.deepEqual(loaded.data.lines,[]);
   const fixture=allocationFixture();let committed=await adapter.commit(fixture,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'test-first'});assert.equal(committed.ok,true);
@@ -64,6 +65,13 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   element('qa-lab-dns').value='example-route';
   const dns=await(await runtime.qaFetch('https://cloudflare-dns.com/dns-query?name=example.com&type=MX')).json();assert.equal(dns.Answer[0].data,'10 mx.example.com.');
   await assert.rejects(()=>runtime.qaFetch('https://unapproved.example/path'),/QA_OFFLINE/);
+  const address=runtime.createQaAddressService();
+  assert.equal((await address.search('합성 주소')).status,'UNAVAILABLE','default LAB never silently supplies provider-shaped success');
+  element('qa-lab-address').value='synthetic';await element('qa-lab-address').listeners.change();
+  const selected=await address.search('합성 주소');assert.equal(selected.status,'OK');assert.equal(selected.items[0].postal,'08843');assert.match(selected.items[0].road,/실제 주소 아님/);
+  const cached=await address.search('합성 주소');assert.deepEqual(cached,selected);assert.equal(address.inspect().cacheHits,1,'LAB uses the actual adapter cache');
+  element('qa-lab-address').value='empty';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'EMPTY','mode change clears previous synthetic cache');
+  element('qa-lab-address').value='unavailable';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'UNAVAILABLE');address.close();
   await element('qa-lab-restart').listeners.click();assert.equal(location.hash,'');assert.equal(reloads,1);
  });
 
