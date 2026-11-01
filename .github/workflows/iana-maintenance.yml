@@ -1,0 +1,40 @@
+name: IANA reference maintenance
+on:
+  schedule:
+    - cron: '23 8 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: order-iana-maintenance-main
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Require integrated frontend
+        run: node --input-type=module -e "import c from './config/pages-build.json' with {type:'json'}; if(c.status!=='INTEGRATED') throw Error('UX_HANDOFF_REQUIRED')"
+      - run: npm run update:iana
+      - run: npm test
+      - run: npm run build
+      - name: Commit only verified public reference data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add src/engine/reference/iana-manifest.json
+          node --input-type=module -e "import m from './src/engine/reference/iana-manifest.json' with {type:'json'}; if(!/^iana-tlds-[0-9]{10}-[a-f0-9]{12}\.txt$/.test(m.rawFile)) throw Error('RAW_PATH_INVALID'); console.log('src/engine/reference/'+m.rawFile)" > /tmp/order-iana-path
+          git add --pathspec-from-file=/tmp/order-iana-path
+          node --input-type=module -e "import{execFileSync}from'node:child_process';const p=execFileSync('git',['diff','--cached','--name-only'],{encoding:'utf8'}).trim().split('\n').filter(Boolean);if(p.some(x=>!/^src\/engine\/reference\/(iana-manifest\.json|iana-tlds-[0-9]{10}-[a-f0-9]{12}\.txt)$/.test(x)))throw Error('REFERENCE_ONLY_COMMIT_REQUIRED')"
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(reference): refresh verified public IANA snapshot'
+          git push origin HEAD:refs/heads/main

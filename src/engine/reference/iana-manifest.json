@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "sourceUrl": "https://data.iana.org/TLD/tlds-alpha-by-domain.txt",
+  "version": "2026103100",
+  "sourceHeader": "# Version 2026103100, Last Updated Sat Oct 31 07:07:01 2026 UTC",
+  "sourceUpdatedAt": "2026-10-31T07:07:01.000Z",
+  "sourceSha256": "2bce1ee4d4e7f54ffe678f8852bccb499dc68c67c5018411d5ac346d3bdbda23",
+  "sourceBytes": 9519,
+  "tldCount": 1436,
+  "collectedAt": "2026-10-31T17:18:07.587Z",
+  "rawFile": "iana-tlds-2026103100-2bce1ee4d4e7.txt",
+  "maxAgeMs": 604800000,
+  "status": "FETCHED_EXACT_BYTES",
+  "refreshCommand": "node scripts/engine/update-iana.mjs"
+}

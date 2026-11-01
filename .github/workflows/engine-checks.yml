@@ -1,0 +1,73 @@
+name: independent engine checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:engine
+      - run: npm run example:engine
+      - run: npm run build:engine
+      - run: npm run build
+  chromium-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Select installed runner Chrome or install pinned Chromium
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            echo "CHROME_PATH=$(command -v google-chrome)" >> "$GITHUB_ENV"
+            google-chrome --version
+          else
+            npx playwright install --with-deps chromium
+          fi
+      - run: npm run build
+      - name: Actual Chromium DOM with synthetic phone input
+        run: |
+          mkdir -p browser-evidence
+          node test/engine/phone-browser.smoke.mjs > browser-evidence/phone.json 2> browser-evidence/phone.stderr.log
+          cat browser-evidence/phone.json
+      - name: Built product transactions with synthetic DNS and contact fixtures
+        run: node test/browser/product.smoke.mjs
+      - name: Computed styles against frozen UX source
+        if: always()
+        run: node test/browser/styles.smoke.mjs
+      - name: Actual HTTPS DNS observation from external origin
+        if: always()
+        run: |
+          mkdir -p browser-evidence
+          status=0
+          node scripts/engine/browser-email-smoke.mjs https://example.com > browser-evidence/email-external-origin.json 2> browser-evidence/email.stderr.log || status=$?
+          cat browser-evidence/email-external-origin.json
+          if [ "$status" = 3 ]; then
+            echo 'External-origin HTTPS DNS observation: ONLINE_INCONCLUSIVE. Canonical product acceptance remains untested.' >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$status" != 0 ]; then
+            exit "$status"
+          fi
+      - name: Keep observations separate from canonical product acceptance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-adapter-observations-${{ github.run_id }}
+          path: browser-evidence/
+          retention-days: 14

@@ -1,0 +1,2 @@
+# Byte-exact externally handed-off CSS fixture retains its terminal blank line.
+test/fixtures/browser/ux-c024.css whitespace=-blank-at-eof
