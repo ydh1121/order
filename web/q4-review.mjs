@@ -730,8 +730,21 @@ function validateForSave(){
  return true;
 }
 function showCommitError(result){let p=$('q4-commit-error');if(!p){p=document.createElement('p');p.id='q4-commit-error';p.className='ui-error';p.setAttribute('role','alert');$('q4-regular-fields').prepend(p);}p.classList.toggle('ui-feedback-sr',!!result.issues?.length);p.textContent=result.message||'입력값을 확인해 주세요.';p.setAttribute('tabindex','-1');p.focus({preventScroll:true});$('q4-regular-scroll').scrollTop=0;}
-function saveRegularDraft(){if(committing||state.dialogClosed)return;committing=true;
- try{if(!validateForSave())return;const prepared=monthlyEditor?.confirm({allocations:serializedAllocations()});if(!prepared?.ok){showCommitError(prepared||{message:'월 사용량을 확인해 주세요.'});return;}const result=window.OrderRegularQ4Bridge.commit(prepared.allocations);if(result.ok)closeProductModal();else if(!result.confirmation)showCommitError(result);}finally{committing=false;}}
+async function saveRegularDraft(){if(committing||state.dialogClosed)return;committing=true;
+ try{
+  if(!validateForSave())return;
+  const context=regularContext,patches=serializedAllocations(),fingerprint=JSON.stringify(patches);
+  const sameEditor=()=>regularContext===context&&!state.dialogClosed;
+  // Users can keep editing or cancel while storage waits for another tab.
+  // Only the exact reviewed draft may cross the durable write boundary.
+  const canCommit=()=>{if(!sameEditor())return false;try{return JSON.stringify(serializedAllocations())===fingerprint;}catch{return false;}};
+  const prepared=monthlyEditor?.confirm({allocations:patches});
+  if(!prepared?.ok){showCommitError(prepared||{message:'월 사용량을 확인해 주세요.'});return;}
+  const result=await window.OrderRegularQ4Bridge.commit(prepared.allocations,null,canCommit);
+  if(!sameEditor())return;
+  if(result.ok)closeProductModal();
+  else if(!result.confirmation)showCommitError(result.status==='CANCELLED'&&!canCommit()?{message:'입력값이 변경되었습니다. 다시 저장해 주세요.'}:result);
+ }finally{committing=false;}}
 function monthlyResultData(){
  const usageValid=!!regularContext?.line&&validMonthlyQuantity(regularContext.line);
  const base={usage:usageValid?monthlyQuantityText(regularContext.line):'미확정',value:'미확정',comparison:'pending',status:'예상 수량 미확정',complete:false};

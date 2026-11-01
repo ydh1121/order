@@ -2,6 +2,8 @@
 
 Scope: CODE1/order.ooo, WO-ORDER-20261101-ASTRA-ENGINE-001. This is an infrastructure review and implementation contract, not evidence that a provider setting, remote commit, deployment or browser acceptance has happened. Inspected baseline: local `544b8ffada3f7b09f816d1fa5a3bbc78b97364d3` on `feat/order-astra-engine-20261101`. Provider/account access belongs to the parent executor; this review performed none.
 
+Current build correction under [MSG0510](https://drive.google.com/file/d/1h-lV2neyfAjZM0p8J7SA5rsRlZcc3hEm/view): `package.json` defines `npm run build` as `node scripts/build-pages.mjs`, and `config/pages-build.json` names `dist` as its output. The provider values below are requested configuration, not saved-setting readback. The historical baseline audit later in this document describes `544b8ff`; it does not describe the current integrated build.
+
 ## Required provider configuration
 
 | Setting | Required value | Evidence needed after setting |
@@ -13,8 +15,13 @@ Scope: CODE1/order.ooo, WO-ORDER-20261101-ASTRA-ENGINE-001. This is an infrastru
 | Automatic preview branches | **None** | Saved `preview_deployment_setting: none` or equivalent dashboard state |
 | Public review entry | `https://order-ooo.pages.dev/` | Root HTTP/browser readback |
 | Functions/Worker/server/DB | None needed for the static browser engine | No `/functions` integration, `_worker.js`, bindings or separate Worker deployment |
-| Build command | Proposed `npm run build:pages`; use the final tested script name | Actual build command and output log |
-| Build output | Proposed `dist`, containing only the explicit output inventory | Provider output setting plus artifact inventory |
+| Framework preset | `None` | Saved framework setting |
+| Build command | `npm run build` | Saved build command and the matching source commit's build log |
+| Build output | `dist`, containing only the explicit output inventory | Saved output setting plus artifact inventory |
+| Root directory (advanced) | Leave blank; use the repository root | Saved root setting |
+| Environment variables (advanced) | `NODE_VERSION` = `22` | Saved variable and build runtime readback |
+
+Under MSG0510 the user creates or connects the exact Pages project through their working browser session; the executor then verifies it. Actual provider settings, production deployment ID and canonical product root acceptance remain **NOT_VERIFIED** until read back. A successful repository build does not supply that evidence. This static build does not require an additional application API key or D1 configuration. `CF_PAGES_COMMIT_SHA` is supplied by Pages during its build and is not a value the user must enter manually.
 
 Cloudflare's official [branch controls](https://developers.cloudflare.com/pages/configuration/branch-build-controls/) permit a production branch with automatic deployment enabled and preview setting None independently. Defaults deploy preview branches, so None must be explicitly saved. A Git-connected Pages project uses its project name for its hostname; do not replace the requested Pages root with a `workers.dev` URL. See [Git setup](https://developers.cloudflare.com/pages/get-started/git-integration/) and [static HTML](https://developers.cloudflare.com/pages/framework-guides/deploy-anything/).
 

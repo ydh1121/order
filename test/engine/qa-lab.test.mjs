@@ -1,0 +1,85 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdir,mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {createHash,webcrypto} from 'node:crypto';
+import {parse} from 'acorn';
+import {buildQaLab,collectQaModules} from '../../scripts/build-qa-lab.mjs';
+import {allocationFixture,syntheticDns} from '../fixtures/qa-lab.mjs';
+
+const root=fileURLToPath(new URL('../../',import.meta.url));
+const sha=source=>createHash('sha256').update(source).digest('hex');
+const decode=data=>Buffer.from(data.split(',')[1],'base64').toString('utf8');
+
+test('S05 local LAB reuses a fixed Git product graph and isolates every controlled dependency',async t=>{
+ const directory=await mkdtemp(resolve(tmpdir(),'order-qa-lab-test-'));
+ t.after(()=>rm(directory,{recursive:true,force:true}));
+ const modules=await collectQaModules(root);
+ const manifest=JSON.parse(await readFile(resolve(root,'src/engine/reference/iana-manifest.json'),'utf8'));
+ const now=Date.parse(manifest.collectedAt)+3600000;
+ const paths=[...modules.keys(),'web/index.html','web/styles.css','scripts/build-qa-lab.mjs','scripts/engine/build-browser-reference.mjs','scripts/engine/update-iana.mjs','src/engine/reference/iana.mjs','package.json','package-lock.json','src/engine/reference/iana-manifest.json','src/engine/reference/'+manifest.rawFile];
+ for(const path of paths){await mkdir(dirname(resolve(directory,path)),{recursive:true});await writeFile(resolve(directory,path),await readFile(resolve(root,path)));}
+ const git=args=>execFileSync('git',args,{cwd:directory,encoding:'utf8',stdio:['ignore','pipe','ignore']});
+ git(['init']);git(['add','.']);git(['-c','user.name=QA fixture','-c','user.email=qa@example.invalid','commit','-m','Isolated source fixture']);
+ const result=await buildQaLab({root:directory,now,write:false});
+ const imports=JSON.parse(result.html.match(/<script type="importmap">(.*?)<\/script>/s)[1]).imports;
+
+ await t.test('source SHA and all original bytes are traceable; module transformation changes imports only',async()=>{
+  assert.equal(result.identity.commitSha,git(['rev-parse','HEAD']).trim());
+  assert.equal(result.identity.sourceState,'EXACT_GIT_COMMIT');assert.deepEqual(result.identity.dirtySourceFiles,[]);
+  assert.match(result.html,/connect-src 'none'/);assert.doesNotMatch(result.html,/<script[^>]+src=|<link[^>]+href=/i);
+  assert.match(result.html,/id="qa-lab-commit"/);assert.match(result.html,/ISOLATED_MEMORY_ONLY/);
+  const css=await readFile(resolve(directory,'web/styles.css'),'utf8');assert.ok(result.html.includes(css));
+  for(const file of result.identity.sourceFiles)assert.equal(file.sha256,sha(await readFile(resolve(directory,file.path))));
+  const mapped=new Map(result.identity.substitutions.map(s=>[s.path,s.shim]));
+  for(const [path,file]of modules){let expected=file.source;for(const node of [...file.imports].sort((a,b)=>b.start-a.start))expected=expected.slice(0,node.start)+JSON.stringify(mapped.get(node.target)??'order-qa/source/'+node.target)+expected.slice(node.end);
+   assert.equal(decode(imports['order-qa/source/'+path]),expected,path);
+  }
+  for(const source of Object.values(imports))parse(decode(source),{ecmaVersion:2024,sourceType:'module'});
+ });
+
+ await t.test('LAB runtime uses the actual storage adapter with memory only, one-shot failure and revision conflict',async()=>{
+  const {createBrowserStorage}=await import('../../web/storage.mjs');
+  const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{value:'offline',textContent:'',listeners:{},addEventListener(type,fn){this.listeners[type]=fn;}});return elements.get(id);};
+  const document={getElementById:element,documentElement:{dataset:{}}};let reloads=0;
+  const location={hash:'',reload(){reloads++;}};
+  let source=decode(imports['order-qa/virtual/runtime.mjs']);const ast=parse(source,{ecmaVersion:2024,sourceType:'module'});
+  const edits=ast.body.filter(node=>node.type==='ImportDeclaration'||node.type==='ExportNamedDeclaration').map(node=>({start:node.start,end:node.type==='ImportDeclaration'?node.end:node.declaration.start}));
+  for(const edit of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,edit.start)+source.slice(edit.end);
+  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+  const runtime=await new AsyncFunction('createBrowserStorage','allocationFixture','syntheticDns','document','location','crypto','window',source+'\nreturn {createQaStorage,qaFetch};')(createBrowserStorage,allocationFixture,syntheticDns,document,location,webcrypto,{});
+  assert.equal(document.documentElement.dataset.qaLabStorage,'ISOLATED_MEMORY');assert.equal(document.documentElement.dataset.qaLabFixture,'none');
+  const adapter=runtime.createQaStorage();let loaded=await adapter.load();assert.equal(loaded.status,'EMPTY');assert.deepEqual(loaded.data.lines,[]);
+  const fixture=allocationFixture();let committed=await adapter.commit(fixture,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'test-first'});assert.equal(committed.ok,true);
+  const revision=committed.revision,token=committed.versionToken;await element('qa-lab-fail-next').listeners.click();
+  const failed=await adapter.commit({...fixture,open:'q2'},{expectedRevision:revision,expectedToken:token,transactionId:'test-failure'});assert.equal(failed.ok,false);
+  assert.deepEqual((await adapter.load()).data,committed.data,'a failed write must preserve the original payload');
+  await element('qa-lab-conflict').listeners.click();
+  const conflicted=await adapter.commit({...fixture,open:'q2'},{expectedRevision:revision,expectedToken:token,transactionId:'test-stale'});assert.equal(conflicted.ok,false);assert.equal(conflicted.status,'CONFLICT');
+  assert.match(element('qa-lab-status').textContent,/revision/);
+  await assert.rejects(()=>runtime.qaFetch('https://cloudflare-dns.com/dns-query?name=example.com&type=MX'),/QA_OFFLINE/);
+  element('qa-lab-dns').value='example-route';
+  const dns=await(await runtime.qaFetch('https://cloudflare-dns.com/dns-query?name=example.com&type=MX')).json();assert.equal(dns.Answer[0].data,'10 mx.example.com.');
+  await assert.rejects(()=>runtime.qaFetch('https://unapproved.example/path'),/QA_OFFLINE/);
+  await element('qa-lab-restart').listeners.click();assert.equal(location.hash,'');assert.equal(reloads,1);
+ });
+
+ await t.test('dirty source cannot masquerade as a fixed commit, and LAB output cannot enter dist',async()=>{
+  await writeFile(resolve(directory,'web/main.mjs'),(await readFile(resolve(directory,'web/main.mjs'),'utf8'))+'\n// deliberate uncommitted review change\n');
+  await assert.rejects(()=>buildQaLab({root:directory,now,write:false}),/QA_UNCOMMITTED_SOURCE/);
+  const dirty=await buildQaLab({root:directory,now,write:false,allowDirty:true});
+  assert.equal(dirty.identity.sourceState,'DIRTY_WORKTREE');assert.deepEqual(dirty.identity.dirtySourceFiles,['web/main.mjs']);
+  await assert.rejects(()=>buildQaLab({root:directory,now,outputPath:resolve(directory,'dist/lab.html')}),/QA_OUTPUT_MUST_NOT_BE_DIST/);
+ });
+
+ await t.test('unexpected imports fail closed and product allowlist contains no LAB or fixture',async()=>{
+  await writeFile(resolve(directory,'web/main.mjs'),"import 'https://example.com/unreviewed.js';\n");
+  await assert.rejects(()=>collectQaModules(directory),/QA_EXTERNAL_IMPORT/);
+  const config=JSON.parse(await readFile(resolve(root,'config/pages-build.json'),'utf8'));
+  for(const item of config.frontendFiles)assert.doesNotMatch(item.source+' '+item.output,/qa-lab|fixtures|test\//i);
+  assert.equal(allocationFixture().lines[0].price,'','synthetic fixture does not supply a real price');
+ });
+});

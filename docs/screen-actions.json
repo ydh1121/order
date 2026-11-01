@@ -125,6 +125,32 @@
       "name": "관리자",
       "status": "PLANNED_PROTECTED",
       "actions": []
+    },
+    {
+      "id": "Q1_Q4_INPUT_PERSISTENCE",
+      "route": "/#form",
+      "actions": [
+        {
+          "id": "retry-input-save",
+          "target": "current-inline-draft",
+          "purpose": "Retry failed confirmed inline quantity/price persistence without replacing a conflicting tab revision."
+        },
+        {
+          "id": "reset-input",
+          "target": "reset-input-confirm",
+          "purpose": "Open explicit confirmed-input reset dialog."
+        },
+        {
+          "id": "data-reset-cancel",
+          "target": "current-form",
+          "purpose": "Cancel reset without a durable write."
+        },
+        {
+          "id": "data-reset-confirm",
+          "target": "current-form",
+          "purpose": "Write a serialized revisioned reset tombstone; preserve data on failure/conflict."
+        }
+      ]
     }
   ]
 }
