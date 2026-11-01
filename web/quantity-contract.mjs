@@ -1,7 +1,9 @@
-import {exact,add,multiply,divide,toJSON,fromRatio} from '../src/engine/calculation/exact.mjs';
+import {exact,add,multiply,divide,toJSON,fromRatio,round} from '../src/engine/calculation/exact.mjs';
 
+// qty + qtyUnit are authoritative demand. The optional display unit never changes it.
 export const quantityUnit = line => line.qtyUnit || (String(line.pack)==='30'?'tray':'pack');
-export const quantityLabel = line => ({each:'개',tray:'판',pack:'팩'})[quantityUnit(line)] || '단위 확인';
+export const quantityDisplayUnit = line => line.qtyDisplayUnit || quantityUnit(line);
+export const quantityLabel = line => ({each:'개',tray:'판',pack:'팩'})[line.qtyExact?.representation==='rational'?'each':quantityUnit(line)] || '단위 확인';
 export function monthlyQuantity(line) {
   if(line.qtyExact?.representation==='rational'){
     const value=fromRatio(line.qtyExact);
@@ -11,11 +13,10 @@ export function monthlyQuantity(line) {
   if(!/^[1-9]\d*$/.test(String(line.qty)))throw Error('MONTHLY_QUANTITY_INVALID');
   return exact(String(line.qty));
 }
-export function validMonthlyQuantity(line){try{if(!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityUnit(line)))return false;quantityFactor(line);return monthlyQuantity(line).n>0n;}catch{return false;}}
-export function monthlyQuantityText(line){try{return exactDisplay(monthlyQuantity(line).d===1n?monthlyQuantity(line).n.toString():line.qtyExact);}catch{return String(line.qty??'');}}
+export function validMonthlyQuantity(line){try{if(!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityUnit(line))||!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(line)))return false;quantityFactor(line);return monthlyQuantity(line).n>0n;}catch{return false;}}
 export function quantityFactor(line,unit=quantityUnit(line)) {
   if(unit==='each')return exact('1');
-  if(unit==='tray')return exact('30');
+  if(unit==='tray'&&String(line.pack)==='30')return exact('30');
   if(unit==='pack'&&['10','20','30'].includes(String(line.pack)))return exact(String(line.pack));
   throw Error('QUANTITY_UNIT_REQUIRED');
 }
@@ -23,22 +24,43 @@ export function baseQuantity(line,raw=line.qty,unit=quantityUnit(line)) {
   return multiply(raw===line.qty?monthlyQuantity(line):exact(String(raw)),quantityFactor(line,unit));
 }
 export function convertMonthlyUnit(line,nextUnit){
-  const value=divide(baseQuantity(line),quantityFactor(line,nextUnit));
-  return {...line,qtyUnit:nextUnit,qty:value.d===1n?value.n.toString():`${value.n}/${value.d}`,
-    qtyExact:value.d===1n?undefined:{representation:'rational',conversionReviewed:true,...toJSON(value)}};
+  if(!['each',String(line.pack)==='30'?'tray':'pack'].includes(nextUnit))throw Error('QUANTITY_UNIT_REQUIRED');
+  return {...line,qtyDisplayUnit:nextUnit};
 }
+export function quantityInputText(line){
+  if(!validMonthlyQuantity(line))return numericInput(line.qty)===null?'':String(line.qty??'');
+  if(!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(line)))return '';
+  const v=divide(baseQuantity(line),quantityFactor(line,quantityDisplayUnit(line)));
+  return round(v,{scale:0,mode:'CEIL'}).decimal;
+}
+export function quantityDisplayNote(line){
+  if(!validMonthlyQuantity(line))return '';
+  const base=baseQuantity(line),packs=round(divide(base,exact(String(line.pack))),{scale:0,mode:'CEIL'}).decimal;
+  return `월 수요 ${exactDisplay(toJSON(base))}개 · 필요 포장 ${BigInt(packs).toLocaleString('ko-KR')}${String(line.pack)==='30'?'판':'팩'}`;
+}
+// Legacy converted rationals remain readable as exact demand; never expose fraction syntax.
+export function monthlyQuantityText(line){try{return exactDisplay(toJSON(line.qtyExact?.representation==='rational'?baseQuantity(line):monthlyQuantity(line)));}catch{return String(line.qty??'').includes('/')?'확인 필요':String(line.qty??'');}}
 export function currentPurchaseCost(line) {
   try {
     if(!validMonthlyQuantity(line)||!/^[1-9]\d*$/.test(String(line.price)))return null;
-    const amount=divide(multiply(baseQuantity(line),exact(String(line.price))),exact(String(line.pack)));
-    return toJSON(amount);
+    return toJSON(divide(multiply(baseQuantity(line),exact(String(line.price))),exact(String(line.pack))));
   }catch{return null;}
 }
 export function totalPurchaseCost(lines) {
   if(!lines.length)return null;
   let total=exact('0');for(const line of lines){const value=currentPurchaseCost(line);if(!value)return null;total=add(total,fromRatio(value));}return toJSON(total);
 }
-// No currency rounding policy is invented. Non-integral amounts retain their exact fraction.
+export function moneyDisplay(value){try{return BigInt(round(fromRatio(value),{scale:0,mode:'HALF_UP'}).decimal).toLocaleString('ko-KR');}catch{return '확인 필요';}}
+// Quantity summaries use decimal text; monetary formatting has its own explicit policy.
 export function exactDisplay(value) {
-  try {const v=fromRatio(value);return v.d===1n?v.n.toLocaleString('ko-KR'):`${v.n.toLocaleString('ko-KR')}/${v.d.toLocaleString('ko-KR')}`;}catch{return '확인 필요';}
+  try {
+    const v=fromRatio(value);if(v.d===1n)return v.n.toLocaleString('ko-KR');
+    let denominator=v.d,twos=0,fives=0;while(denominator%2n===0n){denominator/=2n;twos++;}while(denominator%5n===0n){denominator/=5n;fives++;}
+    if(denominator!==1n)return '확인 필요';
+    const scale=Math.max(twos,fives),scaled=v.n*(10n**BigInt(scale)/v.d),negative=scaled<0n;
+    const digits=(negative?-scaled:scaled).toString().padStart(scale+1,'0');const whole=digits.slice(0,-scale),fraction=digits.slice(-scale).replace(/0+$/,'');
+    return (negative?'-':'')+BigInt(whole).toLocaleString('ko-KR')+(fraction?'.'+fraction:'');
+  }catch{return '확인 필요';}
 }
+// Commas are formatting only. Reject arbitrary punctuation instead of turning 605/3 into6053.
+export function numericInput(raw){const text=String(raw??'');if(!/^[\d,]*$/.test(text))return null;return text.replaceAll(',','').replace(/^0+(?=\d)/,'');}

@@ -15,6 +15,8 @@ jobs:
         node: ['22', '24']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
@@ -29,6 +31,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -41,6 +45,12 @@ jobs:
           else
             npx playwright install --with-deps chromium
           fi
+      - name: Install Korean glyphs for matched baseline and current captures
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk
+          fc-match ':lang=ko'
+          dpkg-query -W fonts-noto-cjk
       - run: npm run build
       - name: Actual Chromium DOM with synthetic phone input
         run: |
@@ -49,6 +59,9 @@ jobs:
           cat browser-evidence/phone.json
       - name: Built product transactions with synthetic DNS and contact fixtures
         run: node test/browser/product.smoke.mjs
+      - name: Feedback regression and matched baseline screenshots
+        if: always()
+        run: node test/browser/feedback.smoke.mjs
       - name: Native durable storage, profile relaunch and concurrent tabs
         if: always()
         run: node test/browser/storage.smoke.mjs
@@ -66,7 +79,7 @@ jobs:
         run: |
           mkdir -p browser-evidence
           status=0
-          node scripts/engine/browser-email-smoke.mjs https://example.com > browser-evidence/email-external-origin.json 2> browser-evidence/email.stderr.log || status=$?
+          node scripts/engine/browser-email-smoke.mjs https://example.com --expanded > browser-evidence/email-external-origin.json 2> browser-evidence/email.stderr.log || status=$?
           cat browser-evidence/email-external-origin.json
           if [ "$status" = 3 ]; then
             echo 'External-origin HTTPS DNS observation: ONLINE_INCONCLUSIVE. Canonical product acceptance remains untested.' >> "$GITHUB_STEP_SUMMARY"

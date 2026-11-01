@@ -1,4 +1,5 @@
-import {quantityUnit as monthlyQuantityUnit} from './quantity-contract.mjs';
+import {quantityUnit as monthlyQuantityUnit,baseQuantity,quantityFactor,exactDisplay} from './quantity-contract.mjs';
+import {exact,fromRatio,multiply} from '../src/engine/calculation/exact.mjs';
 export {monthlyQuantityUnit};
 import {evaluateAllocation,beginAllocationEdit,editAllocation,confirmAllocation,cancelAllocation,evaluateOnceAllocation} from '../src/browser/engine.mjs';
 
@@ -7,10 +8,32 @@ import {evaluateAllocation,beginAllocationEdit,editAllocation,confirmAllocation,
 const clone=value=>structuredClone(value);
 const canonical=value=>Array.isArray(value)?'['+value.map(canonical).join(',')+']':value&&typeof value==='object'?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);
 export const allocationUnitLabel=unit=>({each:'개',tray:'판',pack:'팩'}[unit]||'단위 확인');
+// Project legacy converted packages into whole base units for this edit only.
+// The original context (and its units) stays unchanged until explicit confirmation.
+function monthlyBaseProjection(quantity,line){
+ const original=clone(quantity);if(quantity.raw==='')return {raw:'',unit:'each'};
+ try{
+  let value;
+  if(quantity.representation==='rational'){
+   if(quantity.conversionReviewed!==true||!/^\d+\/[1-9]\d*$/.test(quantity.raw))throw Error('UNREVIEWED');
+   const [numerator,denominator]=quantity.raw.split('/');value=fromRatio({numerator,denominator});
+   if(quantity.numerator!==undefined&&quantity.numerator!==value.n.toString()||quantity.denominator!==undefined&&quantity.denominator!==value.d.toString())throw Error('RATIO_MISMATCH');
+  }else{if(!/^\d+$/.test(quantity.raw))throw Error('NOT_INTEGER');value=exact(quantity.raw);}
+  const base=multiply(value,quantityFactor(line,quantity.unit));
+  if(base.d!==1n||base.n<=0n)throw Error('BASE_NOT_WHOLE');
+  return {raw:base.n.toString(),unit:'each'};
+ }catch{return {...original,...(original.representation==='rational'?{conversionReviewed:false}:{})};}
+}
+// Invalid fractional raw stays private so the engine cannot mistake it for an
+// empty row and propose a replacement. The editable surface is safely blank.
+export const monthlyQuantityInputText=quantity=>String(quantity?.raw??'').includes('/')?'':String(quantity?.raw??'');
 export function allocationStateFromContext(context,{monthlyEditing=false}={}){
  const line=context?.line||{},allocations=context?.allocations||[],unit=monthlyQuantityUnit(line);
  const factors={each:'1',tray:'30'};if(/^[1-9]\d*$/.test(String(line.pack??'')))factors.pack=String(line.pack);
- return {revision:context?.revision??0,lines:[{lineId:line.id,specVersion:canonical({housing:line.housing,size:line.size,pack:line.pack,qtyUnit:unit}),total:{...(line.qtyExact||{}),raw:String(line.qty??''),unit},locationIds:allocations.map(a=>a.locationId),unitTable:{version:'order-pack-units-1:'+String(line.pack),baseUnit:'each',factors}}],locations:(context?.locations||[]).map(location=>({locationId:location.id,name:location.name})),allocations:allocations.map(a=>({lineId:line.id,locationId:a.locationId,quantity:{...(a.monthlyDemandExact||{}),raw:String(a.monthlyDemandQty??''),unit:a.monthlyDemandUnit||unit},source:a.monthlyDemandSource||'manual',mode:monthlyEditing?'FLEX':a.mode||'FLEX'})),receipts:[]};
+ const projectBase=line.qtyExact?.representation==='rational'||allocations.some(a=>a.monthlyDemandExact?.representation==='rational');
+ let total={...(line.qtyExact||{}),raw:String(line.qty??''),unit};
+ if(projectBase){try{const base=baseQuantity(line);if(base.d!==1n||base.n<=0n)throw Error('BASE_NOT_WHOLE');total={raw:base.n.toString(),unit:'each'};}catch{total={...total,...(total.representation==='rational'?{conversionReviewed:false}:{})};}}
+ return {revision:context?.revision??0,lines:[{lineId:line.id,specVersion:canonical({housing:line.housing,size:line.size,pack:line.pack,qtyUnit:unit}),total,locationIds:allocations.map(a=>a.locationId),unitTable:{version:'order-pack-units-1:'+String(line.pack),baseUnit:'each',factors}}],locations:(context?.locations||[]).map(location=>({locationId:location.id,name:location.name})),allocations:allocations.map(a=>{const quantity={...(a.monthlyDemandExact||{}),raw:String(a.monthlyDemandQty??''),unit:a.monthlyDemandUnit||unit};return {lineId:line.id,locationId:a.locationId,quantity:projectBase?monthlyBaseProjection(quantity,line):quantity,source:a.monthlyDemandSource||'manual',mode:monthlyEditing?'FLEX':a.mode||'FLEX'};}),receipts:[]};
 }
 function issueMessage(result){
  if(result.reasonCodes?.includes('MIXED_MODE_MONTHLY_POLICY_REQUIRED'))return '1회 납품과 월 사용량 배분을 함께 적용하는 기준을 확인해 주세요.';
@@ -29,7 +52,7 @@ export function inspectMonthlyAllocations(context){
  const state=allocationStateFromContext(context);
  return withIssues(evaluateAllocation({state,lineId:context?.line?.id}));
 }
-const rationalText=value=>!value?'미확정':value.denominator==='1'?value.numerator:value.numerator+'/'+value.denominator;
+const rationalText=value=>!value?'미확정':exactDisplay(value);
 export function inspectOnceAllocations(context){
  const selected=(context?.allocations||[]).filter(a=>a.mode==='ONCE');
  if(!selected.length)return {status:'VALID',reasonCodes:[],confirmation:null,issues:[]};
@@ -54,7 +77,18 @@ export function createMonthlyAllocationDraft(context,{readCurrentContext=()=>con
  let session=opened.session,closed=false,confirmed=null,cachedEvaluation=null;
  const apply=operation=>{if(closed||!session)return {status:'INVALID',reasonCodes:['ALLOCATION_SESSION_INVALID']};const result=editAllocation(state,session,operation);if(result.status==='VALID'){session=result.session;confirmed=null;cachedEvaluation=null;}return result;};
  const evaluate=()=>{if(!cachedEvaluation)cachedEvaluation=session?withIssues(evaluateAllocation({state,lineId:initial.line.id,draft:session})):withIssues(opened);return clone(cachedEvaluation);};
- function refresh(){if(session&&!session.entries.some(entry=>entry.quantity.composing===true))apply({type:'refreshDerived'});return evaluate();}
+ function refresh(){
+  if(session&&!session.entries.some(entry=>entry.quantity.composing===true)){
+   apply({type:'refreshDerived'});
+   // Mixed saved units can produce a fractional package remainder even when
+   // the exact remaining egg count is whole. Present it in each, never ceil it.
+   for(const entry of [...(session?.entries||[])])if(entry.quantity.representation==='rational'){
+    const base=monthlyBaseProjection(entry.quantity,initial.line);
+    if(base.unit==='each'&&/^\d+$/.test(base.raw))apply({type:'convertUnit',locationId:entry.locationId,unit:'each',reviewed:true});
+   }
+  }
+  return evaluate();
+ }
  function serialize(allocations=initial.allocations){
   return allocations.map(allocation=>{const entry=session?.entries.find(row=>row.locationId===allocation.locationId);if(!entry||allocation.mode==='ONCE')return clone(allocation);
    const quantity=entry.quantity;return {...clone(allocation),monthlyDemandQty:quantity.raw,monthlyDemandUnit:quantity.unit,monthlyDemandSource:entry.source,monthlyDemandExact:quantity.representation==='rational'?clone(quantity):undefined,monthlyAllocationContract:'1.1.0',monthlyAllocationDraftRevision:session.revision,monthlyAllocationComplete:false};});
@@ -75,7 +109,7 @@ export function createMonthlyAllocationDraft(context,{readCurrentContext=()=>con
  return Object.freeze({evaluate,refresh,serialize,confirm,set(locationId,raw,{composing=false}={}){const entry=session?.entries.find(row=>row.locationId===locationId);const result=apply({type:'set',locationId,quantity:{raw:String(raw),unit:entry?.quantity.unit,composing,phase:'editing'}});if(result.status==='VALID'){refresh();if(String(raw)===''&&!composing)apply({type:'set',locationId,quantity:{raw:'',unit:entry?.quantity.unit,phase:'editing'}});}return evaluate();},clone(from,targets){const result=apply({type:'clone',from,targets});if(result.status==='VALID')refresh();return result;},cancel(){closed=true;return session?cancelAllocation(state,session):opened;},get rows(){return clone(session?.entries||[]);},get session(){return clone(session);},get closed(){return closed;}});
 }
 
-// Quantities stay rational strings; display never rounds a monthly obligation.
+// Engine quantities stay exact; display formatting never feeds back into an obligation.
 export function monthlyAllocationDisplay(result,locationId){
  const normalized=result?.normalized,row=normalized?.sites?.find(site=>site.locationId===locationId);
  return {row,remaining:rationalText(normalized?.residualBeforeSuggestions),projectedRemaining:rationalText(normalized?.projectedResidual),maximum:rationalText(row?.currentMaximum),additional:rationalText(row?.additionalCapacity),baseUnit:normalized?.baseUnit||'each',excess:rationalText(normalized?.excess),proposed:!!row?.proposal};
