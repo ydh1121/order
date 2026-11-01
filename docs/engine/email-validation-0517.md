@@ -51,3 +51,6 @@ The wait duration and original PASS condition are unchanged.
 Native Linux Chromium profile shutdown/relaunch is distinct from a fresh JS
 context, the user's PC/OS, canonical HTTPS persistence, and a follow-up live
 deployment. Evidence must retain those scope labels.
+
+
+Primary-source additions after first observation: `30.technology` publishes contact email on https://30.technology/contact/; ICANN lists `universal-acceptance-test.international` as a long-TLD email test domain in https://www.icann.org/en/system/files/files/ua-readiness-survey-report-cps-rsps-27mar23-en.pdf and `épreuve-acceptation-universelle.org` in https://www.icann.org/get-ua-ready-en. These are observation candidates, not promised current DNS outcomes or an allow-list. The expanded probe now has17cases ×2providers. Only domains are queried; no email is sent and no mailbox ownership is tested. `nic.technology` and `bücher.de` were implicit-address routes in the first run, not proof that an SMTP service or mailbox exists.

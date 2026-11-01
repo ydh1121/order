@@ -17,7 +17,10 @@ const expanded=process.argv[3]==='--expanded';
 const cases=expanded?[
  {domain:'naver.com',category:'KR_GENERAL'}, {domain:'gmail.com',category:'GENERAL'},
  {domain:'abc.xyz',category:'XYZ'}, {domain:'art.art',category:'ART'},
- {domain:'nic.technology',category:'LONG_TLD'}, {domain:'proton.me',category:'CCTLD'},
+ {domain:'nic.technology',category:'LONG_TLD'},
+ {domain:'30.technology',category:'LONG_TLD_PUBLISHED_CONTACT',source:'https://30.technology/contact/'},
+ {domain:'universal-acceptance-test.international',category:'LONG_TLD_UASG_MAIL_TEST',source:'https://www.icann.org/en/system/files/files/ua-readiness-survey-report-cps-rsps-27mar23-en.pdf'},
+ {domain:'épreuve-acceptation-universelle.org',category:'IDN_UASG_MAIL_TEST',source:'https://www.icann.org/get-ua-ready-en'}, {domain:'proton.me',category:'CCTLD'},
  {domain:'sbi.co.in',category:'MULTI_LABEL'}, {domain:'bücher.de',category:'IDN_UNICODE'},
  {domain:'xn--bcher-kva.de',category:'IDN_PUNYCODE'}, {domain:'cs.stanford.edu',category:'SUBDOMAIN'},
  {domain:'naver.xyz',category:'USER_NXDOMAIN_EXAMPLE'}, {domain:'naver.art',category:'USER_NXDOMAIN_EXAMPLE'},

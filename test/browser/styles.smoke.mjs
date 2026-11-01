@@ -44,9 +44,10 @@ function monthDOM(value){
 }
 const flatten=(obj,prefix='',out={})=>{for(const [key,value]of Object.entries(obj)){const p=prefix?prefix+'.'+key:key;if(value!==null&&typeof value==='object')flatten(value,p,out);else out[p]=value;}return out;};
 function differences(a,b){const x=flatten(a),y=flatten(b);return [...new Set([...Object.keys(x),...Object.keys(y)])].filter(k=>typeof x[k]==='number'&&typeof y[k]==='number'?Math.abs(x[k]-y[k])>0.05:x[k]!==y[k]).map(path=>({path,before:x[path],after:y[path]}));}
-const pairAllow=new Set(['pair.style.columnGap','pair.style.rowGap','pair.style.gridTemplateColumns','first.rect.width','second.rect.width','second.rect.x',
- // MSG0517 F02: both numeric children now share a 44px control plus underline.
- 'pair.style.gridTemplateRows','pair.rect.height','first.rect.height','second.rect.height']);
+// The pinned fixture and current product already share horizontal gutters.
+// F02 changes only the four heights below; accepting an older 22px gutter repair
+// here would both reject the intended height change and mask a new width change.
+const pairAllow=new Set(['pair.style.gridTemplateRows','pair.rect.height','first.rect.height','second.rect.height']);
 const numericAllow=new Set(['input.rect.height','input.rect.y','input.style.paddingTop','input.style.paddingBottom','input.style.lineHeight',
  'input-parent.rect.height','input-parent.style.alignItems','input-parent.style.minHeight']);
 const numericContract=values=>{
@@ -111,17 +112,17 @@ try{
   const delta=differences(before,after),known=options.kind==='pair'&&delta.length>0,numeric=options.kind==='input'&&options.owner==='q2';
   let accepted=delta.length===0;
   if(known){
-   const b=before.pair.style,a=after.pair.style;
-   const beforeColumn=parseFloat(b.columnGap),afterColumn=parseFloat(a.columnGap);
-   accepted=delta.every(d=>pairAllow.has(d.path))&&a.columnGap==='22px'&&a.rowGap==='12px'&&
-    [7,11,22].includes(beforeColumn)&&[7,11,12].includes(parseFloat(b.rowGap))&&
-    Math.abs(after.first.rect.width-(before.first.rect.width-(afterColumn-beforeColumn)/2))<=0.1&&
-    Math.abs(after.second.rect.width-after.first.rect.width)<=0.1&&
-    Math.abs(after.second.rect.x-(after.first.rect.x+after.first.rect.width+afterColumn))<=0.1&&
+   const b=before.pair.style,a=after.pair.style,expectedGap=options.width<375?'15px':'25px';
+   accepted=delta.every(d=>pairAllow.has(d.path))&&a.columnGap===expectedGap&&b.columnGap===expectedGap&&a.rowGap==='12px'&&b.rowGap==='12px'&&
+    Math.abs(after.first.rect.width-before.first.rect.width)<=.1&&Math.abs(after.second.rect.width-before.second.rect.width)<=.1&&
+    Math.abs(after.first.rect.x-before.first.rect.x)<=.1&&Math.abs(after.second.rect.x-before.second.rect.x)<=.1&&
+    Math.abs(after.second.rect.width-after.first.rect.width)<=.1&&
+    Math.abs(after.second.rect.x-(after.first.rect.x+after.first.rect.width+parseFloat(expectedGap)))<=.1&&
     Math.abs(after.first.rect.height-69)<=.1&&Math.abs(after.second.rect.height-69)<=.1&&Math.abs(after.pair.rect.height-69)<=.1;
+
   }
   if(numeric)accepted=delta.every(d=>numericAllow.has(d.path))&&numericContract(after);
-  const expectedClass=numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_PAIR_GUTTER_AND_MSG0517_NUMERIC_HEIGHT':null;
+  const expectedClass=numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT':null;
   observations.push({id,...options,before,after,delta,classification:delta.length?(accepted?expectedClass:'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE'):'UNCHANGED'});
   check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known,msg0517Numeric:numeric});
   if(numeric)check(id+':NUMERIC_ROW_CONTRACT',numericContract(after));
@@ -167,7 +168,7 @@ try{
 finally{
  await browser?.close();await mkdir(evidence,{recursive:true});
  report.summary={comparisons:observations.length,checks:checks.length,failures:checks.filter(c=>c.status==='FAIL').length,
-  unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,knownPairDeltas:observations.filter(o=>o.classification==='EXPECTED_PAIR_GUTTER_AND_MSG0517_NUMERIC_HEIGHT').length,msg0517NumericDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY').length,msg0517CurrentNumericCases:observations.filter(o=>o.classification==='MSG0517_CURRENT_NUMERIC_EQUALITY').length};
+  unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,knownPairDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT').length,msg0517NumericDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY').length,msg0517CurrentNumericCases:observations.filter(o=>o.classification==='MSG0517_CURRENT_NUMERIC_EQUALITY').length};
  await writeFile(join(evidence,'styles.json'),JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify({status:report.status,source:report.source,runtime:report.runtime,summary:report.summary,error:report.error,failedChecks:checks.filter(c=>c.status==='FAIL'),evidence:join(evidence,'styles.json')},null,2));
 }
