@@ -1,11 +1,11 @@
 import {createBrowserStorage,projectStoredPayload} from './storage.mjs';
 import {calendarForecast} from '../src/engine/calculation/calendar-forecast.mjs';
 import {compare,fromRatio,multiply} from '../src/engine/calculation/exact.mjs';
-import {quantityUnit,quantityLabel,validMonthlyQuantity,monthlyQuantityText,convertMonthlyUnit,currentPurchaseCost,totalPurchaseCost,exactDisplay,baseQuantity,quantityFactor} from './quantity-contract.mjs';
+import {quantityUnit,quantityDisplayUnit,quantityInputText,quantityDisplayNote,numericInput,moneyDisplay,quantityLabel,validMonthlyQuantity,monthlyQuantityText,convertMonthlyUnit,currentPurchaseCost,totalPurchaseCost,exactDisplay,baseQuantity,quantityFactor} from './quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from './allocation-ui.mjs';
 import {CODE1_UI,CODE1_ORDER_VALIDATION,CODE1_ORDER_ERRORS} from './common-ui.mjs';
 (()=>{'use strict';
-const $=id=>document.getElementById(id),w=n=>exactDisplay(n)+'원';const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id),w=n=>moneyDisplay(n)+'원';const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const valid=n=>/^[1-9]\d*$/.test(String(n))&&Number.isSafeInteger(+n); const sum=(a,b)=>{let n=Number(a)*Number(b);return Number.isSafeInteger(n)&&n>=0?n:null};const DAYS=['월','화','수','목','금','토','일'];const H=['1','2','3','4'],SZ=['왕란','특란','대란','중란','소란'],PK=['10','20','30'];const unit=x=>String(x)==='30'?'판':'팩';const selected=l=>l?.housing&&l?.size&&l?.pack;const sku=l=>selected(l)?`${l.housing}번 · ${l.size} · ${l.pack}구`:'';
 const empty=()=>({id:'sku-'+(crypto.randomUUID?.()||Math.random().toString(36).slice(2)),housing:'',size:'',pack:'',qty:'',price:''});
 const blank=()=>({lines:[],current:null,locations:[],allocations:[],stage:'home',open:'q1'});
@@ -20,7 +20,7 @@ function showQ1Modal(dialog){
 }
 function hideQ1Modal(dialog,complete){window.OrderModalShell.close(dialog,{after:complete});}
 function syncQ1ModalScrollLock(){window.OrderModalShell.sync();}
-const showComma=n=>String(n||'').replace(/\D/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,',');
+const showComma=n=>{const raw=numericInput(n);return raw===null?String(n??''):raw.replace(/\B(?=(\d{3})+(?!\d))/g,',');};
 // v0.15R2 independent delivery domain: quote lines are purchasing items;
 // allocations are separate logistics destinations (do not multiply buyer qty).
 const ident=(prefix)=>`${prefix}-${crypto.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}`;
@@ -34,6 +34,7 @@ const deliveryLabel=a=>a.mode==='FIXED'?(()=>{const r=OrderRepeatContract.fromAl
 // Q3 completeness means every SKU has an assigned, valid site; not merely 1 allocation.
 const addressComplete=()=>S.locations.length>0&&S.locations.every(siteValid);
 const allocationValid=a=>{
+ if(!lineById(a.lineId)||!locationById(a.locationId)||!siteValid(locationById(a.locationId)))return false;
  if(a.q4Review?.version==='0460')return q4ReviewAllocationIssues(a).length===0;
  if(!lineById(a.lineId)||!locationById(a.locationId)||!['FLEX','FIXED','ONCE'].includes(a.mode))return false;
  // Q4-60: base per-delivery quantity is required even when a valid variable range exists.
@@ -120,13 +121,22 @@ let current='home';
 // Field-owned error state, never animate or paint the entire accordion/dialog.
 function legacyErrorState(id,message){
  const candidates=id==='err-q1'?[...document.querySelectorAll('#sku-editor .picks')]:id==='err-q2'?[...document.querySelectorAll('#q2-lines input')]:id==='err-q3'?[...document.querySelectorAll('#site-editor input:not([type=hidden]),#site-editor button#find-address,#site-editor button#site-detail-popup-open')]:[];
- for(const target of candidates){target.removeAttribute('aria-invalid');target.removeAttribute('aria-describedby');target.classList.remove('legacy-error-shake');}
+ for(const target of candidates){
+  for(const control of [target,...target.querySelectorAll('[data-pick]')]){control.removeAttribute('aria-invalid');control.removeAttribute('aria-describedby');control.classList.remove('legacy-error-shake');}
+  if(id==='err-q1')target.previousElementSibling?.removeAttribute('data-order-invalid');
+ }
  if(!message)return;
  let invalid=[];
  if(id==='err-q1'&&message.includes('난각번호'))invalid=[!editing.housing?$('picks-housing'):null,!editing.size?$('picks-size'):null,!editing.pack?$('picks-pack'):null].filter(Boolean);
  if(id==='err-q2')invalid=S.lines.flatMap(l=>[!validMonthlyQuantity(l)?document.getElementById('qty-'+l.id):null,!valid(l.price)?document.getElementById('price-'+l.id):null]).filter(Boolean);
  if(id==='err-q3'&&siteEditing){invalid=[!siteEditing.name?$('site-name'):null,!siteEditing.road||!/^[0-9]{5}$/.test(siteEditing.postal)?$('find-address'):null,!siteEditing.detail?$('site-detail-popup-open'):null].filter(Boolean);}
- for(const target of invalid){if(!target||target.closest('[hidden]'))continue;target.setAttribute('aria-invalid','true');target.setAttribute('aria-describedby',id);if(!matchMedia('(prefers-reduced-motion: reduce)').matches){target.classList.remove('legacy-error-shake');void target.offsetWidth;target.classList.add('legacy-error-shake');target.addEventListener('animationend',()=>target.classList.remove('legacy-error-shake'),{once:true});}}
+ for(const target of invalid){
+  if(!target||target.closest('[hidden]'))continue;
+  target.setAttribute('aria-invalid','true');target.setAttribute('aria-describedby',id);
+  const controls=id==='err-q1'?[...target.querySelectorAll('[data-pick]')]:[target];
+  if(id==='err-q1')target.previousElementSibling?.setAttribute('data-order-invalid','true');
+  for(const control of controls){control.setAttribute('aria-invalid','true');control.setAttribute('aria-describedby',id);if(!matchMedia('(prefers-reduced-motion: reduce)').matches){control.classList.remove('legacy-error-shake');void control.offsetWidth;control.classList.add('legacy-error-shake');control.addEventListener('animationend',()=>control.classList.remove('legacy-error-shake'),{once:true});}}
+ }
 }
 const err=(id,message)=>{const node=$(id);if(!node)return;node.textContent=message||'';node.hidden=!message;legacyErrorState(id,message)};
 const lineById=id=>S.lines.find(x=>String(x.id)===String(id));
@@ -421,7 +431,7 @@ function render(){if(editorMode==='initial'&&S.lines.length)editorMode=null;
  renderQ2();renderAddress();renderDelivery();$('q1-step-actions').hidden=!S.lines.length||!!editorMode;if(orderErrorExposure)renderOrderPageFeedback();
 }
 function renderQ2(){
- $('q2-lines').innerHTML=S.lines.map(l=>`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(l.qtyExact?l.qty:showComma(l.qty))}" placeholder="0"><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}">${!['each',String(l.pack)==='30'?'tray':'pack'].includes(quantityUnit(l))?'<option value="" selected disabled>단위 확인</option>':''}<option value="each" ${quantityUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityUnit(l)===(String(l.pack)==='30'?'tray':'pack')?'selected':''}>${unit(l.pack)}</option></select></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal"><span>월 구매비용</span><output data-line-subtotal="${esc(l.id)}">${lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l))}</output></div></fieldset>`).join('');
+ $('q2-lines').innerHTML=S.lines.map(l=>`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(quantityInputText(l)))}" placeholder="0"><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}">${!['each',String(l.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(l))?'<option value="" selected disabled>단위 확인</option>':''}<option value="each" ${quantityDisplayUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityDisplayUnit(l)===(String(l.pack)==='30'?'tray':'pack')?'selected':''}>${unit(l.pack)}</option></select></div><p class="muted q2-demand-note" data-line-demand="${esc(l.id)}">${esc(quantityDisplayNote(l))}</p><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal"><span>월 수요 비례 비용</span><output data-line-subtotal="${esc(l.id)}">${lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l))}</output></div></fieldset>`).join('');
  $('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());
  if(orderErrorExposure)paintPageFieldIssues(orderValidationProjection().exposedErrors);
 }
@@ -556,7 +566,7 @@ async function upsertSku(confirmed=false){
  const copy={...editing},plan=skuInvalidationPlan(prev,copy),candidate=structuredClone(S),draftFingerprint=JSON.stringify(editing),draftOwner=editing,wasConfirming=skuConfirmationPending;
  if(plan.entries.length&&!confirmed){showSkuConfirmation(plan);return;}
  if(prev&&(prev.housing!==copy.housing||prev.size!==copy.size||prev.pack!==copy.pack)){
-  if(prev.pack!==copy.pack){copy.qty='';copy.qtyUnit=String(copy.pack)==='30'?'tray':'pack';copy.price='';candidate.allocations.filter(a=>a.lineId===copy.id).forEach(a=>a.qty='');}
+  if(prev.pack!==copy.pack){delete copy.qtyExact;delete copy.qtyDisplayUnit;copy.qty='';copy.qtyUnit=String(copy.pack)==='30'?'tray':'pack';copy.price='';candidate.allocations.filter(a=>a.lineId===copy.id).forEach(a=>a.qty='');}
   else copy.price='';
  }
  if(index>=0)candidate.lines[index]=copy;else candidate.lines.push(copy);
@@ -577,6 +587,7 @@ $('picks-housing').onclick=$('picks-size').onclick=$('picks-pack').onclick=e=>{
  const b=e.target.closest('[data-pick]');if(!b)return;
  const field=b.dataset.pick,value=b.dataset.value;
  editing[field]=value;render();
+ const note=$('err-q1');if(!note.hidden&&note.textContent.includes('난각번호')){if(selected(editing))err('err-q1','');else legacyErrorState('err-q1',note.textContent);}
  if(editorMode==='initial'&&selected(editing)){upsertSku();return;}
  requestAnimationFrame(()=>document.querySelector(`[data-pick="${CSS.escape(field)}"][data-value="${CSS.escape(value)}"]`)?.focus({preventScroll:true}));
 };
@@ -588,8 +599,8 @@ for(const id of ['picks-housing','picks-size','picks-pack'])$(id).addEventListen
  const delta=e.key==='ArrowLeft'||e.key==='ArrowUp'?-1:1;
  options[(i+delta+options.length)%options.length].click();
 });$('commit-sku').onclick=()=>upsertSku(false);
-$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=['each',String(line.pack)==='30'?'tray':'pack'];if(!allowed.includes(e.target.value))return;const oldUnit=quantityUnit(line);for(const a of S.allocations.filter(a=>a.lineId===line.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=oldUnit;if(validMonthlyQuantity(line))Object.assign(line,convertMonthlyUnit(line,e.target.value));else line.qtyUnit=e.target.value;inlineDraft=true;void save(S,{publish:false});renderQ2();refreshCompletionBadges();});
-$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const old=el.value,pos=el.selectionStart??old.length,digitsBefore=old.slice(0,pos).replace(/\D/g,'').length;const digits=old.replace(/\D/g,'').replace(/^0+(?=\d)/,'');if(el.dataset.lineQty)delete l.qtyExact;l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const formatted=showComma(digits);el.value=formatted;let caret=0,count=0;while(caret<formatted.length&&count<digitsBefore){if(/\d/.test(formatted[caret]))count++;caret++}el.setSelectionRange(caret,caret);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();inlineDraft=true;void save(S,{publish:false});});
+$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=['each',String(line.pack)==='30'?'tray':'pack'];if(!allowed.includes(e.target.value))return;Object.assign(line,convertMonthlyUnit(line,e.target.value));inlineDraft=true;void save(S,{publish:false});renderQ2();refreshCompletionBadges();});
+$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const old=el.value,pos=el.selectionStart??old.length,digitsBefore=old.slice(0,pos).replace(/\D/g,'').length;const digits=numericInput(old);if(digits===null){el.value=el.dataset.lineQty?showComma(quantityInputText(l)):showComma(l.price);return;}if(el.dataset.lineQty){const previousUnit=quantityUnit(l);for(const a of S.allocations.filter(a=>a.lineId===l.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=previousUnit;delete l.qtyExact;l.qtyUnit=quantityDisplayUnit(l);}l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const formatted=showComma(digits);el.value=formatted;let caret=0,count=0;while(caret<formatted.length&&count<digitsBefore){if(/\d/.test(formatted[caret]))count++;caret++}el.setSelectionRange(caret,caret);const demand=document.querySelector(`[data-line-demand="${CSS.escape(String(id))}"]`);if(demand)demand.textContent=quantityDisplayNote(l);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();inlineDraft=true;void save(S,{publish:false});});
 
 $('q1-next').onclick=()=>{if(!guardPendingEdits('q1-next'))return;const bad=CODE1_ORDER_VALIDATION.validateOrderDraft(S,{scope:'full'}).fieldErrors.find(x=>x.stage==='q1');if(bad){errorAt('q1',bad.message);return;}err('err-q1','');if(changeOpen('q2'))navigateRegularStage('q2');};
 let regularStageEpoch=0;
@@ -642,7 +653,7 @@ function q3MountEditor(trigger){
  OrderPhone.mount($('site-contact-phone'));OrderPhone.mount($('site-store-phone'));OrderEmailUI.mount($('site-email'));
  for(const [key,id] of [['name','site-name'],['contactPhone','site-contact-phone'],['email','site-email'],['storePhone','site-store-phone']]){if(key.endsWith('Phone'))OrderPhone.set($(id),siteEditing[key]||'');else if(key==='email')OrderEmailUI.instance($(id)).reset(String(siteEditing[key]||''));else $(id).value=String(siteEditing[key]||'');}
  $('q3-address-slot').textContent=siteEditing.road?[siteEditing.road,siteEditing.detail].filter(Boolean).join(' · '):'—';
- $('q3-address-note').hidden=!!siteEditing.road;q3SyncSaveAction();$('site-editor-error').textContent='';q3PaintErrors([]);
+ q3SyncSaveAction();$('site-editor-error').textContent='';q3PaintErrors([]);
  OrderModalShell.open(dialog,{variant:'compact',returnFocus:()=>q3EditorReturn?.isConnected?q3EditorReturn:document.querySelector(q3EditorSelector),initialFocus:()=>$('site-name')});refreshCompletionBadges();
 }
 function addSite(){if(!guardPendingEdits('site-add'))return;siteEditOriginal=null;siteEditing=blankSite();q3MountEditor(document.activeElement);}
@@ -686,12 +697,12 @@ $('q3-sites').addEventListener('click',e=>{
 
 });
 const CONTACT_COPY_FIELDS=[['storePhone','매장 대표번호'],['contactPhone','담당자 전화번호'],['email','이메일']];
-function contactCopyCheckbox(key,label,attrs){return `<label class="q4-check-row"><input type="checkbox" ${attrs}><span class="q4-check-icon" aria-hidden="true">✓</span><span class="q4-check-copy">${esc(label)}</span></label>`;}
+function contactCopyCheckbox(key,label,attrs,{multiline=false}={}){return `<label class="q4-check-row${multiline?' q4-check-row--multiline':''}"><input type="checkbox" ${attrs}><span class="q4-check-icon" aria-hidden="true">✓</span><span class="q4-check-copy">${esc(label)}</span></label>`;}
 function openContactCopy(sourceId,trigger){
  if(!guardPendingEdits('contact-copy'))return;const source=locationById(sourceId);if(!source||S.locations.length<2)return;
  const validField=(key,value)=>String(value??'').trim()!==''&&(key==='email'?OrderSiteContract.email(value):OrderSiteContract.phone(value));
  const fields=CONTACT_COPY_FIELDS.map(([key,label])=>contactCopyCheckbox(key,label,`data-contact-copy-field="${key}"`)).join('');
- const targets=S.locations.filter(x=>x.id!==sourceId).map(x=>contactCopyCheckbox(x.id,siteName(x),`data-contact-copy-target="${esc(x.id)}"`)).join('');
+ const targets=S.locations.filter(x=>x.id!==sourceId).map(x=>contactCopyCheckbox(x.id,siteName(x),`data-contact-copy-target="${esc(x.id)}"`,{multiline:true})).join('');
  const dialog=OrderCopyDialog.create({id:'q3-contact-copy',title:siteName(source)+' 연락처 복사',fields,targets,applyLabel:'변경'});document.body.append(dialog);
  const sourceBlock=document.createElement('section');sourceBlock.className='ui-copy-source';sourceBlock.setAttribute('aria-label','복사할 연락처');dialog.querySelector('.qa-copy-scroll').prepend(sourceBlock);
  const feedback=dialog.querySelector('#qa-copy-feedback');feedback.classList.add('ui-feedback-sr');
@@ -732,9 +743,10 @@ function openContactCopy(sourceId,trigger){
  OrderModalShell.bind(dialog,close);OrderModalShell.open(dialog,{variant:'copy',returnFocus:()=>document.querySelector(`[data-contact-copy="${CSS.escape(sourceId)}"]`),initialFocus:()=>dialog.querySelector('[data-copy-cancel]')});selectStage();
 }
 function paintQ4Assignment(){const c=q4AssignmentDraft;if(!c)return;const container=$('q4-assignment-options'),shape=S.locations.map(s=>s.id).join('|');
- if(container.dataset.shape!==shape){container.dataset.shape=shape;container.innerHTML=S.locations.map(site=>`<div class="q4-assignment-row" data-assignment-row="${esc(site.id)}">${contactCopyCheckbox(site.id,siteName(site),`data-assignment-site="${esc(site.id)}"`)}<button type="button" class="ui-copy-action" data-copy-align="end" data-assignment-repair="${esc(site.id)}"></button></div>`).join('');}
- for(const site of S.locations){const row=container.querySelector(`[data-assignment-row="${CSS.escape(site.id)}"]`),box=row.querySelector('input'),action=row.querySelector('[data-assignment-repair]'),basic=OrderSiteContract.basicIssues(site),proof=OrderEmailDomain.status(site.email),existing=c.originalIds.includes(site.id),selected=c.selected.includes(site.id);
-  box.checked=selected;box.disabled=!existing&&!selected&&basic.length>0;row.dataset.error=String(c.exposed&&basic.length>0);box.setAttribute('aria-invalid',String(c.exposed&&basic.length>0));
+ if(container.dataset.shape!==shape){container.dataset.shape=shape;container.innerHTML=S.locations.map(site=>`<div class="q4-assignment-row" data-assignment-row="${esc(site.id)}">${contactCopyCheckbox(site.id,siteName(site),`data-assignment-site="${esc(site.id)}"`,{multiline:true})}<button type="button" class="ui-copy-action" data-copy-align="end" data-assignment-repair="${esc(site.id)}"></button></div>`).join('');}
+ for(const site of S.locations){const row=container.querySelector(`[data-assignment-row="${CSS.escape(site.id)}"]`),box=row.querySelector('input'),action=row.querySelector('[data-assignment-repair]'),basic=OrderSiteContract.basicIssues(site),selected=c.selected.includes(site.id);
+  // Selection owns stable identity only; Q3 completeness remains in the final verdict.
+  box.checked=selected;box.disabled=!String(site.id||'').trim();row.dataset.error='false';box.removeAttribute('aria-invalid');
   row.querySelector('.q4-check-copy').textContent=siteName(site);action.dataset.repairKind='edit';action.hidden=basic.length===0;action.disabled=false;action.textContent='수정';action.setAttribute('aria-label',siteName(site)+' 기본정보 수정');
  }
  $('q4-assignment-clear').hidden=!S.allocations.some(a=>a.lineId===c.lineId);$('q4-assignment-clear').innerHTML=OrderIcons.svg('unlink')+'<span>모든 연결 해제</span>';
@@ -758,10 +770,10 @@ $('q4-assignment-options').addEventListener('click',e=>{const action=e.target.cl
  // trigger stays in the parent and the selection draft is not committed or lost.
  q4AssignmentDraft=null;editSite(id);q4AssignmentDraft=c;if(siteEditing)q3PaintErrors(OrderSiteContract.issues(siteEditing,{allowUnverified:true}));
 });
-$('q4-assignment-next').onclick=()=>{const c=q4AssignmentDraft;if(!c||c.transitioning)return;const ids=[...c.selected],bad=ids.find(id=>!locationById(id)||OrderSiteContract.basicIssues(locationById(id)).length);
- if(!ids.length||bad){c.exposed=true;$('q4-assignment-error').textContent=bad?'선택한 사업장의 기본정보를 수정해 주세요.':'납품 사업장을 선택해 주세요.';paintQ4Assignment();const target=bad?$('q4-assignment-options').querySelector(`[data-assignment-repair="${CSS.escape(bad)}"]`):$('q4-assignment-options').querySelector('input:not(:disabled)');target?.focus({preventScroll:true});orderShake(target?.closest('.q4-assignment-row')||$('q4-assignment-options'));return;}
- // UNKNOWN mail proof is a pending confirmation, not permission to save. The
- // unchanged final q4ReviewCommit checks the strict parent verdict again.
+$('q4-assignment-next').onclick=()=>{const c=q4AssignmentDraft;if(!c||c.transitioning)return;const ids=[...c.selected],bad=ids.find(id=>!String(id||'').trim()||!locationById(id));
+ if(!ids.length||bad){c.exposed=true;$('q4-assignment-error').textContent=bad?'사업장 연결을 다시 확인해 주세요.':'납품 사업장을 선택해 주세요.';paintQ4Assignment();const target=bad?$('q4-assignment-options').querySelector(`[data-assignment-repair="${CSS.escape(bad)}"]`):$('q4-assignment-options').querySelector('input:not(:disabled)');target?.focus({preventScroll:true});orderShake(target?.closest('.q4-assignment-row')||$('q4-assignment-options'));return;}
+ // Incomplete Q3 records may own delivery drafts. Completion and result gates
+ // still consume the unchanged strict parent verdict, including mail proof.
  const allocations=ids.map(id=>JSON.parse(JSON.stringify(S.allocations.find(a=>a.lineId===c.lineId&&a.locationId===id)||blankAllocation(c.lineId,id))));c.transitioning=true;c.controller.abort();q4AssignmentDraft=null;
  OrderModalShell.close($('q4-assignment-dialog'),{immediate:true,after:()=>beginQ4Context(c.lineId,allocations,allocations[0].id,c.trigger,true)});
 };
@@ -935,19 +947,20 @@ function beginQ4Context(lineId,allocations,id,trigger,selectionPending=false){
  const selector=trigger?.dataset.q3Q4Edit?`[data-q3-q4-edit="${CSS.escape(id)}"]`:trigger?.dataset.q4SelectSites?`[data-q4-select-sites="${CSS.escape(lineId)}"]`:`[data-edit-allocation="${CSS.escape(id)}"]`;
  q4ReviewContext={openingAllocations:q4ReviewClone(allocations),id,lineId,ids:allocations.map(a=>a.id),selectionPending,signature:JSON.stringify([line,S.allocations.filter(a=>a.lineId===lineId),S.locations]),returnSelector:selector,trigger,scrollY:scrollY};
  deliveryDraft=q4ReviewClone(allocations.find(a=>a.id===id)||allocations[0]);editingAllocationId=id;
- window.OrderQ4Review.open({revision:S.allocationRevision||0,line:q4ReviewClone(line),allocations:q4ReviewClone(allocations),locations:q4ReviewClone(locations),selectedIndex:Math.max(0,allocations.findIndex(a=>a.id===id)),returnSelector:selector});$('q4-regular-dialog').dataset.entryOrigin=trigger?.dataset.q3Q4Edit?'q3':'q4';$('q4-regular-save').textContent=trigger?.dataset.q3Q4Edit?'적용':'저장';refreshCompletionBadges();return true;
+ window.OrderQ4Review.open({revision:S.allocationRevision||0,line:q4ReviewClone(line),allocations:q4ReviewClone(allocations),locations:q4ReviewClone(locations),selectedIndex:Math.max(0,allocations.findIndex(a=>a.id===id)),returnSelector:selector});$('q4-regular-dialog').dataset.entryOrigin=trigger?.dataset.q3Q4Edit?'q3':'q4';$('q4-regular-save').textContent=locations.some(site=>!siteValid(site))?'초안 저장':trigger?.dataset.q3Q4Edit?'적용':'저장';refreshCompletionBadges();return true;
 }
 function q4ReviewClosed(){q4ReviewContext=null;deliveryDraft=null;editingAllocationId=null;q4ReviewPending=null;q4ValidationAttempted=false;q4SiteDemandDraft=null;q4OnceDraft=null;if(q4OnceConfirmDialog.open)q4OnceConfirmDialog.close();err('err-q4','');renderDelivery();renderAddress();refreshCompletionBadges();}
 async function q4ReviewCommit(patches,confirmedFingerprint=null,canCommit=()=>true){
  const c=q4ReviewContext;if(!c)return {ok:false,message:'열린 납품 조건이 없습니다.'};if(!canCommit())return {ok:false,status:'CANCELLED',message:'입력이 변경되었습니다. 다시 저장해 주세요.'};
  const current=S.allocations.filter(a=>a.lineId===c.lineId),line=lineById(c.lineId),locations=current.map(a=>locationById(a.locationId));
  if(JSON.stringify([line,current,S.locations])!==c.signature)return {ok:false,message:'상위 입력이 변경되었습니다. 취소 후 다시 열어 주세요.'};
- if(patches.length!==c.ids.length||patches.some(a=>!c.ids.includes(a.id)||a.lineId!==c.lineId))return {ok:false,message:'사업장 연결을 다시 확인해 주세요.'};
+ if(patches.length!==c.ids.length||patches.some(a=>!c.ids.includes(a.id)||a.lineId!==c.lineId||c.openingAllocations.find(open=>open.id===a.id)?.locationId!==a.locationId))return {ok:false,message:'사업장 연결을 다시 확인해 주세요.'};
  if(new Set(patches.map(a=>a.id)).size!==patches.length||new Set(patches.map(a=>a.locationId)).size!==patches.length||patches.some(a=>!locationById(a.locationId)))return {ok:false,message:'사업장 연결이 올바르지 않습니다.'};
  const staged=[...S.allocations.filter(a=>a.lineId!==c.lineId).map(q4ReviewClone),...patches.map(q4ReviewClone)];
  const candidate={...S,allocations:staged},verdict=q4ReviewVerdict(candidate,confirmedFingerprint);
- // Other SKU incomplete settings do not force-write or prevent this SKU's independent commit.
- const blocking=verdict.fieldErrors.filter(e=>e.stage!=='q4'||e.lineId===c.lineId);
+ // Delivery-draft saving does not promote incomplete Q3 data. The full verdict
+ // is still required by badges, completion and the final result gate.
+ const blocking=verdict.fieldErrors.filter(e=>e.stage!=='q3'&&(e.stage!=='q4'||e.lineId===c.lineId));
  if(blocking.length)return {ok:false,message:blocking[0].message,issues:blocking};
  const warning=verdict.confirmations.find(w=>w.lineId===c.lineId);
  if(warning){q4ReviewPending={patches:q4ReviewClone(patches),warning,canCommit};
@@ -1004,7 +1017,7 @@ window.OrderEmailLifecycle=Object.freeze((()=>{
  function retry(){if(Date.now()-lastRetry<1500)return;lastRetry=Date.now();for(const [domain,j]of jobs){const p=OrderEmailDomain.peek(domain);if(!OrderEmailDomain.isSuccess(p)&&!OrderEmailDomain.isHard(p)&&!j.running){j.attempts=0;j.at=Date.now();}}reconcile();}
  OrderEmailDomain.subscribe(()=>{paint();reconcile();});
  window.addEventListener('online',retry);window.addEventListener('pagehide',()=>{stopped=true;clearTimeout(timer);});window.addEventListener('pageshow',()=>{if(stopped){stopped=false;reconcile();}});
- return {boot(){booted=true;reconcile();},reconcile,retry};
+ return {boot(){booted=true;reconcile();},reconcile,retry,inspect:()=>({booted,stopped,timerScheduled:!!timer,jobCount:jobs.size,running:[...jobs.values()].filter(j=>j.running).length,attemptCounts:[...jobs.values()].map(j=>j.attempts)})};
 })());
 
 window.OrderValidationState=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify(orderValidationProjection())),line:id=>JSON.parse(JSON.stringify(lineById(id)||null))});window.__orderReviewBoot=async()=>{const restored=await storageHydration;storageRevision=restored.revision;storageToken=restored.versionToken;document.documentElement.dataset.storageStatus=restored.status;if(restored.ok&&restored.data){S=ensureMigration(restored.data);lastCommitted=structuredClone(S);editorMode=S.lines.length?null:'initial';}else if(!restored.ok)storageFailure=restored;storageReady=true;$('app').inert=false;render();fromHash();if(storageFailure)storageFeedback(storageFailure);OrderEmailLifecycle.boot();document.documentElement.dataset.storageReady='true';storagePaint();};

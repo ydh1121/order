@@ -43,3 +43,17 @@ test('schema tampering including persisted DNS evidence is corrupt and never qui
 test('legacy empty accordion/current states remain exact and empty R1 address creates no fake site',async()=>{const data=fixture();data.open='';data.current=null;const loaded=await setup({session:new MemoryStorage({[LEGACY_KEYS[0]]:JSON.stringify(data)})}).api.load();assert.equal(loaded.data.open,'');assert.equal(loaded.data.current,null);const old={lines:[{housing:'4',size:'특란',pack:'30',qty:'',price:'',drop:''}],address:{road:'',postal:'',detail:''},delivery:{mode:'FLEX',freq:1,days:[]}};const result=await setup({session:new MemoryStorage({[LEGACY_KEYS[1]]:JSON.stringify(old)})}).api.load();assert.equal(result.status,'MIGRATED');assert.deepEqual(result.data.locations,[]);assert.deepEqual(result.data.allocations,[]);});
 test('legacy malformed null arrays are corrupt rather than silently emptied',async()=>{const data=fixture();data.locations=null;const env=setup({session:new MemoryStorage({[LEGACY_KEYS[0]]:JSON.stringify(data)})});assert.equal((await env.api.load()).status,'CORRUPT');assert.equal(env.local.writes,0);});
 test('a cancelled duplicate receipt cannot report a fresh success to a closed consumer',async()=>{const {api,local}=setup(),initial=await api.load();await api.commit(fixture(),options(initial));const result=await api.commit(fixture(),options(initial,'transaction-1',{canCommit:()=>false}));assert.equal(result.status,'CANCELLED');assert.equal(local.writes,1);});
+
+test('F03 schema1 records read unchanged and upgrade only with verified schema2 commit',async()=>{
+ const env=setup(),initial=await env.api.load(),data=fixture();data.lines[0].qty='6050';data.lines[0].qtyUnit='each';
+ await env.api.commit(data,options(initial));const v1=JSON.parse(env.local.getItem(STORAGE_KEY));v1.schemaVersion=1;env.local.setItem(STORAGE_KEY,JSON.stringify(v1));
+ const before=env.local.getItem(STORAGE_KEY),loaded=await env.api.load();assert.equal(loaded.ok,true);assert.equal(env.local.getItem(STORAGE_KEY),before);assert.equal(loaded.data.lines[0].qty,'6050');
+ const changed=structuredClone(loaded.data);changed.lines[0].qtyDisplayUnit='tray';env.local.failWrite=true;
+ assert.equal((await env.api.commit(changed,options(loaded,'v2-change'))).status,'WRITE_FAILED');assert.equal(env.local.getItem(STORAGE_KEY),before);
+ env.local.failWrite=false;const saved=await env.api.commit(changed,options(loaded,'v2-change'));assert.equal(saved.ok,true);assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,2);assert.equal(saved.data.lines[0].qty,'6050');assert.equal(saved.data.lines[0].qtyDisplayUnit,'tray');
+ assert.equal((await env.api.commit(data,options(loaded,'stale-v1'))).status,'CONFLICT');
+});
+test('F03 strict schema1 refuses unknown display metadata; schema2 refuses unrecognized display units',async()=>{
+ const env=setup(),initial=await env.api.load();const data=fixture();data.lines[0].qtyDisplayUnit='dozen';assert.equal((await env.api.commit(data,options(initial))).status,'INVALID_DATA');
+ data.lines[0].qtyDisplayUnit='each';await env.api.commit(data,options(initial));const record=JSON.parse(env.local.getItem(STORAGE_KEY));record.schemaVersion=1;env.local.setItem(STORAGE_KEY,JSON.stringify(record));assert.equal((await env.api.load()).status,'CORRUPT');
+});

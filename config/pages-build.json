@@ -22,27 +22,27 @@
     {
       "source": "web/allocation-ui.mjs",
       "output": "allocation-ui.mjs",
-      "sha256": "bf8110bb04c5b177f16796294a65bf600deb3d7045adc6c7665032221ad0c020"
+      "sha256": "a74549e006fb7722632e3f4bffed44bcd5d036342d402ef1780c3786e392e6ac"
     },
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "c2c13a5d50f96641ed3d93e59fc2f3c967965454dca83098486933e6b84d5ec7"
+      "sha256": "9862c511095265606c4774884d006af4cc36c2699db1fb76c115b2365f08e082"
     },
     {
       "source": "web/common-ui.mjs",
       "output": "common-ui.mjs",
-      "sha256": "30db7fecb244136a09132f6b128f6f7db69f1ce95ba50f70c473494a13e18ab8"
+      "sha256": "691f943ed62b12d75b7b073c500c43c6f6c89559a72edcdfa29e15fce9b20d2a"
     },
     {
       "source": "web/contact-ui.mjs",
       "output": "contact-ui.mjs",
-      "sha256": "e6bc7a0e819679e2eaad7942d75c1577904255c3a5fb13ebf4d82c70dbe5689b"
+      "sha256": "7a40b2e689bddfd078fa845c4e342a1d7c8c5e5bf56c792e99cbb21dfd80aeea"
     },
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "10c908ee8a23aaacd28fd7fe59f4da46821107eac3599e5d2cf138d70d0184ba"
+      "sha256": "93f5f44ee5c125a376603d4abfb5ec5640b9dc49def63142e71869ba3f07a09f"
     },
     {
       "source": "web/main.mjs",
@@ -52,22 +52,22 @@
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "615110989b95a31bfcb43fead89dc477b80b71dfac0f1b869d668856097b4543"
+      "sha256": "f462eeadc8e9ce0e70ce72e140b0281f5c67130ab45b1cf73361b359cf8435e7"
     },
     {
       "source": "web/quantity-contract.mjs",
       "output": "quantity-contract.mjs",
-      "sha256": "86fcfe02d5e6d56986cbe58b92b7cb4413e9236ead0417afcde59b22ebd0b5cf"
+      "sha256": "a752b842bed8098f40f2e18a063d4c7bd77f3f6174580e8d942ed9bcf8e965b5"
     },
     {
       "source": "web/storage.mjs",
       "output": "storage.mjs",
-      "sha256": "3dc863a577d5fe3a7b019db486515003c69d0ab7e6fef3d7b05099690cc802fd"
+      "sha256": "d4c19b5fcc07e757d319b1beee7f070d2a3db5565e38a2a9398f3e4779a17e31"
     },
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "4cf5e09785604872c51b6f9726cb9f97936ba4867fa7eb7dfbfc0d0da9d242fd"
+      "sha256": "77a14d509f77707f279e0e84ae8c2167bf704234ad4bb0339a642940cc0c90bc"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

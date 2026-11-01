@@ -63,6 +63,14 @@ small{font-size:var(--type-meta)}
 .input-unit input{width:100%;min-width:0;border:0;background:transparent;outline:none;padding:2px 0 6px;font-size:var(--type-number);font-weight:750;letter-spacing:-.045em;color:var(--ink);font-variant-numeric:tabular-nums;appearance:textfield}
 .input-unit input::-webkit-inner-spin-button{appearance:none}
 .input-unit span{font-size:var(--type-meta);color:var(--text-primary);white-space:nowrap}
+/* Shared numeric row: a select and a suffix occupy the same control geometry. */
+.numeric-field{--ui-numeric-height:2.75rem}
+.numeric-field .input-unit{align-items:center;min-height:calc(var(--ui-numeric-height) + 1px)}
+.numeric-field .input-unit input{height:var(--ui-numeric-height);padding:0;line-height:1.5}
+.numeric-field .input-unit>:is(span,.ui-quantity-unit){font-size:var(--type-meta);font-weight:var(--type-weight-body);line-height:1.5}
+.numeric-field .input-unit .ui-quantity-unit{padding-block:0}
+.q2-demand-note{margin-top:var(--ui-gap-dependent);font-size:var(--type-meta);line-height:var(--info-line-height);font-weight:var(--type-weight-information);color:var(--text-secondary);overflow-wrap:anywhere}
+
 .spend-total{margin-top:13px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-top:1px solid #e2e8ec;padding-top:10px}
 .spend-total span{font-size:var(--type-meta);color:var(--text-primary);}
 .spend-total output{font-size:var(--type-strong);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -570,12 +578,22 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .q4-week-days,.q4-off-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.25rem;margin:.4rem 0}
 .q4-week-days button,.q4-off-days button{min-width:0;min-height:2.35rem;background:#f4f6f9;border:1px solid transparent;border-radius:2rem;font-size:var(--type-meta);padding:.25rem 0}
 .q4-week-days button[aria-pressed=true],.q4-off-days button[aria-pressed=true]{background:var(--pale);color:var(--blue);border-color:var(--blue)}
-.q4-check-row{position:relative;display:flex;align-items:flex-start;gap:.55rem;min-height:2.3rem;cursor:pointer;padding:.25rem 0;font-size:var(--type-small);line-height:1.5}
-.q4-check-row input{position:absolute;opacity:0;width:1.4rem;height:1.4rem;left:0;top:0}
-.q4-check-icon{flex:0 0 1.25rem;width:1.25rem;height:1.25rem;display:grid;place-items:center;background:#fff;border:1.5px solid #abbacb;border-radius:.33rem;color:transparent;line-height:1;align-self:flex-start;margin-top:calc((1.5em - 1.25rem)/2)}
+/* All product checkbox rows share one geometry/state owner. Only multiline copy
+   opts into first-line alignment; dialog context never changes icon geometry. */
+.q4-check-row{--ui-check-size:1.25rem;--ui-check-target:2.75rem;--ui-check-leading:1.5;position:relative;display:flex;align-items:center;gap:.55rem;min-width:0;min-height:var(--ui-check-target);margin:0;padding:.25rem 0;cursor:pointer;font-size:var(--type-small);line-height:var(--ui-check-leading)}
+.q4-check-row input{position:absolute;opacity:0;width:var(--ui-check-size);height:var(--ui-check-size);left:0;top:50%;transform:translateY(-50%)}
+.q4-check-icon{flex:0 0 var(--ui-check-size,1.25rem);width:var(--ui-check-size,1.25rem);height:var(--ui-check-size,1.25rem);display:grid;place-items:center;background:#fff;border:1.5px solid var(--ui-border);border-radius:.33rem;color:transparent;line-height:1;margin:0;align-self:center}
+.q4-check-copy{min-width:0;flex:1;line-height:var(--ui-check-leading,1.5);white-space:normal;overflow-wrap:anywhere}
+.q4-check-row--multiline{align-items:flex-start;padding-block:calc((var(--ui-check-target) - var(--ui-check-leading)*1em)/2)}
+.q4-check-row--multiline .q4-check-icon{align-self:flex-start;margin-top:calc((var(--ui-check-leading)*1em - var(--ui-check-size))/2)}
+.q4-check-row--multiline input{top:calc((var(--ui-check-target) - var(--ui-check-size))/2);transform:none}
 .q4-check-row input:checked+.q4-check-icon{background:var(--blue);color:#fff;border-color:var(--blue)}
 .q4-check-row input:focus-visible+.q4-check-icon{outline:2px solid var(--blue);outline-offset:2px}
-.q4-check-copy{min-width:0;flex:1;line-height:1.5}
+.q4-check-row:has(input:disabled){cursor:not-allowed}
+.q4-check-row input:disabled+.q4-check-icon{border-color:var(--ui-disabled-border);background:var(--ui-disabled-bg);color:transparent}
+.q4-check-row input:disabled:checked+.q4-check-icon{color:var(--ui-disabled-color)}
+.q4-check-row input:disabled~.q4-check-copy{color:var(--ui-disabled-color)}
+.q4-check-row:is([data-error="true"],:has(input[aria-invalid="true"])) .q4-check-icon{border-color:var(--ui-danger)}
 .q4-range-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem;margin-top:.4rem}
 .q4-range-grid label{font-size:var(--type-meta);font-weight:var(--type-weight-body);min-width:0}
 .q4-range-grid input{display:block;width:100%;min-width:0;margin-top:.4rem}
@@ -627,7 +645,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 @media(prefers-reduced-motion:reduce){.q4-regular-dialog,.q4-advanced details::details-content,.q4-regular-dialog .q4-fold-icon,.q4-regular-dialog .q4-combo-menu,.q4-regular-dialog .q4-check-icon{transition:none!important;animation:none!important}.q4-regular-dialog .q4-week-body{animation:none!important}}
 
 /* Narrow legacy field feedback: only targeted visible inputs/groups, no accordion shake. */
-#sku-editor .picks[aria-invalid=true]{outline:1.5px solid var(--ui-danger);outline-offset:.1rem;border-radius:.55rem}
 #q2-lines input[aria-invalid=true],#site-editor button[aria-invalid=true],#site-editor input[aria-invalid=true]{border-color:var(--ui-danger);box-shadow:none}
 .legacy-error-shake{animation:q4-field-shake .25s ease-in-out 1}
 @media(prefers-reduced-motion:reduce){.legacy-error-shake{animation:none!important}}
@@ -765,7 +782,7 @@ dialog[data-modal-variant].is-closing{pointer-events:none}
 @media(min-width:768px){.ui-field-title:not(.ui-field-title--dependent){--ui-field-title-size:var(--type-label)}}
 .ui-field-error[hidden]{display:none}
 .ui-field-error{margin:0;color:var(--ui-danger);font-size:var(--type-meta);font-weight:400;line-height:1.5}
-.ui-field-group[data-error="true"]>.ui-field-title{color:var(--ui-danger)}
+.ui-field-group[data-error="true"]>.ui-field-title,.ui-field-title[data-order-invalid="true"]{color:var(--ui-danger)}
 .ui-field-group [role="group"][aria-invalid="true"]{outline:none;border:0;box-shadow:none}
 .ui-field-group [role="group"][aria-invalid="true"] .q4-check-icon{border-color:var(--ui-danger)}
 /* A required weekday set is one field, never an error attributed to Monday. */
@@ -818,8 +835,6 @@ dialog{color:var(--ui-title-color)}
 .q4-regular-dialog .qa-dependent-fields{display:grid;gap:var(--ui-gap-dependent);margin-top:var(--ui-gap-dependent);min-width:0}
 .q4-regular-dialog .qa-scoped-quality{min-width:0}
 .q4-regular-dialog .qa-scoped-quality .q4-check-copy{color:var(--ui-help-color);font-weight:var(--type-weight-body)}
-.q4-regular-dialog .qa-scoped-quality .q4-check-row{align-items:center;min-height:2.75rem}
-.q4-regular-dialog .qa-scoped-quality .q4-check-icon{align-self:center;margin-top:0}
 .q4-regular-dialog .qa-calendar-weeknames{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center;font-size:var(--type-xs);color:var(--muted)}
 .q4-regular-dialog .qa-calendar-grid button:disabled{background:transparent;color:var(--muted);opacity:.42;cursor:not-allowed}
 .q4-regular-dialog .qa-calendar-grid button[aria-current="date"]:not([aria-pressed="true"]){box-shadow:inset 0 0 0 1px var(--blue)}
@@ -894,7 +909,6 @@ dialog{color:var(--ui-title-color)}
 .q4-regular-dialog .q4-week-row[data-error="true"]{border-color:var(--ui-danger)}
 .q4-regular-dialog [data-q4-field="count"][aria-invalid="true"],.q4-regular-dialog input[aria-invalid="true"]{border-color:var(--ui-danger);box-shadow:none;outline-color:transparent}
 .q4-regular-dialog .q4-contact-grid[aria-invalid="true"],.q4-regular-dialog .q4-day-groups[aria-invalid="true"]{border:0;padding:0;border-radius:0;box-shadow:none}
-.q4-regular-dialog .q4-check-row[data-error="true"]{border-color:var(--ui-danger)}
 .q4-regular-dialog .q4-combo-trigger .ui-chevron{transform:none!important}
 .q4-regular-dialog .q4-combo-trigger{min-height:var(--ui-control-height);border:1px solid var(--ui-border);border-radius:var(--ui-control-radius)}
 .q4-allocation-item-actions button[data-delete-allocation]{color:var(--ui-danger)}
@@ -980,6 +994,7 @@ dialog{color:var(--ui-title-color)}
    used by Q4, recoloring only a control's existing stroke or an invalid text-choice group. */
 #page-form :is(.text-input,.site-detail-popup-trigger,#find-address,#q2-lines input)[data-order-invalid="true"]{border-color:var(--ui-danger)}
 :is(#page-form,#sku-dialog) .picks[data-order-invalid="true"] :is(.pick,.q1-egg-space){color:var(--ui-danger)}
+:is(#page-form,#sku-dialog) .picks[data-order-invalid="true"] .pick{border-color:var(--ui-danger)}
 :is(#page-form,#sku-dialog) [data-order-error-note]{color:var(--ui-danger)}
 
 
@@ -1078,14 +1093,19 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .ui-copy-review-heading{margin:0;font-size:var(--type-control);font-weight:var(--type-weight-title);line-height:1.5;color:var(--ui-title-color);overflow-wrap:anywhere}
 .ui-copy-review-field{min-width:0;margin:0;padding:0;border:0}
 .ui-copy-review-field>legend{max-width:100%;padding:0;font-size:var(--type-small);font-weight:var(--type-weight-field);line-height:1.4;color:var(--ui-title-color);overflow-wrap:anywhere}
-.ui-copy-review-values{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:start;column-gap:var(--ui-field-nested-gap);row-gap:var(--ui-gap-dependent);min-width:0;margin-top:var(--ui-field-control-gap)}
-.ui-copy-review-value{display:grid;align-content:start;gap:var(--ui-gap-dependent);min-width:0;margin:0}
-.ui-copy-review-value>dt{font-size:var(--type-meta);font-weight:var(--type-weight-body);line-height:1.5;color:var(--text-secondary)}
+/* Label and data rows are independent. The center column has equal gutters;
+   the arrow follows the first data line, never the total wrapped-value height. */
+.ui-copy-review-values{display:grid;grid-template-columns:minmax(0,1fr) var(--type-arrow) minmax(0,1fr);align-items:start;column-gap:var(--ui-field-nested-gap);row-gap:var(--ui-gap-dependent);min-width:0;margin-top:var(--ui-field-control-gap)}
+.ui-copy-review-value{display:contents}
+.ui-copy-review-value>dt{min-width:0;font-size:var(--type-meta);font-weight:var(--type-weight-body);line-height:1.5;color:var(--text-secondary)}
 .ui-copy-review-value>dd{min-width:0;margin:0;font-size:var(--type-body);font-weight:var(--type-weight-body);line-height:var(--info-line-height);color:var(--text-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.ui-copy-review-value[data-copy-value="after"]>dt,.ui-copy-review-value[data-copy-value="after"]>dd{color:var(--blue)}
-.ui-copy-review-direction{display:grid;place-items:center;align-self:center;color:var(--text-secondary)}
+.ui-copy-review-value[data-copy-value="before"]>dt{grid-column:1;grid-row:1}
+.ui-copy-review-value[data-copy-value="before"]>dd{grid-column:1;grid-row:2}
+.ui-copy-review-value[data-copy-value="after"]>dt{grid-column:3;grid-row:1;color:var(--blue)}
+.ui-copy-review-value[data-copy-value="after"]>dd{grid-column:3;grid-row:2;color:var(--blue)}
+.ui-copy-review-direction{display:grid;place-items:center;grid-column:2;grid-row:2;height:calc(var(--type-body)*var(--info-line-height));color:var(--text-secondary)}
 .ui-copy-review-direction>svg{display:block;width:var(--type-arrow);height:var(--type-arrow)}
-@media(max-width:767px){.ui-copy-review-values{grid-template-columns:minmax(0,1fr)}.ui-copy-review-direction{justify-self:center}.ui-copy-review-direction>svg{transform:rotate(90deg)}}
+@media(max-width:767px){.ui-copy-review-values{grid-template-columns:minmax(0,1fr)}.ui-copy-review-value[data-copy-value="before"]>dt{grid-column:1;grid-row:1}.ui-copy-review-value[data-copy-value="before"]>dd{grid-column:1;grid-row:2}.ui-copy-review-direction{grid-column:1;grid-row:3;justify-self:center}.ui-copy-review-value[data-copy-value="after"]>dt{grid-column:1;grid-row:4}.ui-copy-review-value[data-copy-value="after"]>dd{grid-column:1;grid-row:5}.ui-copy-review-direction>svg{transform:rotate(90deg)}}
 .ui-copy-dialog{border:0;padding:0;background:transparent;color:var(--ink);width:min(29rem,calc(100vw - 2rem));max-width:calc(100vw - 2rem);max-height:82dvh;overflow:visible}
 .ui-copy-panel{display:flex;flex-direction:column;min-height:0;max-height:82dvh;width:100%;overflow:hidden;border-radius:1rem;background:#fff;box-shadow:0 1rem 3rem #152b462e}
 .ui-copy-dialog .qa-copy-title{font-size:var(--type-subhead);line-height:1.5;font-weight:var(--type-weight-title);color:var(--ui-title-color);min-width:0;overflow-wrap:anywhere}
@@ -1095,9 +1115,6 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .ui-copy-dialog .qa-copy-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.375rem .5rem}
 .ui-copy-dialog .qa-copy-check-wide{grid-column:1/-1}
 .ui-copy-dialog .qa-copy-check-cell{min-width:0}
-.ui-copy-dialog .q4-check-row{display:flex;align-items:center;min-height:2.75rem;min-width:0;margin:0;padding:.25rem 0;font-size:var(--type-small)}
-.ui-copy-dialog .q4-check-icon{align-self:center;margin:0}
-.ui-copy-dialog .q4-check-copy{min-width:0;overflow-wrap:anywhere}
 .ui-copy-dialog .qcopy strong{display:flex!important;gap:.25rem;align-items:center;white-space:normal}
 .ui-copy-dialog .qa-copy-live{margin-left:auto;flex:none;font-size:var(--type-meta);font-weight:400;color:var(--text-secondary)}
 .ui-copy-dialog .qa-copy-targets{display:grid;gap:.25rem}
@@ -1140,7 +1157,6 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q3-editor-field [aria-invalid=true]{border-color:var(--ui-danger)}
 .q3-address-pending{font-size:var(--type-meta);font-weight:400;color:var(--text-secondary)}
 .q4-assignment-options{display:grid;gap:.5rem}
-.q4-assignment-options .q4-check-row{display:flex;min-height:2.75rem}
 .q4-assignment-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.375rem;align-items:center}
 .q4-assignment-row[data-error="true"] .q4-check-copy{color:var(--ui-danger)}
 .q4-assignment-row .ui-copy-action{justify-self:end;white-space:nowrap}
@@ -1153,7 +1169,6 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-mode-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .q4-regular-dialog .qa-mode-choices button{font-size:var(--type-small);padding:10px 3px;min-height:44px;}
 .q4-regular-dialog .qa-contact-choices{display:flex;gap:9px;flex-wrap:wrap}
-.q4-regular-dialog .qa-contact-choices .q4-check-row{margin:0}
 .q4-regular-dialog .qa-headline{font-size:var(--type-label);font-weight:var(--type-weight-field);margin:0 0 10px}
 .q4-regular-dialog .qa-site-parent.t-acc,.q4-regular-dialog .qa-site-child.t-acc{background:white;padding:0;border:1px solid var(--stage-pending-stroke);border-radius:12px;min-width:0;overflow:hidden;transition:border-color 160ms ease,background-color 160ms ease}
 .q4-regular-dialog .qa-site-parent .accordion-trigger,.q4-regular-dialog .qa-site-child .accordion-trigger{width:100%;min-height:52px;padding:11px 13px;border:0;display:grid;grid-template-columns:1.25rem minmax(0,1fr) 1.3rem;gap:.7rem;align-items:center}
@@ -1186,8 +1201,7 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-site-field[data-error=true]>.qa-site-label,.q4-regular-dialog .qa-error{color:#d92d48}
 .q4-regular-dialog .qa-error{font-size:var(--type-meta);line-height:1.5;margin:0}
 .q4-regular-dialog .qa-var-row{display:flex;align-items:center;gap:7px;min-height:35px}
-.q4-regular-dialog .qa-var-row label{display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ui-help-color);font-size:var(--type-small);font-weight:var(--type-weight-body)}
-.q4-regular-dialog .qa-var-row input{width:17px;height:17px;accent-color:#315dde}
+.q4-regular-dialog .qa-var-row label{color:var(--ui-help-color);font-weight:var(--type-weight-body)}
 .q4-regular-dialog .qa-var-range{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .q4-regular-dialog .qa-next{margin:3px 0 0 auto;border:0;background:transparent;color:#315dde;font-size:var(--type-small);font-weight:740;min-height:36px;padding:4px 0}
 .q4-regular-dialog .qa-next[hidden]{display:none}
@@ -1213,25 +1227,13 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-help-inline{color:var(--ui-help-color);font-size:var(--type-meta);margin:0;font-weight:var(--type-weight-body);}
 .q4-regular-dialog .qa-mode-choices.qa-two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .q4-regular-dialog .qa-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:12px;row-gap:4px;min-width:0}
-.q4-regular-dialog .qa-checks .q4-check-row{min-width:0;margin:0;min-height:38px;align-items:center}
-.q4-regular-dialog .qa-checks .q4-check-icon{margin-top:0}
 .q4-regular-dialog .qa-checks .q4-check-copy{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .q4-regular-dialog .qa-check-wrap{min-width:0;display:grid;gap:6px}
-.q4-regular-dialog .qa-check-wrap .q4-check-row{display:flex;align-items:center;min-height:38px}
-.q4-regular-dialog .qa-check-wrap .q4-check-icon{margin-top:0}
-.q4-regular-dialog .qa-form-section .q4-check-row{cursor:pointer}
-.q4-regular-dialog .qa-form-section .q4-check-row input:focus-visible+.q4-check-icon{outline:2px solid #315dde;outline-offset:2px}
-.q4-regular-dialog .qa-form-section .q4-check-row .q4-check-icon{border-radius:50%;transition:background-color 150ms ease,border-color 150ms ease}
-.q4-regular-dialog .qa-form-section .q4-check-row .q4-check-icon.q4-just-checked{animation:q4-check-pop .24s ease-out 1}
-.q4-regular-dialog .qa-form-section .q4-check-row input:checked+.q4-check-icon{color:white;background:var(--blue);border-color:var(--blue)}
-.q4-regular-dialog .qa-form-section .q4-check-row input:not(:checked)+.q4-check-icon{color:transparent}
 .q4-regular-dialog .qa-inline-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
 .q4-regular-dialog .qa-field{display:grid;gap:7px;min-width:0;position:relative}
 .q4-regular-dialog .qa-field>input,.q4-regular-dialog .qa-field>textarea{height:44px;min-width:0;width:100%;border:1px solid #d3dce5;border-radius:9px;padding:9px 11px;font:inherit;background:#fff;color:var(--ink)}
 .q4-regular-dialog .qa-field>textarea{height:88px;resize:vertical}
 .q4-regular-dialog .qa-field>.qa-help-inline{margin:0;font-weight:var(--type-weight-body);}
-.q4-regular-dialog .qa-site-child .qa-var-row .q4-check-row{align-items:center}
-.q4-regular-dialog .qa-site-child .qa-var-row .q4-check-icon{margin-top:0}
 .q4-regular-dialog .qa-site-child .qa-var-range{margin-top:-5px}
 .q4-regular-dialog .qa-site-child .qa-next{display:inline-flex;align-items:center;justify-content:center;padding:0 16px;border:1px solid var(--blue);border-radius:9px;color:var(--blue);background:#fff;min-height:43px;font-weight:740;min-width:138px}
 .q4-regular-dialog .qa-site-child .qa-next.qa-final{color:white;background:var(--blue)}
@@ -1271,8 +1273,6 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-form-section{gap:var(--ui-field-control-gap);}
 .q4-regular-dialog .qa-site-form,.q4-regular-dialog .qa-site-child-body .qa-site-form{gap:var(--q1-control-gap)}
 .q4-regular-dialog .qa-site-field,.q4-regular-dialog .qa-field{gap:var(--ui-field-control-gap);}
-.q4-regular-dialog .qa-form-section .q4-check-row .q4-check-icon{border-radius:.33rem!important;flex:0 0 auto}
-.q4-regular-dialog .qa-form-section .q4-check-row input:checked+.q4-check-icon{border-radius:.33rem!important}
 .q4-regular-dialog .qa-site-parent .qcopy strong,.q4-regular-dialog .qa-site-child .qcopy strong{display:flex!important;align-items:center!important;gap:4px;min-width:0;flex-wrap:nowrap!important;white-space:nowrap!important;font-weight:var(--type-weight-title);}
 .q4-regular-dialog .qa-title-truncate{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
 .q4-regular-dialog .qa-site-child .qa-required-star{white-space:nowrap;flex:0 0 auto;align-self:center;color:var(--ui-danger);}
@@ -1329,9 +1329,6 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-form-section{margin:0;padding:0;gap:var(--ui-field-control-gap);}
 .q4-regular-dialog .qa-site-form,.q4-regular-dialog .qa-holiday-fields{gap:var(--ui-field-section-gap);}
 .q4-regular-dialog .qa-site-field,.q4-regular-dialog .qa-field{gap:var(--ui-field-control-gap);}
-.q4-regular-dialog .q4-check-row{display:inline-flex;align-items:center;gap:.55rem;min-height:2.5rem;line-height:1.4;padding:.25rem 0;vertical-align:middle}
-.q4-regular-dialog .q4-check-icon,.q4-regular-dialog .q4-check-copy{align-self:center;flex:none;margin:0}
-.q4-regular-dialog .q4-check-copy{flex:1;white-space:normal}
 .q4-regular-dialog .qa-holiday-days button[data-closed-day]{width:38px;height:38px;min-width:38px;min-height:38px;padding:0;aspect-ratio:1;border-radius:50%;display:inline-flex;align-items:center;justify-content:center}
 .q4-regular-dialog #qa-holiday[data-complete="true"]>.accordion-trigger .stage-check{background:var(--stage-done-icon);color:white}
 .q4-regular-dialog #qa-holiday[data-complete="true"]>.accordion-trigger .t-acc-chevron{color:var(--stage-done-icon)}
@@ -1491,13 +1488,8 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-mixed-site .qa-parent-block[data-site-block="once"],
 .q4-regular-dialog .qa-mixed-site .qa-parent-block[data-site-block="repeat"]{gap:3px}
 .q4-regular-dialog .qa-mixed-site .qa-var-row{min-height:27px}
-.q4-regular-dialog .qa-mixed-site .qa-var-row .q4-check-row,
-
 .q4-regular-dialog .qa-mixed-site .qa-var-range{margin-top:2px}
-.q4-regular-dialog .qa-mixed-site .q4-check-row{align-items:center}
-.q4-regular-dialog .qa-mixed-site .q4-check-icon{flex:0 0 18px;align-self:center;margin-top:0}
 
-.q4-regular-dialog .qa-mixed-site .qa-scoped-quality .q4-check-copy{line-height:1.45}
 .q4-regular-dialog .qa-mixed-site .qa-site-mode .qa-mode-choices button{font-size:var(--type-small);line-height:1.3;letter-spacing:normal;padding:7px 3px;}
 .q4-regular-dialog .qa-mixed-site .qa-site-holiday-acc .qa-inline-title,
 .q4-regular-dialog .qa-mixed-site .qa-week-grid .qa-inline-title{font:inherit;color:inherit;letter-spacing:inherit;font-weight:var(--type-weight-title);}

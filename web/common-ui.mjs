@@ -61,7 +61,7 @@ window.OrderInputFocus=Object.freeze((()=>{
 
 window.OrderSiteContract=Object.freeze((()=>{
  const phone=v=>OrderPhone.parse(v).valid,email=v=>OrderEmail.parse(v).valid;
- function issues(s,{address=true,allowUnverified=false}={}){const out=[];if(!String(s?.name||'').trim())out.push({key:'name',message:'사업장 명칭을 입력해 주세요.'});if(address&&!String(s?.road||'').trim())out.push({key:'address',code:'ADDRESS_UI_PENDING',message:'사업장 소재지 입력 방식이 준비되지 않았습니다.'});if(!phone(s?.contactPhone))out.push({key:'contactPhone',message:'담당자 전화번호를 확인해 주세요.'});
+ function issues(s,{address=true,allowUnverified=false}={}){const out=[];if(!String(s?.name||'').trim())out.push({key:'name',message:'사업장 명칭을 입력해 주세요.'});if(address&&!String(s?.road||'').trim())out.push({key:'address',code:'ADDRESS_UI_PENDING',message:'사업장 소재지를 입력해 주세요.'});if(!phone(s?.contactPhone))out.push({key:'contactPhone',message:'담당자 전화번호를 확인해 주세요.'});
   if(!email(s?.email)){const syntax=OrderEmail.parse(s?.email);out.push({key:'email',code:syntax.unsupported?'UNSUPPORTED_LOCAL':'INVALID_SYNTAX',message:syntax.unsupported?'현재 지원하지 않는 이메일 형식입니다.':'이메일 형식을 확인해 주세요.'});}else{const proof=OrderEmailDomain.status(s.email);if(OrderEmailDomain.isHard(proof))out.push({key:'email',code:proof.state,message:'이메일 주소를 확인해 주세요.'});else if(!allowUnverified&&!OrderEmailDomain.isSuccess(proof))out.push({key:'email',code:'DOMAIN_UNCONFIRMED',message:'현재 이메일 주소를 확인할 수 없습니다.'});}
   if(String(s?.storePhone||'').trim()&&!phone(s.storePhone))out.push({key:'storePhone',message:'매장 대표번호를 확인해 주세요.'});return out;}
  return {phone,email,issues,isAwaiting:issue=>issue?.code==='DOMAIN_UNCONFIRMED',basicIssues:s=>issues(s,{allowUnverified:true}),valid:s=>issues(s).length===0};
@@ -128,8 +128,8 @@ window.OrderCopyDialog=Object.freeze((()=>{
  },
  renderReview(patches,{prefix='copy-review'}={}){
   return patches.map((patch,n)=>{const siteId=`${prefix}-site-${n}`,fields=patch.changes.map((change,k)=>{const fieldId=`${siteId}-field-${k}`;
-   const value=(side,label,raw)=>`<dl class="ui-copy-review-value" data-copy-value="${side}"><dt id="${fieldId}-${side}-label">${label}</dt><dd data-empty="${String(raw??'').trim().length===0}" aria-labelledby="${siteId}-title ${fieldId}-label ${fieldId}-${side}-label">${String(raw??'').trim().length?text(raw):'미입력'}</dd></dl>`;
-   return `<fieldset class="ui-copy-review-field"><legend id="${fieldId}-label">${text(change.label)}</legend><div class="ui-copy-review-values">${value('before','현재값',change.before)}<span class="ui-copy-review-direction" aria-hidden="true">${OrderIcons.svg('forward')}</span>${value('after','변경값',change.after)}</div></fieldset>`;
+   const value=(side,label,raw)=>`<dl class="ui-copy-review-value" data-copy-value="${side}"><dt class="ui-copy-review-label" id="${fieldId}-${side}-label">${label}</dt><dd class="ui-copy-review-data" data-empty="${String(raw??'').trim().length===0}" aria-labelledby="${siteId}-title ${fieldId}-label ${fieldId}-${side}-label">${String(raw??'').trim().length?text(raw):'미입력'}</dd></dl>`;
+   return `<fieldset class="ui-copy-review-field"><legend id="${fieldId}-label">${text(change.label)}</legend><div class="ui-copy-review-values">${value('before','현재',change.before)}<span class="ui-copy-review-direction" aria-hidden="true">${OrderIcons.svg('forward')}</span>${value('after','변경 후',change.after)}</div></fieldset>`;
   }).join('');return `<section class="ui-copy-review-site" id="${siteId}" aria-labelledby="${siteId}-title"><h3 class="ui-copy-review-heading" id="${siteId}-title" tabindex="-1">${text(patch.name)}</h3>${fields}</section>`;}).join('');
  }
  };

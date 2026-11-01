@@ -81,7 +81,12 @@ window.OrderEmailDomain=Object.freeze((()=>{
  }
  function status(email){const parsed=window.OrderEmail.parse(email);return !parsed.valid?result(parsed.unsupported?'UNSUPPORTED_LOCAL':'INVALID_SYNTAX',parsed.reason):peek(parsed.domain);}
  function clearCache(){generation++;service.clear();proofs.clear();pending.clear();}
- return {metadata,validate,status,peek,subscribe(listener){listeners.add(listener);return ()=>listeners.delete(listener);},isSuccess:r=>success.has(r?.state),isHard:r=>hard.has(r?.state),clearCache};
+ // Read-only diagnostics contain counts and reference status only. Never expose
+ // email/local-part/domain values, consumer IDs, or retained proof payloads.
+ async function inspect(){const ref=await reference.inspect(),states={};for(const proof of proofs.values())states[proof.state]=(states[proof.state]||0)+1;
+  return {reference:{...ref,lastError:typeof ref.lastError==='string'&&/^[A-Z0-9_:]+$/.test(ref.lastError)?ref.lastError:ref.lastError?'REFERENCE_FAILURE':null},service:service.inspect(),proofStates:states,pendingDomains:pending.size,pendingConsumers:[...pending.values()].reduce((n,items)=>n+items.size,0),startedRequests:requestSequence};
+ }
+ return {metadata,validate,status,peek,inspect,subscribe(listener){listeners.add(listener);return ()=>listeners.delete(listener);},isSuccess:r=>success.has(r?.state),isHard:r=>hard.has(r?.state),clearCache};
 })());
 
 window.OrderEmailUI=Object.freeze((()=>{

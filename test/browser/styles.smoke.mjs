@@ -11,7 +11,7 @@ import {execFileSync} from 'node:child_process';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const currentPath=resolve(root,process.env.ORDER_STYLE_CURRENT_CSS||'dist/styles.css');
 const evidence=resolve(process.env.ORDER_STYLE_EVIDENCE_DIR||join(root,'browser-evidence/styles'));
-const widths=[320,375,768,1440],checks=[],observations=[],pageErrors=[],externalRequests=[];
+const widths=[320,375,390,768,1440],checks=[],observations=[],pageErrors=[],externalRequests=[];
 const report={schemaVersion:1,classification:'ACTUAL_CHROMIUM_COMPUTED_STYLES_SYNTHETIC_DOM_SET_CONTENT',status:'RUNNING',
  scope:{productJavaScript:false,sourceDelivery:'setContent',publicHosting:false,dns:false,storage:false,
    visualAcceptance:false,runtimePerformance:false,fullProductRegression:false},checks,observations,pageErrors,externalRequests};
@@ -44,7 +44,18 @@ function monthDOM(value){
 }
 const flatten=(obj,prefix='',out={})=>{for(const [key,value]of Object.entries(obj)){const p=prefix?prefix+'.'+key:key;if(value!==null&&typeof value==='object')flatten(value,p,out);else out[p]=value;}return out;};
 function differences(a,b){const x=flatten(a),y=flatten(b);return [...new Set([...Object.keys(x),...Object.keys(y)])].filter(k=>typeof x[k]==='number'&&typeof y[k]==='number'?Math.abs(x[k]-y[k])>0.05:x[k]!==y[k]).map(path=>({path,before:x[path],after:y[path]}));}
-const pairAllow=new Set(['pair.style.columnGap','pair.style.rowGap','pair.style.gridTemplateColumns','first.rect.width','second.rect.width','second.rect.x']);
+const pairAllow=new Set(['pair.style.columnGap','pair.style.rowGap','pair.style.gridTemplateColumns','first.rect.width','second.rect.width','second.rect.x',
+ // MSG0517 F02: both numeric children now share a 44px control plus underline.
+ 'pair.style.gridTemplateRows','pair.rect.height','first.rect.height','second.rect.height']);
+const numericAllow=new Set(['input.rect.height','input.rect.y','input.style.paddingTop','input.style.paddingBottom','input.style.lineHeight',
+ 'input-parent.rect.height','input-parent.style.alignItems','input-parent.style.minHeight']);
+const numericContract=values=>{
+ const i=values.input,p=values['input-parent'];
+ return Math.abs(i.rect.height-44)<.1&&Math.abs(p.rect.height-45)<.1&&Math.abs(i.rect.y-p.rect.y)<.1&&
+ i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&p.style.alignItems==='center'&&p.style.minHeight==='45px'&&
+ Math.abs(parseFloat(i.style.lineHeight)-parseFloat(i.style.fontSize)*1.5)<.1;
+};
+const numericPairDOM=({qty,price,unit,invalid})=>`<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair"><div class="numeric-field"><label data-probe="qty-label">월 구매량</label><div class="input-unit" data-probe="qty-row" data-order-invalid="${invalid}"><input data-probe="qty-input" value="${qty}" aria-invalid="${invalid}" placeholder="0"><select class="ui-quantity-unit" data-probe="qty-unit"><option>${unit}</option></select></div></div><div class="numeric-field"><label data-probe="price-label">현재 구매가격</label><div class="input-unit" data-probe="price-row" data-order-invalid="${invalid}"><input data-probe="price-input" value="${price}" aria-invalid="${invalid}" placeholder="0"><span data-probe="price-unit">원/판</span></div></div></div></fieldset></div></div></main>`;
 let browser;
 async function observe(page,css,html,{width,state='default',target=null,kind,id}){
  await page.setViewportSize({width,height:900});await page.mouse.move(0,0);
@@ -97,7 +108,7 @@ try{
  async function compare(id,html,options){
   const before=await observe(page,parent.toString(),html,{...options,id:id+'-before'});
   const after=await observe(page,current.toString(),html,{...options,id:id+'-after'});
-  const delta=differences(before,after),known=options.kind==='pair'&&delta.length>0;
+  const delta=differences(before,after),known=options.kind==='pair'&&delta.length>0,numeric=options.kind==='input'&&options.owner==='q2';
   let accepted=delta.length===0;
   if(known){
    const b=before.pair.style,a=after.pair.style;
@@ -106,10 +117,14 @@ try{
     [7,11,22].includes(beforeColumn)&&[7,11,12].includes(parseFloat(b.rowGap))&&
     Math.abs(after.first.rect.width-(before.first.rect.width-(afterColumn-beforeColumn)/2))<=0.1&&
     Math.abs(after.second.rect.width-after.first.rect.width)<=0.1&&
-    Math.abs(after.second.rect.x-(after.first.rect.x+after.first.rect.width+afterColumn))<=0.1;
+    Math.abs(after.second.rect.x-(after.first.rect.x+after.first.rect.width+afterColumn))<=0.1&&
+    Math.abs(after.first.rect.height-69)<=.1&&Math.abs(after.second.rect.height-69)<=.1&&Math.abs(after.pair.rect.height-69)<=.1;
   }
-  observations.push({id,...options,before,after,delta,classification:delta.length?(accepted?'EXPECTED_BRACE_RECOVERY_PAIR_GUTTER_CHANGE':'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE'):'UNCHANGED'});
-  check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known});
+  if(numeric)accepted=delta.every(d=>numericAllow.has(d.path))&&numericContract(after);
+  const expectedClass=numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_PAIR_GUTTER_AND_MSG0517_NUMERIC_HEIGHT':null;
+  observations.push({id,...options,before,after,delta,classification:delta.length?(accepted?expectedClass:'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE'):'UNCHANGED'});
+  check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known,msg0517Numeric:numeric});
+  if(numeric)check(id+':NUMERIC_ROW_CONTRACT',numericContract(after));
   if(options.target&&['hover','active','focus-visible','disabled'].includes(options.state)){
    const key={'focus-visible':'focusVisible',hover:'hover',active:'active',disabled:'disabled'}[options.state];
    check(id+':STATE_ACTUALLY_ACTIVE',before[options.target].pseudo[key]&&after[options.target].pseudo[key]);
@@ -126,6 +141,16 @@ try{
  }
  for(const width of widths){
   await compare(`PAIR_${width}`,pairDOM,{width,kind:'pair'});
+  for(const value of ['','1','123456789'])for(const unit of ['개','판'])for(const invalid of [false,true])for(const state of ['default','focus-visible']){
+   const id=`NUMERIC_CURRENT_${width}_${value||'BLANK'}_${unit}_${invalid?'ERROR':'NORMAL'}_${state}`;
+   const currentValues=await observe(page,current.toString(),numericPairDOM({qty:value,price:value,unit,invalid}),{width,state,target:'qty-input',kind:'numeric-current',id});
+   const q=currentValues['qty-input'],p=currentValues['price-input'],qr=currentValues['qty-row'],pr=currentValues['price-row'],ql=currentValues['qty-label'],pl=currentValues['price-label'];
+   const equal=keys=>keys.every(k=>q.style[k]===p.style[k]);
+   check(id+':CONTROL_HEIGHT_BASELINE',Math.abs(qr.rect.height-45)<.1&&Math.abs(pr.rect.height-45)<.1&&Math.abs(q.rect.height-44)<.1&&Math.abs(p.rect.height-44)<.1&&Math.abs(q.rect.y-p.rect.y)<.1&&Math.abs(qr.rect.y+qr.rect.height-pr.rect.y-pr.rect.height)<.1&&equal(['fontFamily','fontSize','fontWeight','lineHeight','paddingTop','paddingBottom']));
+   check(id+':LABEL_SPACING_TARGET',Math.abs(qr.rect.y-ql.rect.y-ql.rect.height-6)<.1&&Math.abs(pr.rect.y-pl.rect.y-pl.rect.height-6)<.1&&currentValues['qty-unit'].rect.height>=44&&currentValues['qty-unit'].rect.width>=44);
+   observations.push({id,width,value,unit,invalid,state,after:currentValues,classification:'MSG0517_CURRENT_NUMERIC_EQUALITY'});
+  }
+
   for(const owner of ['q2','q3','q4'])for(const invalid of [false,true])for(const state of ['default','hover','focus-visible'])
    await compare(`INPUT_${width}_${owner}_${invalid?'INVALID':'NORMAL'}_${state}`,inputDOM(owner,invalid),{width,kind:'input',owner,invalid,state,target:'input'});
   for(const owner of ['q1','q3','q4','q4editor'])for(const target of ['cancel','confirm'])for(const state of ['default','hover','active','focus-visible','disabled']){
@@ -142,7 +167,7 @@ try{
 finally{
  await browser?.close();await mkdir(evidence,{recursive:true});
  report.summary={comparisons:observations.length,checks:checks.length,failures:checks.filter(c=>c.status==='FAIL').length,
-  unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,knownPairDeltas:observations.filter(o=>o.classification==='EXPECTED_BRACE_RECOVERY_PAIR_GUTTER_CHANGE').length};
+  unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,knownPairDeltas:observations.filter(o=>o.classification==='EXPECTED_PAIR_GUTTER_AND_MSG0517_NUMERIC_HEIGHT').length,msg0517NumericDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY').length,msg0517CurrentNumericCases:observations.filter(o=>o.classification==='MSG0517_CURRENT_NUMERIC_EQUALITY').length};
  await writeFile(join(evidence,'styles.json'),JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify({status:report.status,source:report.source,runtime:report.runtime,summary:report.summary,error:report.error,failedChecks:checks.filter(c=>c.status==='FAIL'),evidence:join(evidence,'styles.json')},null,2));
 }

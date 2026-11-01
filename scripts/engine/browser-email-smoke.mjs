@@ -6,11 +6,23 @@ import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {relative,dirname} from 'node:path';
 import {release} from 'node:os';
+import {buildBrowserReference} from './build-browser-reference.mjs';
 
 const require=createRequire(import.meta.url);
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const sourceRoot=fileURLToPath(new URL('../../src/engine/',import.meta.url));
 const requestedOrigin=process.argv[2];
+const expanded=process.argv[3]==='--expanded';
+// Observation candidates, never a production allow-list or guaranteed mailboxes.
+const cases=expanded?[
+ {domain:'naver.com',category:'KR_GENERAL'}, {domain:'gmail.com',category:'GENERAL'},
+ {domain:'abc.xyz',category:'XYZ'}, {domain:'art.art',category:'ART'},
+ {domain:'nic.technology',category:'LONG_TLD'}, {domain:'proton.me',category:'CCTLD'},
+ {domain:'sbi.co.in',category:'MULTI_LABEL'}, {domain:'bücher.de',category:'IDN_UNICODE'},
+ {domain:'xn--bcher-kva.de',category:'IDN_PUNYCODE'}, {domain:'cs.stanford.edu',category:'SUBDOMAIN'},
+ {domain:'naver.xyz',category:'USER_NXDOMAIN_EXAMPLE'}, {domain:'naver.art',category:'USER_NXDOMAIN_EXAMPLE'},
+ {domain:'naver.co.in',category:'USER_NXDOMAIN_EXAMPLE'}, {domain:'example.com',category:'NULL_MX_REFERENCE'},
+]:[{domain:'example.com',category:'NULL_MX_REFERENCE'},{domain:'iana.org',category:'GENERAL'}];
 const playwrightModule=process.env.PLAYWRIGHT_MODULE||'playwright';
 const report={schemaVersion:1,mode:'ACTUAL_HTTPS_BROWSER_ADAPTER_PROBE',startedAt:new Date().toISOString(),requestedOrigin,
   scope:{moduleDelivery:'LOCAL_CHECKOUT_MODULE_BYTES_AS_DATA_URLS',networkMocked:false,cspBypassed:false,
@@ -47,6 +59,10 @@ try{
   }
   const adapter=await moduleUrl(new URL('../../src/engine/adapters/dns-browser.mjs',import.meta.url));
   const core=await moduleUrl(new URL('../../src/engine/validation/email-dns.mjs',import.meta.url));
+  const syntaxModule=await moduleUrl(new URL('../../src/engine/validation/email.mjs',import.meta.url));
+  const referenceModule=await moduleUrl(new URL('../../src/engine/adapters/iana-browser.mjs',import.meta.url));
+  const envelope=await buildBrowserReference({now:Date.now()});
+  report.reference={...envelope.manifest,delivery:'CHECKOUT_VERIFIED_ENVELOPE_NOT_DEPLOYED_REFERENCE'};
   report.source.modules.sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
   report.source.graphSha256=createHash('sha256').update(JSON.stringify(report.source.modules)).digest('hex');
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined});report.runtime.browserVersion=await browser.version();
@@ -66,9 +82,12 @@ try{
   check('ACTUAL_ORIGIN_MATCHES_REQUEST',baseline.origin,requestedOrigin);check('HTTPS_SECURE_CONTEXT',baseline.isSecureContext,true);
   if(report.assertions.some(row=>!row.passed)){report.outcome={status:'FAIL_STRUCTURAL',structural:'FAIL',online:'NOT_RUN'};report.exitCode=1;}
   else{
-    const observed=await page.evaluate(async({adapter,core})=>{
+    const observed=await page.evaluate(async({adapter,core,syntaxModule,referenceModule,envelope,cases,expanded})=>{
       const {browserDomainToASCII,createBrowserDnsResolver,readBoundedJson}=await import(adapter);
       const {validateEmailDomain}=await import(core);
+      const {validateEmailSyntax,emailCompletionGate}=await import(syntaxModule);
+      const {verifyBrowserIana,browserIanaFreshness}=await import(referenceModule);
+      const reference=await verifyBrowserIana(envelope);
       const browserFetches=[],audits=[];
       const fetcher=async(url,options)=>{
         const parsed=new URL(url),entry={id:browserFetches.length+1,startedAt:new Date().toISOString(),url:parsed.href,
@@ -81,36 +100,53 @@ try{
           let timer;
           const audit=Promise.race([readBoundedJson(response.clone()).then(data=>Object.assign(entry,{dnsStatus:data.Status??null,
             question:Array.isArray(data.Question)?data.Question.map(q=>({name:q.name,type:q.type})):null,
-            answerCount:Array.isArray(data.Answer)?data.Answer.length:0})),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('AUDIT_BODY_TIMEOUT')),1500);})])
+            answerCount:Array.isArray(data.Answer)?data.Answer.length:0,
+            answers:Array.isArray(data.Answer)?data.Answer.map(r=>({name:r.name,type:r.type,ttl:r.TTL,data:r.data})):[],
+            authority:Array.isArray(data.Authority)?data.Authority.map(r=>({name:r.name,type:r.type,ttl:r.TTL,data:r.data})):[]})),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('AUDIT_BODY_TIMEOUT')),1500);})])
             .catch(error=>{entry.auditError=String(error?.message??error).slice(0,200);}).finally(()=>clearTimeout(timer));
           audits.push(audit);return response;
         }catch(error){Object.assign(entry,{failedAt:new Date().toISOString(),fetchResolved:false,corsReadable:false,errorName:error?.name??'Error',error:String(error?.message??error).slice(0,300)});throw error;}
       };
       const online=[];
-      for(const domain of ['example.com','iana.org']){
-        const resolver=createBrowserDnsResolver({fetcher,maxRequests:16,timeoutMs:1500});
-        const result=await validateEmailDomain(domain,{resolver,now:Date.now,maxQueries:16,timeoutMs:1600,totalTimeoutMs:6000});
-        online.push({domain,httpRequests:resolver.requests,result});
+      for(const item of cases)for(const provider of expanded?['cloudflare','google']:['cloudflare']){
+        const domain=browserDomainToASCII(item.domain);
+        // This synthetic local-part remains entirely inside this JS context.
+        const syntax=validateEmailSyntax({raw:'observation-only@'+item.domain},{domainToASCII:browserDomainToASCII,tldData:reference,nowMs:Date.now()});
+        const resolver=createBrowserDnsResolver({fetcher,maxRequests:16,timeoutMs:1500,provider});
+        const result=syntax.status==='VALID'?await validateEmailDomain(domain,{resolver,now:Date.now,maxQueries:16,timeoutMs:1600,totalTimeoutMs:6000}):null;
+        online.push({...item,inputDomain:item.domain,domain,provider,syntax:{status:syntax.status,reasonCodes:syntax.reasonCodes,tld:syntax.evidence.tld,dataVersion:syntax.versions.data},httpRequests:resolver.requests,result,gate:emailCompletionGate(syntax,result)});
       }
       await Promise.allSettled(audits);
       return {checkedAt:new Date().toISOString(),idna:{russian:browserDomainToASCII('пример.рф'),korean:browserDomainToASCII('예시.한국'),
-        malformed:browserDomainToASCII('xn--a.com'),urlInjection:browserDomainToASCII('example.com:443')},online,browserFetches};
-    },{adapter,core});
+        malformed:browserDomainToASCII('xn--a.com'),urlInjection:browserDomainToASCII('example.com:443')},reference:{version:reference.version,sourceSha256:reference.sourceSha256,collectedAt:reference.collectedAt,sourceUpdatedAt:reference.sourceUpdatedAt,freshness:browserIanaFreshness(reference,Date.now())},online,browserFetches};
+    },{adapter,core,syntaxModule,referenceModule,envelope,cases,expanded});
     report.checkedAt=observed.checkedAt;report.idna=observed.idna;report.online=observed.online;report.browserFetches=observed.browserFetches;
+    report.referenceVerified=observed.reference;report.expanded=expanded;
     check('IDNA_RUSSIAN',observed.idna.russian,'xn--e1afmkfd.xn--p1ai');check('IDNA_KOREAN',observed.idna.korean,'xn--vv4b11d.xn--3e0b707e');
     check('IDNA_MALFORMED_ALABEL_REJECTED',observed.idna.malformed,'');check('IDNA_URL_INJECTION_REJECTED',observed.idna.urlInjection,'');
     check('NO_UNCAUGHT_PAGE_ERRORS',report.page.errors.length,0);
+    check('NO_LOCAL_PART_IN_DNS_REQUESTS',observed.browserFetches.every(row=>!row.domain.includes('@')&&!decodeURIComponent(row.url).includes('observation-only')));
     for(const row of observed.online){
+      check(`${row.domain}:${row.provider}:SYNTAX_IANA`,row.syntax.status,'VALID');
+      if(!row.result){row.classification='REFERENCE_INCONCLUSIVE';continue;}
       check(`${row.domain}:NORMALIZED_DOMAIN`,row.result.normalized?.domain,row.domain);
       check(`${row.domain}:QUERY_BUDGET`,Number.isInteger(row.result.evidence?.queries)&&row.result.evidence.queries>0&&row.result.evidence.queries<=16);
       check(`${row.domain}:HTTP_BUDGET`,Number.isInteger(row.httpRequests)&&row.httpRequests>0&&row.httpRequests<=16);
       check(`${row.domain}:REAL_OBSERVATIONS`,Array.isArray(row.result.evidence?.observations)&&row.result.evidence.observations.length>0);
       check(`${row.domain}:SUPPORTED_VERDICT`,['VALID','INVALID','UNKNOWN'].includes(row.result.status));
       check(`${row.domain}:NOT_INPUT_CONTRACT_FAILURE`,!row.result.reasonCodes?.includes('DNS_INPUT_CONTRACT'));
+      check(`${row.domain}:${row.provider}:NO_MAILBOX_OWNERSHIP_CLAIM`,row.gate.ownershipVerified,false);
+      if(row.result.status==='UNKNOWN'){
+        check(`${row.domain}:${row.provider}:UNKNOWN_NEUTRAL`,row.gate.tone,'neutral');
+        check(`${row.domain}:${row.provider}:UNKNOWN_BLOCKS_COMPLETION`,row.gate.finalCompletionAllowed,false);
+        check(`${row.domain}:${row.provider}:UNKNOWN_PRESERVES_DRAFT`,row.gate.preserveDraft,true);
+      }
       const definitive=['VALID','INVALID'].includes(row.result.status);
-      const readable=observed.browserFetches.some(fetch=>fetch.domain===row.domain&&fetch.httpStatus===200&&fetch.corsReadable&&Number.isInteger(fetch.dnsStatus));
+      const readable=observed.browserFetches.some(fetch=>fetch.domain===row.domain&&new URL(fetch.url).hostname===(row.provider==='google'?'dns.google':'cloudflare-dns.com')&&fetch.httpStatus===200&&fetch.corsReadable&&Number.isInteger(fetch.dnsStatus));
       row.classification=definitive&&readable?'DEFINITIVE_DNS_OBSERVATION':'ONLINE_INCONCLUSIVE';
     }
+    report.categoryObservations=Object.fromEntries([...new Set(report.online.map(row=>row.category))].map(category=>[category,
+      report.online.filter(row=>row.category===category).map(row=>({domain:row.domain,provider:row.provider,status:row.result?.status??'UNKNOWN',reasonCodes:row.result?.reasonCodes??row.syntax.reasonCodes,classification:row.classification}))]));
     const structural=report.assertions.every(row=>row.passed);
     const definitive=report.online.every(row=>row.classification==='DEFINITIVE_DNS_OBSERVATION');
     report.outcome=structural?{status:definitive?'PASS':'ONLINE_INCONCLUSIVE',structural:'PASS',online:definitive?'DEFINITIVE_OBSERVATIONS':'INCONCLUSIVE'}:{status:'FAIL_STRUCTURAL',structural:'FAIL',online:'SEE_OBSERVATIONS'};

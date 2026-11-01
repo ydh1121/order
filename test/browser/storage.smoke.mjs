@@ -9,11 +9,12 @@ import {readFile,writeFile,mkdir,mkdtemp,realpath,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,resolve,join,extname,sep} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {storageDiagnostics} from './storage-diagnostics.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..'),dist=join(root,'dist');
 const evidence=resolve(process.env.ORDER_STORAGE_EVIDENCE_DIR||join(root,'browser-evidence/storage'));
 const KEY='order_q1_q4_v1',LOCK='order-q1-q4-storage',R2='order_v015R2_draft',R1='order_v015R1_draft';
-const checks=[],errors=[],requests=[],profileLaunches=[],assetRequests=[];
-const report={schemaVersion:1,classification:'ACTUAL_CHROMIUM_NATIVE_STORAGE_WEB_LOCKS_PERSISTENT_PROFILE_LOCAL_HTTP',checks,errors,requests,profileLaunches,assetRequests,
+const checks=[],errors=[],requests=[],profileLaunches=[],assetRequests=[],ianaRequests=[],diagnostics=[];
+const report={schemaVersion:1,classification:'ACTUAL_CHROMIUM_NATIVE_STORAGE_WEB_LOCKS_PERSISTENT_PROFILE_LOCAL_HTTP',checks,errors,requests,profileLaunches,assetRequests,ianaRequests,diagnostics,
  scope:{syntheticContacts:true,syntheticDns:true,nativeLocalStorage:false,nativeWebLocks:false,uniqueTemporaryProfile:true,profileProcessRelaunch:false,sameOriginControlledAssetRefresh:false,canonicalDeployment:false,personalBrowserProfile:false},
  notCovered:['CANONICAL_HTTPS_DEPLOYMENT','USER_PC','WINDOWS','IPHONE','ANDROID','LIVE_DNS','MAILBOX_OWNERSHIP','REAL_ADDRESS_PROVIDER','REAL_PRICE','ORDER_OR_PAYMENT'],status:'RUNNING'};
 let server,context,page,harness,base,profile,chromium,buildIdentity,deploymentRevision=1;
@@ -45,10 +46,16 @@ async function stage(tab,name){await settled(tab);const trigger=tab.locator(`.ac
 async function openQ4(){await stage(page,'q4');const toggle=page.locator('[data-q4-body-toggle="storage-sku"]');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('[data-edit-allocation="storage-allocation-A"]').click();await page.locator('#q4-regular-dialog[open]').waitFor({state:'visible'});}
 async function closeQ4(){await page.waitForFunction(()=>!document.getElementById('q4-regular-dialog').open);await settled();}
 async function revealSite(index){const trigger=page.locator(`[data-acc="site-${index}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();}
-async function dnsReady(tab=page){await tab.waitForFunction(()=>window.OrderEmailDomain&&OrderEmailDomain.isSuccess(OrderEmailDomain.status('qa@example.com')));}
+async function dnsReady(tab=page){try{await tab.waitForFunction(()=>window.OrderEmailDomain&&OrderEmailDomain.isSuccess(OrderEmailDomain.status('qa@example.com')));}
+ catch(error){const snapshot=await tab.evaluate(storageDiagnostics,{key:KEY}).catch(()=>({status:'SNAPSHOT_UNAVAILABLE'}));diagnostics.push({phase:'DNS_READY_TIMEOUT',launch:profileLaunches.length,at:new Date().toISOString(),...snapshot,syntheticDnsRequestsThisLaunch:requests.filter(r=>r.launch===profileLaunches.length).length,ianaRequestsThisLaunch:ianaRequests.filter(r=>r.launch===profileLaunches.length)});throw error;}}
 async function launchProfile(){
  context=await chromium.launchPersistentContext(profile,{headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox'],viewport:{width:390,height:844},reducedMotion:'reduce'});
- context.on('page',tab=>{tab.setDefaultTimeout(15000);tab.on('pageerror',error=>errors.push(String(error)));});
+ context.on('page',tab=>{tab.setDefaultTimeout(15000);tab.on('pageerror',error=>errors.push(String(error)));
+  const tracked=new Map();
+  tab.on('request',request=>{if(new URL(request.url()).pathname!=='/assets/iana-reference.json')return;const row={launch:profileLaunches.length,requestedAt:new Date().toISOString(),resource:'SAME_ORIGIN_IANA_REFERENCE',status:'REQUESTED'};tracked.set(request,row);ianaRequests.push(row);});
+  tab.on('response',response=>{const row=tracked.get(response.request());if(row)Object.assign(row,{httpStatus:response.status(),status:'RESPONSE',respondedAt:new Date().toISOString()});});
+  tab.on('requestfailed',request=>{const row=tracked.get(request);if(row)Object.assign(row,{status:'REQUEST_FAILED',failedAt:new Date().toISOString()});});
+ });
  profileLaunches.push({number:profileLaunches.length+1,at:new Date().toISOString(),sameUserDataDir:true,closed:false});
  await context.route('**/*',async route=>{
   const url=new URL(route.request().url());if(url.origin===base)return route.continue();
@@ -79,7 +86,7 @@ try{
  profile=await mkdtemp(join(tmpdir(),'order-storage-profile-'));await launchProfile();
  await check('S01_COMMITTED_Q1_Q4_ID_UNIT_SOURCE_AND_PRODUCT_RELOAD',async()=>{
   await clean();await seed();await product();await dnsReady();const stored=await envelope(page);
-  assert.equal(stored.schemaVersion,1);assert.equal(stored.state,'data');assert.equal(stored.data.lines[0].qty,'200');assert.equal(stored.data.lines[0].qtyUnit,'each');
+  assert.equal(stored.schemaVersion,2);assert.equal(stored.state,'data');assert.equal(stored.data.lines[0].qty,'200');assert.equal(stored.data.lines[0].qtyUnit,'each');
   assert.deepEqual(stored.data.allocations.map(a=>[a.locationId,a.monthlyDemandQty,a.monthlyDemandSource,a.qty]),[['storage-A','50','manual','10'],['storage-B','150','derived','10']]);
   assert.equal(stored.data.locations[0].contactPhone,'010-2345-6789');await page.reload();await settled();assert.deepEqual((await envelope(page)).data,stored.data);
  });

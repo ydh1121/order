@@ -1,7 +1,7 @@
 /** Confirmed Q1–Q4 persistence. All writers must share the origin's Web Lock.
  * Domain validity, DNS, UI drafts and provider approval remain outside storage.
  */
-export const STORAGE_SCHEMA_VERSION=1;
+export const STORAGE_SCHEMA_VERSION=2;
 export const STORAGE_KEY='order_q1_q4_v1';
 export const STORAGE_LOCK='order-q1-q4-storage';
 export const LEGACY_KEYS=Object.freeze(['order_v015R2_draft','order_v015R1_draft']);
@@ -38,7 +38,7 @@ const review=object({version:oneOf(['0460']),pack:short,profile:oneOf(['FLEX','F
  common:object({contact,process:short,quality:boolean,holiday,repeat}),
  // This is committed inactive-mode input, not the live modal's working draft.
  draft:object({mode,process:short,values:object({base:raw,monthly:raw,min:raw,max:raw,once:raw}),variable:boolean,contact,holiday,repeat,quality:boolean})},['version']);
-const line=object({id,housing:short,size:short,pack:short,qty:raw,qtyUnit:unit,price:raw,qtyExact:ratio},['id','housing','size','pack','qty','price']);
+const line=object({id,housing:short,size:short,pack:short,qty:raw,qtyUnit:unit,qtyDisplayUnit:unit,price:raw,qtyExact:ratio},['id','housing','size','pack','qty','price']);
 const location=object({id,name:text(1024),road:text(4096),postal:short,detail:text(4096),jibun:text(4096),region:text(1024),providerId:text(1024),contactPhone:raw,email:raw,storePhone:raw,addressState:short,basicInfoDraft:boolean,
  status:omit,emailDomainState:omit,mailboxVerified:omit,dns:omit,dnsResult:omit,validation:omit},['id','name']);
 const allocation=object({id,lineId:id,locationId:id,qty:raw,mode,modeExplicit:boolean,freq:integer,days,intervalWeeks:integer,cycleCount:integer,scheduleDetail:short,weekPlans,qtySource:short,variableQty:boolean,qtyMin:raw,qtyMax:raw,qualityTest:boolean,oneTimeDeliveryQty:raw,deliveryQtyUnit:unit,monthlyDemandQty:raw,monthlyDemandUnit:unit,monthlyDemandSource:oneOf(['manual','derived']),monthlyDemandExact:monthlyExact,repeatSemantics:short,frequencyPerWeek:nullable(integer),monthDay:(v,p)=>typeof v==='number'?integer(v,p):short(v,p),advanced,q4Review:review,onceConfirmedFingerprint:text(32768),cycleAnchorDate:short,calendarPolicy:object({kind:short},['kind']),monthlyAllocationContract:short,
@@ -79,12 +79,13 @@ function migrateLegacy(input,key){
 }
 const receiptShape=object({transactionId:id,fingerprint:text(64),revision:integer,operation:oneOf(['commit','reset'])},['transactionId','fingerprint','revision','operation']);
 const migrationShape=nullable(object({source:oneOf(['session-R2','session-R1']),legacyKey:oneOf(LEGACY_KEYS)},['source','legacyKey']));
-const envelopeShape=object({schemaVersion:oneOf([1]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
+const envelopeShape=object({schemaVersion:oneOf([1,2]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
 function decode(rawValue){
  if(typeof rawValue!=='string'||new TextEncoder().encode(rawValue).length>MAX_BYTES)fail('record','SIZE_LIMIT');
- const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(value.schemaVersion!==1)fail('record','UNSUPPORTED_VERSION');
+ const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
  const envelope=envelopeShape(value,'record');if(envelope.revision<1)fail('record.revision');
  if(envelope.state==='reset'){if(envelope.data!==null)fail('record.data');}else{
+  if(envelope.schemaVersion===1&&envelope.data?.lines?.some(row=>Object.hasOwn(row,'qtyDisplayUnit')))fail('record.data.lines','UNKNOWN_FIELD');
   const projected=projectStoredPayload(envelope.data);if(canonical(projected)!==canonical(envelope.data))fail('record.data','NON_CANONICAL_SCHEMA');envelope.data=projected;
  }
  const ids=new Set();for(const receipt of envelope.receipts){if(ids.has(receipt.transactionId)||receipt.revision<1||receipt.revision>envelope.revision||!/^[a-f0-9]{64}$/.test(receipt.fingerprint))fail('record.receipts');ids.add(receipt.transactionId);}
@@ -122,7 +123,7 @@ export function createBrowserStorage(options={}){
   const current=await read();if(current.error)return current.error;if(current.envelope)return output(true,current.envelope.state==='reset'?'RESET':'LOADED',current.envelope);
   const old=legacy();if(old.error)return {...old.error,versionToken:'ABSENT'};if(!old.key)return output(true,'EMPTY',null,{data:emptyStoredPayload(),versionToken:'ABSENT'});
   const migration={source:old.key===LEGACY_KEYS[0]?'session-R2':'session-R1',legacyKey:old.key};let epoch;try{epoch=generation();}catch{return output(false,'UNAVAILABLE',null,{reason:'GENERATION_UNAVAILABLE',versionToken:'ABSENT'});}
-  const envelope={schemaVersion:1,generation:epoch,revision:1,state:'data',data:old.data,receipts:[],migration,updatedAt:0};
+  const envelope={schemaVersion:STORAGE_SCHEMA_VERSION,generation:epoch,revision:1,state:'data',data:old.data,receipts:[],migration,updatedAt:0};
   const result=await write(envelope,null);if(result.ok){result.status='MIGRATED';result.migration=migration;}else result.versionToken='ABSENT';
   // Original session is deliberately retained, never authoritative after this envelope exists.
   return result;
@@ -143,7 +144,7 @@ export function createBrowserStorage(options={}){
    if(!previous&&!damaged&&operation==='commit'){const old=legacy();if(old.error)return {...old.error,versionToken:'ABSENT'};if(old.key)return output(false,'CONFLICT',null,{reason:'MIGRATION_REQUIRED',versionToken:'ABSENT'});}
    let epoch=previous?.generation;try{epoch??=generation();}catch{return output(false,'UNAVAILABLE',previous,{reason:'GENERATION_UNAVAILABLE'});}
    const next=revision<Number.MAX_SAFE_INTEGER?revision+1:1,receipts=[...(previous?.receipts??[]),{transactionId,fingerprint,revision:next,operation}].slice(-MAX_RECEIPTS);
-   const result=await write({schemaVersion:1,generation:epoch,revision:next,state:operation==='reset'?'reset':'data',data,receipts,migration:previous?.migration??null,updatedAt:0},previous,canCommit);
+   const result=await write({schemaVersion:STORAGE_SCHEMA_VERSION,generation:epoch,revision:next,state:operation==='reset'?'reset':'data',data,receipts,migration:previous?.migration??null,updatedAt:0},previous,canCommit);
    if(damaged&&result.ok)result.recoveredFrom=current.error.status;return result;
   });
  }
