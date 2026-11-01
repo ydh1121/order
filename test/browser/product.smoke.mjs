@@ -157,7 +157,26 @@ try{
   await page.reload();await emailReady();assert.deepEqual((await persisted()).allocations,saved);await editAllocation();assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');
  });
- await check('P10_BROWSER_ERRORS_NETWORK_SCOPE_AND_MOBILE_OVERFLOW',async()=>{
+ await check('P10_CONTACT_COPY_SELECT_REVIEW_CANCEL_CONFIRM_RELOAD',async()=>{
+  const fixture=multiSiteFixture();fixture.open='q3';
+  Object.assign(fixture.locations[1],{contactPhone:'070-2345-6789',email:'qa-target@example.com',storePhone:'02-234-5678',road:'',detail:'',postal:'',addressState:'ADDRESS_UI_PENDING',basicInfoDraft:true});
+  await page.evaluate(({key,fixture})=>sessionStorage.setItem(key,JSON.stringify(fixture)),{key,fixture});await page.reload();await emailReady();await stage('q3');
+  const source=page.locator('#q3-site-qa-site > .accordion-trigger');if(await source.getAttribute('aria-expanded')!=='true')await source.click();
+  const prior=await persisted();
+  const openCopy=async()=>{await page.locator('[data-contact-copy="qa-site"]').click();const dialog=page.locator('#q3-contact-copy');await dialog.waitFor({state:'visible'});assert.equal(await dialog.getAttribute('data-copy-stage'),'select');return dialog;};
+  const selectCopy=async dialog=>{for(const field of ['contactPhone','email']){await dialog.locator(`label:has([data-contact-copy-field="${field}"])`).click();assert.equal(await dialog.locator(`[data-contact-copy-field="${field}"]`).isChecked(),true);}await dialog.locator('label:has([data-contact-copy-target="qa-site-b"])').click();assert.equal(await dialog.locator('[data-contact-copy-target="qa-site-b"]').isChecked(),true);assert.deepEqual(await persisted(),prior,'selecting copy fields and targets cannot write committed state');};
+  const reviewCopy=async dialog=>{await selectCopy(dialog);await dialog.locator('[data-copy-apply]').click();assert.equal(await dialog.getAttribute('data-copy-stage'),'review');assert.deepEqual(await dialog.locator('[data-copy-value="before"] dd').allTextContents(),['070-2345-6789','qa-target@example.com']);assert.deepEqual(await dialog.locator('[data-copy-value="after"] dd').allTextContents(),['010-2345-6789','qa@example.com']);assert.deepEqual(await persisted(),prior,'reviewing contact changes cannot write committed state');};
+  let dialog=await openCopy();await selectCopy(dialog);await dialog.locator('[data-copy-cancel]').click();await dialog.waitFor({state:'detached'});assert.deepEqual(await persisted(),prior,'cancel in selection leaves all committed fields unchanged');
+  dialog=await openCopy();await reviewCopy(dialog);await dialog.locator('[data-copy-cancel]').click();await dialog.waitFor({state:'detached'});assert.deepEqual(await persisted(),prior,'cancel in review leaves all committed fields unchanged');
+  dialog=await openCopy();await reviewCopy(dialog);await dialog.locator('[data-copy-apply]').click();await dialog.waitFor({state:'detached'});
+  const confirmed=await persisted(),expected=structuredClone(prior);expected.locations[1].contactPhone='010-2345-6789';expected.locations[1].email='qa@example.com';expected.allocationRevision=prior.allocationRevision+1;
+  assert.deepEqual(confirmed,expected,'one confirmation updates only the selected target fields in a single save');
+  assert.equal(confirmed.locations[1].mailboxVerified,false);assert.equal(confirmed.locations[1].basicInfoDraft,true);assert.equal(confirmed.locations[1].addressState,'ADDRESS_UI_PENDING');
+  assert.equal(await page.locator('#q3-site-qa-site-b').getAttribute('data-complete'),'false');assert.equal(await page.locator('#section-q3').getAttribute('data-complete'),'false','copying contacts must not complete an address-pending site');
+  await page.reload();await emailReady();await stage('q3');assert.deepEqual((await persisted()).locations,expected.locations);assert.deepEqual((await persisted()).allocations,expected.allocations);
+  assert.equal(await page.locator('#q3-site-qa-site-b').getAttribute('data-complete'),'false');assert.equal(await page.locator('#section-q3').getAttribute('data-complete'),'false');
+ });
+ await check('P11_BROWSER_ERRORS_NETWORK_SCOPE_AND_MOBILE_OVERFLOW',async()=>{
   assert.deepEqual(pageErrors,[]);assert.deepEqual(externalBlocked,[]);assert.deepEqual(transportErrors,[]);assert.ok(network.length>0,'the DNS transport fixture must actually have been exercised');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  });

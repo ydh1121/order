@@ -49,7 +49,7 @@ try{
   const core=await moduleUrl(new URL('../../src/engine/validation/email-dns.mjs',import.meta.url));
   report.source.modules.sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
   report.source.graphSha256=createHash('sha256').update(JSON.stringify(report.source.modules)).digest('hex');
-  browser=await chromium.launch({headless:true});report.runtime.browserVersion=await browser.version();
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined});report.runtime.browserVersion=await browser.version();
   const page=await browser.newPage();page.setDefaultTimeout(20000);
   page.on('pageerror',error=>report.page.errors.push({at:new Date().toISOString(),message:safeError(error)}));
   page.on('console',message=>{if(['error','warning'].includes(message.type()))report.page.console.push({at:new Date().toISOString(),type:message.type(),text:safeError(message.text())});});

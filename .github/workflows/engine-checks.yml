@@ -1,7 +1,7 @@
 name: independent engine checks
 on:
   push:
-    branches: [feat/order-astra-engine-20261101, main]
+    branches: [main]
   pull_request:
     branches: [main]
 permissions:
@@ -33,7 +33,14 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Select installed runner Chrome or install pinned Chromium
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            echo "CHROME_PATH=$(command -v google-chrome)" >> "$GITHUB_ENV"
+            google-chrome --version
+          else
+            npx playwright install --with-deps chromium
+          fi
       - run: npm run build
       - name: Actual Chromium DOM with synthetic phone input
         run: |
