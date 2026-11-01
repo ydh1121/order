@@ -17,3 +17,14 @@ export function syntheticDns(name,type){
  const Answer=name==='example.com'&&type==='MX'?[{name:name+'.',type:15,TTL:60,data:'10 mx.example.com.'}]:name==='mx.example.com'&&type==='A'?[{name:name+'.',type:1,TTL:60,data:'192.0.2.1'}]:[];
  return {Status:0,Question:[{name:name+'.',type:types[type]}],Answer,Authority:Answer.length?[]:[{name:'example.com.',type:6,TTL:60,data:'ns.example.com. hostmaster.example.com. 1 60 60 60 60'}]};
 }
+
+// Deliberately synthetic address labels and provider-shaped identifiers. These
+// are a local LAB response fixture, never a claim of a Juso observation.
+export function syntheticAddressResult(query,page=1,mode='synthetic'){
+ if(mode==='unavailable'||mode==='offline')return {version:1,status:'UNAVAILABLE',reason:'NOT_CONFIGURED',items:[]};
+ const items=mode==='empty'||page!==1?[]:[
+  {road:'합성 QA 도로 10 — 실제 주소 아님',postal:'08843',jibun:'합성 QA 지번 10',region:'합성 QA 지역',providerId:'9999999999999999999900001',addressProvider:'JUSO'},
+  {road:'합성 QA 도로 20 — 실제 주소 아님',postal:'00001',jibun:'합성 QA 지번 20',region:'합성 QA 지역',providerId:'9999999999999999999900002',addressProvider:'JUSO'},
+ ];
+ return {version:1,status:items.length?'OK':'EMPTY',reason:items.length?'RESULTS':'NO_RESULTS',items,page,total:items.length,hasMore:false};
+}

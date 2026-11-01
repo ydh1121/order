@@ -3,3 +3,9 @@ dist/
 node_modules/
 browser-evidence/
 .qa-lab/
+
+# Local Cloudflare development secrets are never source artifacts.
+.dev.vars
+.dev.vars.*
+.env
+.env.*

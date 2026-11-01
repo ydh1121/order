@@ -69,6 +69,17 @@ try{
   await page.goto(base);await page.evaluate(()=>{localStorage.setItem('order_q1_q4_v1','TEST_PRODUCT_SENTINEL_NOT_LAB_DATA');sessionStorage.setItem('order_v015R2_draft','TEST_LEGACY_SENTINEL');});await page.goto(base+'/lab.html');await ready();
   assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);await prepareFixture();assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);assert.equal(await page.evaluate(()=>window.__qaLabReadNative('local','order_q1_q4_v1')),'TEST_PRODUCT_SENTINEL_NOT_LAB_DATA');assert.equal(await page.evaluate(()=>window.__qaLabReadNative('session','order_v015R2_draft')),'TEST_LEGACY_SENTINEL');
  });
- await check('L07_NO_EXTERNAL_NETWORK_OR_UNCAUGHT_PRODUCT_ERRORS',async()=>{assert.deepEqual(network,[]);assert.deepEqual(pageErrors,[]);});report.status='PASS';
+ await check('L07_ADDRESS_OPT_IN_REUSES_PRODUCT_TRANSACTION_WITHOUT_NATIVE_STORAGE',async()=>{
+  await page.locator('#qa-lab-address').selectOption('synthetic');await stage('q3');
+  const toggle=page.locator('#q3-site-qa-site-a > .accordion-trigger');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
+  await page.locator('[data-site-edit="qa-site-a"]').click();const before=await committed();await page.locator('#q3-address-slot').click();
+  await page.locator('#address-query').fill('합성 도로');await page.locator('#address-option-0').waitFor({state:'visible'});
+  await page.locator('#address-query').press('ArrowDown');await page.locator('#address-query').press('Enter');
+  await page.locator('#address-detail').fill('합성 2층');await page.locator('#address-dropoff').fill('합성 출입구');await page.locator('#address-confirm').click();
+  await page.waitForFunction(()=>!document.getElementById('address-editor-dialog').open);assert.deepEqual(await committed(),before,'child confirm is parent draft only');
+  assert.match(await page.locator('#q3-address-slot').textContent(),/08843/);await page.locator('#cancel-site').click();await page.waitForFunction(()=>!document.getElementById('site-editor-dialog').open);assert.deepEqual(await committed(),before,'parent cancel discards synthetic address');
+  assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);assert.equal(await page.evaluate(()=>window.__qaLabReadNative('local','order_q1_q4_v1')),'TEST_PRODUCT_SENTINEL_NOT_LAB_DATA');
+ });
+ await check('L08_NO_EXTERNAL_NETWORK_OR_UNCAUGHT_PRODUCT_ERRORS',async()=>{assert.deepEqual(network,[]);assert.deepEqual(pageErrors,[]);});report.status='PASS';
 }catch(error){report.status=/Operation not permitted|socket\(\) failed|Executable doesn't exist/.test(String(error))?'BLOCKED_BROWSER_ENVIRONMENT':'FAIL';report.error=String(error.stack||error);process.exitCode=1;await page?.screenshot({path:join(evidence,'failure.png'),fullPage:true}).catch(()=>{});}
 finally{await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));await mkdir(evidence,{recursive:true});await writeFile(join(evidence,'qa-lab.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));}

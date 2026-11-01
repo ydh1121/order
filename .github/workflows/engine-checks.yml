@@ -62,6 +62,9 @@ jobs:
       - name: Feedback regression and matched baseline screenshots
         if: always()
         run: node test/browser/feedback.smoke.mjs
+      - name: Address pattern 1 transactions, request lifecycle and full viewport motion
+        if: always()
+        run: node test/browser/address.smoke.mjs
       - name: Native durable storage, profile relaunch and concurrent tabs
         if: always()
         run: node test/browser/storage.smoke.mjs

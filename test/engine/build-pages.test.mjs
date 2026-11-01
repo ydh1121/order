@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
-import {browserClosure,buildPages} from '../../scripts/build-pages.mjs';
+import {browserClosure,buildPages,reviewedFunctions} from '../../scripts/build-pages.mjs';
 
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const commitSha='1'.repeat(40);
@@ -54,6 +54,28 @@ test('production integrated allowlist requires file hash and excludes unlisted f
  assert.equal(await readFile(join(f.root,'dist/index.html'),'utf8'),index);assert.equal('private.html' in await fileTree(join(f.root,'dist')),false);
  await f.put('web/index.html','changed without manifest approval');await assert.rejects(buildPages({root:f.root,now:freshNow,commitSha}),/BUILD_FRONTEND_HASH_MISMATCH/);
  assert.equal(await readFile(join(f.root,'dist/index.html'),'utf8'),index,'failed build retains previous output');
+});
+
+test('address Function is identified without publishing its source and only the address route invokes Functions',async t=>{
+ const f=await fixture(t),index='<!doctype html><title>Scoped function test</title>',handler='export const onRequest=()=>new Response("not a fixture address");\n';
+ await f.put('web/index.html',index);await f.put('functions/api/address/search.js',handler);
+ const functions=[{source:'functions/api/address/search.js',route:'/api/address/search',sha256:sha(handler)}];
+ await f.writeConfig({status:'INTEGRATED',uxHandoff:{sha256:sha(index)},frontendFiles:[{source:'web/index.html',output:'index.html',sha256:sha(index)}],functions});
+ const id=await buildPages({root:f.root,now:freshNow,commitSha}),tree=await fileTree(join(f.root,'dist'));
+ assert.deepEqual(JSON.parse(await readFile(join(f.root,'dist/_routes.json'),'utf8')),{version:1,include:['/api/address/search'],exclude:[]});
+ assert.deepEqual(id.serverFunctions,[{source:'functions/api/address/search.js',route:'/api/address/search',bytes:Buffer.byteLength(handler),sha256:sha(handler)}]);
+ assert.equal(Object.keys(tree).some(path=>path.startsWith('functions/')||path.includes('search.js')),false);
+ assert.equal(JSON.stringify(id).includes(handler),false);
+ const before=tree;await f.put('functions/api/other.js','export const onRequest=()=>new Response("unapproved");');
+ await assert.rejects(buildPages({root:f.root,now:freshNow,commitSha}),/BUILD_FUNCTION_SCOPE_INVALID/);
+ assert.deepEqual(await fileTree(join(f.root,'dist')),before,'out-of-scope handler must not replace last reviewed output');
+});
+
+test('Function routing, source hash and dependencies fail closed when scope changes',async t=>{
+ const f=await fixture(t),path='functions/api/address/search.js',source='export const onRequest=()=>new Response("ok");';await f.put(path,source);
+ for(const functions of [[],[{source:path,route:'/*',sha256:sha(source)}],[{source:path,route:'/api/address/search',sha256:'0'.repeat(64)}]])await assert.rejects(reviewedFunctions(f.root,{functions}),/BUILD_FUNCTION_SCOPE_INVALID|BUILD_FUNCTION_HASH_MISMATCH/);
+ const imports="import '../unreviewed.js'; export const onRequest=()=>new Response('ok');";await f.put(path,imports);
+ await assert.rejects(reviewedFunctions(f.root,{functions:[{source:path,route:'/api/address/search',sha256:sha(imports)}]}),/BUILD_FUNCTION_IMPORT_NOT_REVIEWED/);
 });
 
 test('frontend consumers must import an emitted browser module and contain no QA injection hook',async t=>{
