@@ -49,6 +49,14 @@ jobs:
           cat browser-evidence/phone.json
       - name: Built product transactions with synthetic DNS and contact fixtures
         run: node test/browser/product.smoke.mjs
+      - name: Native durable storage, profile relaunch and concurrent tabs
+        if: always()
+        run: node test/browser/storage.smoke.mjs
+      - name: Same-commit isolated local QA LAB
+        if: always()
+        run: |
+          npm run build:qa-lab
+          node test/browser/qa-lab.smoke.mjs .qa-lab/order-qa-lab.html
       - name: Computed styles against frozen UX source
         if: always()
         run: node test/browser/styles.smoke.mjs

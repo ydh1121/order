@@ -27,7 +27,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "86a23fa43124bf0ef3c9a1bba18abb33f4adce216b2f4535a67ffb1fef6bd908"
+      "sha256": "c2c13a5d50f96641ed3d93e59fc2f3c967965454dca83098486933e6b84d5ec7"
     },
     {
       "source": "web/common-ui.mjs",
@@ -42,7 +42,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "11b15ead8a2bc5a0f68e007d3e9b57487d4bf430df36fd2b191ac8fde4f313ed"
+      "sha256": "10c908ee8a23aaacd28fd7fe59f4da46821107eac3599e5d2cf138d70d0184ba"
     },
     {
       "source": "web/main.mjs",
@@ -52,12 +52,17 @@
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "f687da9231a641f04ea45b39a291efd732902ab8caba7a40dff4e9f46960d4e5"
+      "sha256": "615110989b95a31bfcb43fead89dc477b80b71dfac0f1b869d668856097b4543"
     },
     {
       "source": "web/quantity-contract.mjs",
       "output": "quantity-contract.mjs",
       "sha256": "86fcfe02d5e6d56986cbe58b92b7cb4413e9236ead0417afcde59b22ebd0b5cf"
+    },
+    {
+      "source": "web/storage.mjs",
+      "output": "storage.mjs",
+      "sha256": "3dc863a577d5fe3a7b019db486515003c69d0ab7e6fef3d7b05099690cc802fd"
     },
     {
       "source": "web/styles.css",

@@ -1,3 +1,4 @@
+import {createBrowserStorage,projectStoredPayload} from './storage.mjs';
 import {calendarForecast} from '../src/engine/calculation/calendar-forecast.mjs';
 import {compare,fromRatio,multiply} from '../src/engine/calculation/exact.mjs';
 import {quantityUnit,quantityLabel,validMonthlyQuantity,monthlyQuantityText,convertMonthlyUnit,currentPurchaseCost,totalPurchaseCost,exactDisplay,baseQuantity,quantityFactor} from './quantity-contract.mjs';
@@ -51,7 +52,7 @@ function ensureMigration(data){
  d.locations=Array.isArray(data.locations)?data.locations:[];d.allocations=Array.isArray(data.allocations)?data.allocations:[];
  if(!d.locations.length&&data.address?.road){const l={...blankSite(),...data.address,name:'기본 사업장'};d.locations.push(l);d.allocations=d.lines.map(x=>({...blankAllocation(x.id,l.id),qty:String(x.drop||''),mode:data.delivery?.mode||'FLEX',freq:Number(data.delivery?.freq)||1,days:data.delivery?.days||[]}));}
  d.locations=d.locations.filter(x=>x&&x.id);d.allocations=d.allocations.filter(a=>a&&d.lines.some(l=>l.id===a.lineId)&&d.locations.some(loc=>loc.id===a.locationId));
- d.allocationRevision=Number.isSafeInteger(data.allocationRevision)&&data.allocationRevision>=0?data.allocationRevision:0;d.current=data.current||null;d.open=data.open||'q1';return d;
+ d.allocationRevision=Number.isSafeInteger(data.allocationRevision)&&data.allocationRevision>=0?data.allocationRevision:0;d.current=data.current||null;d.open=data.open??'q1';return d;
 }
 
 // Visible allocation mapping is derived, never stored as a separate source of truth.
@@ -59,8 +60,62 @@ function siteAssignmentSummary(){
  return S.lines.map(l=>`${itemIdentity(l)} → ${S.allocations.filter(a=>a.lineId===l.id).map(a=>siteName(locationById(a.locationId))).join('·')||'납품지 미지정'}`).join('\n');
 }
 
-try {const cached=sessionStorage.getItem('order_v015R2_draft')||sessionStorage.getItem('order_v015R1_draft');if(cached){const parsed=JSON.parse(cached);if(Array.isArray(parsed?.lines)){S=ensureMigration(parsed);editorMode=S.lines.length?null:'initial';}}}catch(e){}
-const save=()=>{S.allocationRevision=(S.allocationRevision||0)+1;try{sessionStorage.setItem('order_v015R2_draft',JSON.stringify({lines:S.lines,current:S.current,locations:S.locations,allocations:S.allocations,open:S.open,allocationRevision:S.allocationRevision}))}catch(e){}window.OrderEmailLifecycle?.reconcile();};
+// One durable owner; screen navigation never writes product data.
+const storage=createBrowserStorage(),storageHydration=storage.load();
+let storageRevision=null,storageToken=null,storageReady=false,storagePending=0,storageFailure=null;
+let storageEpoch=0,uncertainWrite=null;
+let storageTail=Promise.resolve(),lastCommitted=structuredClone(S),inlineDraft=false,storageMessage='';
+$('app').inert=true;
+const storageText=result=>result.uncertain?'저장 결과를 확인하지 못했습니다. 다시 저장하거나 새로고침 후 확인해 주세요.':result.status==='CONFLICT'?'다른 탭에서 입력이 변경되었습니다. 새로고침 후 다시 확인해 주세요.':result.status==='CORRUPT'||result.status==='UNSUPPORTED'?'저장된 입력을 불러올 수 없습니다. 입력을 초기화한 후 다시 시도해 주세요.':'입력을 저장하지 못했습니다. 다시 시도해 주세요.';
+function storageFeedback(result,id='form-error'){
+ if(result.status==='CANCELLED')return;
+ const node=$(id)||$('form-error');storageMessage=storageText(result);node.textContent=storageMessage;node.hidden=false;node.classList.remove('ui-feedback-sr');node.setAttribute('role','alert');
+ $('retry-input-save').hidden=!inlineDraft||result.status==='CONFLICT';
+}
+function storagePaint(){document.documentElement.dataset.storagePending=String(storagePending>0);if(storageReady)refreshCompletionBadges();}
+function save(candidate=S,{publish=true,canCommit=()=>true,errorId='form-error',transactionId=ident('save')}={}){
+ const snapshot=structuredClone(candidate),epoch=storageEpoch,allowed=()=>epoch===storageEpoch&&canCommit();storagePending++;storagePaint();
+ const run=async()=>{
+  if(!allowed())return {ok:false,status:'CANCELLED'};
+  snapshot.allocationRevision=(lastCommitted.allocationRevision||0)+1;
+  let result,fingerprint;
+  try{fingerprint=JSON.stringify(projectStoredPayload(snapshot));if(uncertainWrite?.fingerprint===fingerprint)transactionId=uncertainWrite.transactionId;result=await storage.commit(snapshot,{expectedRevision:storageRevision,expectedToken:storageToken,transactionId,canCommit:allowed});}
+  catch{result={ok:false,status:'WRITE_FAILED'};}
+  document.documentElement.dataset.storageStatus=result.status;
+  if(result.ok){storageRevision=result.revision;storageToken=result.versionToken;lastCommitted=structuredClone(result.data);
+   if(publish)S={...snapshot,allocationRevision:result.data.allocationRevision};else S.allocationRevision=result.data.allocationRevision;
+   uncertainWrite=null;storageFailure=null;if($('form-error').textContent===storageMessage)err('form-error','');$('retry-input-save').hidden=true;
+   window.OrderEmailLifecycle?.reconcile();
+  }else if(result.status!=='CANCELLED'){
+   if(result.uncertain)uncertainWrite={fingerprint,transactionId};
+   // A failed popup remains a draft. Cancelling it restores the prior confirmed state.
+   if(!publish||result.uncertain||['CONFLICT','CORRUPT','UNSUPPORTED','UNAVAILABLE'].includes(result.status))storageFailure=result;
+   storageFeedback(result,errorId);if(storageFailure===result&&errorId!=='form-error')storageFeedback(result);
+  }
+  return result;
+ };
+ const result=storageTail.then(run,run);storageTail=result.catch(()=>{});
+ return result.finally(()=>{storagePending--;if(!storagePending&&!storageFailure)inlineDraft=false;storagePaint();});
+}
+// Explicit reset is a revisioned tombstone, never removeItem plus legacy fallback.
+let resetAttempt=null;
+$('retry-input-save').onclick=()=>{if(inlineDraft&&!storagePending)void save(S,{publish:false});};
+const resetDialog=$('reset-input-confirm');
+function cancelReset(){if(resetAttempt)resetAttempt.cancelled=true;OrderModalShell.close(resetDialog);}
+$('reset-input').onclick=()=>{
+ if(!storageReady||siteEditing||skuDraftActive()||deliveryDraft||q4AssignmentDraft||document.querySelector('dialog[open]'))return;
+ resetAttempt=null;err('reset-input-error','');OrderModalShell.open(resetDialog,{variant:'compact',returnFocus:$('reset-input'),initialFocus:()=>resetDialog.querySelector('[data-reset-cancel]')});
+};
+resetDialog.querySelector('[data-reset-cancel]').onclick=cancelReset;OrderModalShell.bind(resetDialog,cancelReset);
+resetDialog.querySelector('[data-reset-confirm]').onclick=async()=>{
+ if(resetAttempt?.pending)return;const attempt={pending:true,cancelled:false,transactionId:resetAttempt?.transactionId||ident('reset')};resetAttempt=attempt;storageEpoch++;storagePending++;storagePaint();
+ const run=async()=>{let result;try{result=await storage.reset({expectedRevision:storageRevision,expectedToken:storageToken,transactionId:attempt.transactionId,canCommit:()=>resetAttempt===attempt&&!attempt.cancelled&&resetDialog.open&&!resetDialog.classList.contains('is-closing')});}catch{result={ok:false,status:'WRITE_FAILED'};}
+  document.documentElement.dataset.storageStatus=result.status;
+  if(result.ok){storageRevision=result.revision;storageToken=result.versionToken;S=blank();lastCommitted=structuredClone(S);editing=empty();editorMode='initial';addingSku=false;inlineDraft=false;uncertainWrite=null;storageFailure=null;err('form-error','');$('retry-input-save').hidden=true;OrderEmailLifecycle.reconcile();OrderModalShell.close(resetDialog,{after:()=>render()});}
+  else if(result.status!=='CANCELLED'){if(result.uncertain||['CONFLICT','CORRUPT','UNSUPPORTED','UNAVAILABLE'].includes(result.status))storageFailure=result;storageFeedback(result,'reset-input-error');}return result;
+ };
+ const result=storageTail.then(run,run);storageTail=result.catch(()=>{});await result;attempt.pending=false;storagePending--;storagePaint();
+};
 let current='home';
 // Field-owned error state, never animate or paint the entire accordion/dialog.
 function legacyErrorState(id,message){
@@ -105,11 +160,11 @@ function show(page,record=true){
   const mine=routeAnimation;mine.finished.then(()=>{if(seq===pageSeq&&routeAnimation===mine){routeAnimation=null;showDestination();}},()=>{});
  }else showDestination();
  if(record&&location.hash!==`#/${page}`)history.pushState({},'',`#/${page}`);
- window.scrollTo({top:0,behavior:'instant'});save();return true;
+ window.scrollTo({top:0,behavior:'instant'});return true;
 }
 function skuDraftActive(){return editorMode==='edit'||editorMode==='new'}
-function complete(){const v=orderVerdict('full');return v.valid&&!v.confirmations.length&&!skuDraftActive()&&!siteFocusDirty()&&!siteEditingDirty()&&!q4DraftActive()}
-function changeOpen(target,persist=true){if(target!==S.open&&!guardPendingEdits('step'))return false;S.open=target;render();if(persist)save();return true;}
+function complete(){const v=orderVerdict('full');return !storagePending&&!storageFailure&&!inlineDraft&&v.valid&&!v.confirmations.length&&!skuDraftActive()&&!siteFocusDirty()&&!siteEditingDirty()&&!q4DraftActive()}
+function changeOpen(target,persist=true){if(target!==S.open&&!guardPendingEdits('step'))return false;S.open=target;render();return true;}
 function pickGroup(id,field,values){
  const widths={'왕란':24,'특란':22,'대란':20,'중란':18,'소란':16};
  $(id).innerHTML=values.map(t=>{
@@ -162,10 +217,10 @@ function orderValidationProjection(scope='full'){
  const visibleErrors=actionableErrors.filter(i=>!orderIssueUnderEdit(i,editingScopes)),exposedErrors=orderErrorExposure?visibleErrors:[];
  const stored=storedStageCompletion(verdict),stageStates=Object.fromEntries(['q1','q2','q3','q4'].map(stage=>{
   const editing=editingScopes.some(x=>x.stages.includes(stage)),awaiting=pendingIssues.some(x=>x.stage===stage),confirmation=verdict.confirmations.some(x=>(x.stage||'q4')===stage);
-  return [stage,{valid:!issues.some(x=>x.stage===stage),storedComplete:stored[stage],complete:stored[stage]&&!editing&&!awaiting&&!confirmation,editing,awaiting,confirmation,errorExposed:exposedErrors.some(x=>x.stage===stage)}];
+  return [stage,{valid:!issues.some(x=>x.stage===stage),storedComplete:stored[stage],complete:stored[stage]&&!editing&&!awaiting&&!confirmation&&!storagePending&&!storageFailure&&!inlineDraft,editing,awaiting,confirmation,errorExposed:exposedErrors.some(x=>x.stage===stage)}];
  }));
  const counts=Object.fromEntries(['q1','q2','q3','q4'].map(q=>[q,visibleErrors.filter(x=>x.stage===q).length]));
- return {...verdict,fieldErrors:issues,issues,pendingIssues,actionableErrors,visibleErrors,exposedErrors,editingScopes,editingBlockers,stageStates,counts,errorExposure:orderErrorExposure,valid:verdict.valid&&verdict.confirmations.length===0&&editingBlockers.length===0};
+ return {...verdict,fieldErrors:issues,issues,pendingIssues,actionableErrors,visibleErrors,exposedErrors,editingScopes,editingBlockers,stageStates,counts,errorExposure:orderErrorExposure,valid:verdict.valid&&verdict.confirmations.length===0&&editingBlockers.length===0&&!storagePending&&!storageFailure&&!inlineDraft};
 }
 function openSiteActionConfirm({kind,id,trigger}){
  const lineMode=kind==='line-unlink',assignment=lineMode?q4AssignmentDraft:null;
@@ -175,14 +230,15 @@ function openSiteActionConfirm({kind,id,trigger}){
  const readTarget=()=>lineMode?JSON.stringify([lineById(id),S.allocations.filter(a=>a.lineId===id)]):JSON.stringify([locationById(site.id),allocation?allocationById(allocation.id):null,S.allocations.filter(a=>a.locationId===site.id)]);
  const snapshot=readTarget(),title=lineMode?'모든 연결을 해제할까요?':kind==='site'?siteName(site)+'을 삭제할까요?':'품목 연결을 해제할까요?',body=lineMode?itemIdentity(line)+'의 사업장 연결과 납품 설정을 모두 해제합니다. 사업장 정보와 다른 품목의 설정은 유지됩니다.':kind==='site'?'이 사업장의 정보와 연결된 납품 설정이 삭제됩니다.':siteName(site)+'에서 '+itemIdentity(lineById(allocation.lineId))+'의 납품 설정을 해제합니다.';
  let d=$('q3-action-confirm');if(!d){d=document.createElement('dialog');d.id='q3-action-confirm';d.className='q1-sku-dialog';d.setAttribute('aria-labelledby','q3-action-confirm-title');d.innerHTML='<div class="q1-confirm"><h2 id="q3-action-confirm-title"></h2><p id="q3-action-confirm-body"></p><p id="q3-action-confirm-failure" role="alert" hidden></p><div class="ui-transaction-group"><button type="button" class="ui-transaction-action" data-q3-confirm-cancel>취소</button><button type="button" class="ui-transaction-action" data-q3-confirm-apply></button></div></div>';document.body.append(d);}
- if(d.open)return;let settled=false;
+ if(d.open)return;let settled=false,pending=false;
  $('q3-action-confirm-title').textContent=title;$('q3-action-confirm-body').textContent=body;$('q3-action-confirm-failure').hidden=true;const apply=d.querySelector('[data-q3-confirm-apply]');apply.textContent=kind==='site'?'삭제':'해제';apply.classList.toggle('ui-transaction-action--danger',kind==='site');apply.classList.toggle('ui-transaction-action--primary',kind!=='site');apply.disabled=false;
  const close=()=>{settled=true;OrderModalShell.close(d,{after:()=>{renderAddress();renderDelivery();refreshCompletionBadges();if(lineMode&&q4AssignmentDraft===assignment)paintQ4Assignment();}});};
- d.querySelector('[data-q3-confirm-cancel]').onclick=close;apply.onclick=()=>{if(settled)return;if(readTarget()!==snapshot||lineMode&&(q4AssignmentDraft!==assignment||assignment.lineId!==id)){$('q3-action-confirm-failure').textContent='대상 정보가 변경되었습니다. 취소 후 다시 확인해 주세요.';$('q3-action-confirm-failure').hidden=false;return;}
-  settled=true;apply.disabled=true;
-  if(lineMode){S.allocations=S.allocations.filter(a=>a.lineId!==id);assignment.selected=[];assignment.originalIds=[];}
-  else if(kind==='site'){S.locations=S.locations.filter(s=>s.id!==site.id);S.allocations=S.allocations.filter(a=>a.locationId!==site.id);}else S.allocations=S.allocations.filter(a=>a.id!==allocation.id);
-  save();close();};
+ d.querySelector('[data-q3-confirm-cancel]').onclick=close;apply.onclick=async()=>{if(settled||pending)return;if(readTarget()!==snapshot||lineMode&&(q4AssignmentDraft!==assignment||assignment.lineId!==id)){$('q3-action-confirm-failure').textContent='대상 정보가 변경되었습니다. 취소 후 다시 확인해 주세요.';$('q3-action-confirm-failure').hidden=false;return;}
+  pending=true;apply.disabled=true;const candidate=structuredClone(S);
+  if(lineMode)candidate.allocations=candidate.allocations.filter(a=>a.lineId!==id);
+  else if(kind==='site'){candidate.locations=candidate.locations.filter(x=>x.id!==site.id);candidate.allocations=candidate.allocations.filter(a=>a.locationId!==site.id);}else candidate.allocations=candidate.allocations.filter(a=>a.id!==allocation.id);
+  const result=await save(candidate,{errorId:'q3-action-confirm-failure',canCommit:()=>!settled&&d.open&&readTarget()===snapshot&&(!lineMode||q4AssignmentDraft===assignment)});pending=false;
+  if(!result.ok){apply.disabled=false;return;}if(lineMode){assignment.selected=[];assignment.originalIds=[];}close();};
  OrderModalShell.bind(d,close);OrderModalShell.open(d,{variant:'compact',returnFocus:()=>trigger?.isConnected?trigger:lineMode?$('q4-assignment-next'):document.querySelector(`#q3-site-${CSS.escape(site.id)} > .accordion-trigger`)||$('add-site'),initialFocus:()=>d.querySelector('[data-q3-confirm-cancel]')});
 }
 function renderOrderPageFeedback({shake=false}={}){
@@ -298,18 +354,17 @@ function openSkuDeleteDialog(id,button){
  showQ1Modal($('sku-delete-dialog'));syncQ1ModalScrollLock();
  requestAnimationFrame(()=>$('sku-delete-cancel').focus({preventScroll:true}));
 }
-function closeSkuDeleteDialog(commit=false){
- const ctx=pendingSkuDelete;if(!ctx||$('sku-delete-dialog').classList.contains('is-closing'))return;
+async function closeSkuDeleteDialog(commit=false){
+ const ctx=pendingSkuDelete;if(!ctx||$('sku-delete-dialog').classList.contains('is-closing')||commit&&ctx.pending)return;
  if(commit){
   const target=lineById(ctx.id);
   if(!target){closeSkuDeleteDialog(false);return;}
-  // Single synchronous deletion transaction; no other stored SKU/allocation is modified.
-  S.lines=S.lines.filter(l=>l.id!==ctx.id);
-  S.allocations=S.allocations.filter(a=>a.lineId!==ctx.id);
-  if(S.current===ctx.id)S.current=S.lines[0]?.id||null;
+  const candidate=structuredClone(S);candidate.lines=candidate.lines.filter(l=>l.id!==ctx.id);candidate.allocations=candidate.allocations.filter(a=>a.lineId!==ctx.id);
+  if(candidate.current===ctx.id)candidate.current=candidate.lines[0]?.id||null;candidate.open='q1';ctx.pending=true;
+  const result=await save(candidate,{errorId:'sku-delete-error',canCommit:()=>pendingSkuDelete===ctx&&!ctx.cancelled&&$('sku-delete-dialog').open});ctx.pending=false;
+  if(!result.ok)return;
   editing=empty();addingSku=false;editorMode=S.lines.length?null:'initial';
-  S.open='q1';save(); // one committed snapshot, never before explicit action
- }
+ }else ctx.cancelled=true;
  hideQ1Modal($('sku-delete-dialog'),()=>{
   pendingSkuDelete=null;syncQ1ModalScrollLock();
   if(commit)render();
@@ -490,22 +545,25 @@ function renderResult(){
 }
 
 function errorAt(q,msg){changeOpen(q);err('err-'+q,msg)}
-function upsertSku(confirmed=false){
+let skuSaving=false;
+async function upsertSku(confirmed=false){
+ if(skuSaving)return;
  if($('sku-dialog').classList.contains('is-closing'))return;
  if(!selected(editing)){err('err-q1','난각번호·계란 크기·포장을 모두 선택해 주세요.');return;}
  const index=S.lines.findIndex(l=>l.id===editing.id),prev=index>=0?S.lines[index]:null;
  const duplicate=S.lines.find(l=>l.id!==editing.id&&l.housing===editing.housing&&l.size===editing.size&&l.pack===editing.pack);
  if(duplicate){err('err-q1','이미 추가한 계란 규격입니다. 다른 규격을 선택해 주세요.');return;}
- const copy={...editing},plan=skuInvalidationPlan(prev,copy);
+ const copy={...editing},plan=skuInvalidationPlan(prev,copy),candidate=structuredClone(S),draftFingerprint=JSON.stringify(editing),draftOwner=editing,wasConfirming=skuConfirmationPending;
  if(plan.entries.length&&!confirmed){showSkuConfirmation(plan);return;}
  if(prev&&(prev.housing!==copy.housing||prev.size!==copy.size||prev.pack!==copy.pack)){
-  if(prev.pack!==copy.pack){copy.qty='';copy.qtyUnit=String(copy.pack)==='30'?'tray':'pack';copy.price='';S.allocations.filter(a=>a.lineId===copy.id).forEach(a=>a.qty='');}
+  if(prev.pack!==copy.pack){copy.qty='';copy.qtyUnit=String(copy.pack)==='30'?'tray':'pack';copy.price='';candidate.allocations.filter(a=>a.lineId===copy.id).forEach(a=>a.qty='');}
   else copy.price='';
  }
- if(index>=0)S.lines[index]=copy;else S.lines.push(copy);
- S.current=copy.id;editing=empty();addingSku=false;
- const wasInitial=editorMode==='initial',backToQ2=q2AddOrigin;
- q2AddOrigin=false;skuRestoreCurrent=null;skuEditSnapshot=null;editorMode=null;S.open=wasInitial||backToQ2?'q2':'q1';save();
+ if(index>=0)candidate.lines[index]=copy;else candidate.lines.push(copy);
+ candidate.current=copy.id;const wasInitial=editorMode==='initial',backToQ2=q2AddOrigin;candidate.open=wasInitial||backToQ2?'q2':'q1';skuSaving=true;
+ const result=await save(candidate,{errorId:'err-q1',canCommit:()=>editing===draftOwner&&JSON.stringify(editing)===draftFingerprint&&skuConfirmationPending===wasConfirming&&(!$('sku-dialog').classList.contains('is-closing'))});skuSaving=false;
+ if(!result.ok)return;
+ editing=empty();addingSku=false;q2AddOrigin=false;skuRestoreCurrent=null;skuEditSnapshot=null;editorMode=null;
  err('err-q1','');closeSkuDialog(()=>render());
  if(backToQ2)requestAnimationFrame(()=>{const qty=document.getElementById('qty-'+copy.id);qty?.focus({preventScroll:true});qty?.scrollIntoView({block:'nearest',behavior:'instant'});});
  else if(!wasInitial)requestAnimationFrame(()=>$('added-lines').querySelector(`[data-line-id="${CSS.escape(String(copy.id))}"] button`)?.focus({preventScroll:true}));
@@ -530,8 +588,8 @@ for(const id of ['picks-housing','picks-size','picks-pack'])$(id).addEventListen
  const delta=e.key==='ArrowLeft'||e.key==='ArrowUp'?-1:1;
  options[(i+delta+options.length)%options.length].click();
 });$('commit-sku').onclick=()=>upsertSku(false);
-$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=['each',String(line.pack)==='30'?'tray':'pack'];if(!allowed.includes(e.target.value))return;const oldUnit=quantityUnit(line);for(const a of S.allocations.filter(a=>a.lineId===line.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=oldUnit;if(validMonthlyQuantity(line))Object.assign(line,convertMonthlyUnit(line,e.target.value));else line.qtyUnit=e.target.value;save();renderQ2();refreshCompletionBadges();});
-$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const old=el.value,pos=el.selectionStart??old.length,digitsBefore=old.slice(0,pos).replace(/\D/g,'').length;const digits=old.replace(/\D/g,'').replace(/^0+(?=\d)/,'');if(el.dataset.lineQty)delete l.qtyExact;l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const formatted=showComma(digits);el.value=formatted;let caret=0,count=0;while(caret<formatted.length&&count<digitsBefore){if(/\d/.test(formatted[caret]))count++;caret++}el.setSelectionRange(caret,caret);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();save();});
+$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=['each',String(line.pack)==='30'?'tray':'pack'];if(!allowed.includes(e.target.value))return;const oldUnit=quantityUnit(line);for(const a of S.allocations.filter(a=>a.lineId===line.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=oldUnit;if(validMonthlyQuantity(line))Object.assign(line,convertMonthlyUnit(line,e.target.value));else line.qtyUnit=e.target.value;inlineDraft=true;void save(S,{publish:false});renderQ2();refreshCompletionBadges();});
+$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const old=el.value,pos=el.selectionStart??old.length,digitsBefore=old.slice(0,pos).replace(/\D/g,'').length;const digits=old.replace(/\D/g,'').replace(/^0+(?=\d)/,'');if(el.dataset.lineQty)delete l.qtyExact;l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const formatted=showComma(digits);el.value=formatted;let caret=0,count=0;while(caret<formatted.length&&count<digitsBefore){if(/\d/.test(formatted[caret]))count++;caret++}el.setSelectionRange(caret,caret);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();inlineDraft=true;void save(S,{publish:false});});
 
 $('q1-next').onclick=()=>{if(!guardPendingEdits('q1-next'))return;const bad=CODE1_ORDER_VALIDATION.validateOrderDraft(S,{scope:'full'}).fieldErrors.find(x=>x.stage==='q1');if(bad){errorAt('q1',bad.message);return;}err('err-q1','');if(changeOpen('q2'))navigateRegularStage('q2');};
 let regularStageEpoch=0;
@@ -562,6 +620,8 @@ function siteEditingDirty(){return !!siteEditing;}
 function q4DraftActive(){return !!deliveryDraft||!!q4AssignmentDraft;}
 function refreshCompletionBadges(){paintStageCompletion();updateResultCTA();}
 function guardPendingEdits(destination){
+ if(!storageReady)return false;
+ if(storagePending||storageFailure){if(storageFailure)storageFeedback(storageFailure);return false;}
  if($('sku-delete-dialog').open){$('sku-delete-cancel').focus({preventScroll:true});return false;}
  if($('sku-dialog').open&&skuDraftActive()){err('err-q1','계란 규격을 저장하거나 취소한 후 이동해 주세요.');($('sku-confirm').hidden?$('commit-sku'):$('sku-confirm-commit')).focus({preventScroll:true});return false;}
  if(siteEditing){$('site-editor-error').textContent='사업장 편집을 저장하거나 취소한 후 이동해 주세요.';$('site-name').focus({preventScroll:true});return false;}
@@ -606,7 +666,9 @@ async function saveSite(){
   data.addressState=String(data.road||'').trim()?'PRESENT_REQUIRES_PROVIDER_POLICY':'ADDRESS_UI_PENDING';data.basicInfoDraft=!String(data.road||'').trim()||!OrderEmailDomain.isSuccess(OrderEmailDomain.status(data.email));
   if(intent!=='draft'&&data.basicInfoDraft){q3PaintErrors([{key:'email',code:'DOMAIN_UNCONFIRMED',message:'현재 이메일 주소를 확인할 수 없습니다.'}]);return false;}
   const index=S.locations.findIndex(x=>x.id===data.id);if(siteEditOriginal&&index<0){$('site-editor-error').textContent='사업장이 변경되었습니다. 취소 후 다시 열어 주세요.';return false;}
-  S.locations=index<0?[...S.locations,data]:S.locations.map(x=>x.id===data.id?data:x);q3Expanded.set(data.id,true);save();closeSiteEditor();renderDelivery();return true;
+  const candidate={...S,locations:index<0?[...S.locations,data]:S.locations.map(x=>x.id===data.id?data:x)};
+  const result=await save(candidate,{errorId:'site-editor-error',canCommit:()=>revision===q3SaveRevision&&!!siteEditing&&siteEditing.id===id&&JSON.stringify(siteEditing)===fingerprint});
+  if(!result.ok)return false;q3Expanded.set(data.id,true);closeSiteEditor();renderDelivery();return true;
  }finally{if(revision===q3SaveRevision){q3SaveBusy=false;q3SyncSaveAction();}}
 }
 $('add-site').onclick=addSite;$('save-site').onclick=saveSite;$('cancel-site').onclick=closeSiteEditor;$('site-editor-close').onclick=closeSiteEditor;
@@ -633,7 +695,7 @@ function openContactCopy(sourceId,trigger){
  const dialog=OrderCopyDialog.create({id:'q3-contact-copy',title:siteName(source)+' 연락처 복사',fields,targets,applyLabel:'변경'});document.body.append(dialog);
  const sourceBlock=document.createElement('section');sourceBlock.className='ui-copy-source';sourceBlock.setAttribute('aria-label','복사할 연락처');dialog.querySelector('.qa-copy-scroll').prepend(sourceBlock);
  const feedback=dialog.querySelector('#qa-copy-feedback');feedback.classList.add('ui-feedback-sr');
- let stage='select',review=null,applied=false,closed=false,observed=JSON.stringify(source);
+ let stage='select',review=null,applied=false,pending=false,closed=false,observed=JSON.stringify(source);
  const sourceView=()=>{const live=locationById(sourceId);sourceBlock.innerHTML=live?`<div class="ui-field-title">${esc(siteName(live))}</div><dl class="ui-copy-source-values">${CONTACT_COPY_FIELDS.map(([key,label])=>`<div><dt>${esc(label)}</dt><dd data-copy-source-value="${key}">${esc(live[key]??'')}</dd></div>`).join('')}</dl>`:'';};
  const collect=()=>{const live=locationById(sourceId),keys=[...dialog.querySelectorAll('[data-contact-copy-field]:checked')].map(e=>e.dataset.contactCopyField),ids=[...dialog.querySelectorAll('[data-contact-copy-target]:checked')].map(e=>e.dataset.contactCopyTarget);
   const valid=!!live&&keys.length>0&&ids.length>0&&keys.every(k=>CONTACT_COPY_FIELDS.some(f=>f[0]===k)&&validField(k,live[k]))&&ids.every(id=>id!==sourceId&&!!locationById(id));
@@ -652,18 +714,20 @@ function openContactCopy(sourceId,trigger){
  }
  const close=()=>{closed=true;dialog.querySelector('[data-copy-apply]').disabled=true;return OrderModalShell.close(dialog,{after:()=>dialog.remove()});};
  dialog.addEventListener('change',()=>{if(stage==='select')syncSelection();});
- dialog.addEventListener('click',e=>{
+ dialog.addEventListener('click',async e=>{
   if(closed)return;
   if(e.target.closest('[data-copy-cancel]')){close();return;}
   const toggle=e.target.closest('[data-copy-accordion]');if(toggle){OrderDisclosure.set(toggle.closest('[data-ui-subaccordion]'),toggle.getAttribute('aria-expanded')!=='true');return;}
-  if(!e.target.closest('[data-copy-apply]')||applied)return;
+  if(!e.target.closest('[data-copy-apply]')||applied||pending)return;
   if(stage==='select'){const v=syncSelection();if(v.valid&&v.patches.length)reviewStage(v);return;}
   const current=collect();const intact=review&&current.valid&&JSON.stringify(locationById(sourceId))===review.sourceSnapshot&&review.targetSnapshots.every(([id,snapshot])=>id!==sourceId&&JSON.stringify(locationById(id))===snapshot)&&JSON.stringify(current.keys)===JSON.stringify(review.keys)&&JSON.stringify(current.ids)===JSON.stringify(review.ids)&&review.patches.every(p=>p.changes.every(c=>validField(c.key,c.after)));
   if(!intact){selectStage();dialog.querySelector('[data-copy-cancel]').focus({preventScroll:true});return;}
   const patchById=new Map(review.patches.map(p=>[p.id,p]));
   const staged=S.locations.map(site=>{const patch=patchById.get(site.id);if(!patch)return site;const next=JSON.parse(JSON.stringify(site));patch.changes.forEach(c=>next[c.key]=c.after);return next;});
   if(review.patches.some(p=>!staged.some(s=>s.id===p.id))) {selectStage();return;}
-  applied=true;dialog.querySelector('[data-copy-apply]').disabled=true;S.locations=staged;save();renderAddress();renderDelivery();refreshCompletionBadges();close();
+  pending=true;dialog.querySelector('[data-copy-apply]').disabled=true;const base=JSON.stringify(S.locations);
+  const result=await save({...S,locations:staged},{errorId:'qa-copy-feedback',canCommit:()=>!closed&&dialog.open&&JSON.stringify(S.locations)===base});pending=false;
+  if(!result.ok){if(!closed)dialog.querySelector('[data-copy-apply]').disabled=false;return;}applied=true;renderAddress();renderDelivery();refreshCompletionBadges();close();
  });
  OrderModalShell.bind(dialog,close);OrderModalShell.open(dialog,{variant:'copy',returnFocus:()=>document.querySelector(`[data-contact-copy="${CSS.escape(sourceId)}"]`),initialFocus:()=>dialog.querySelector('[data-copy-cancel]')});selectStage();
 }
@@ -788,7 +852,8 @@ function closeRegularQ4(){window.OrderQ4Review.close();}
 
 $('q4-delete-cancel').onclick=()=>{hideQ1Modal($('q4-delete-confirm'),()=>{q4DeleteCandidateId=null;q4DeleteReturn?.focus({preventScroll:true});});};
 $('q4-delete-confirm').addEventListener('cancel',e=>{e.preventDefault();$('q4-delete-cancel').click();});
-$('q4-delete-commit').onclick=()=>{if(!q4DeleteCandidateId)return;const id=q4DeleteCandidateId;S.allocations=S.allocations.filter(a=>a.id!==id);q4DeleteCandidateId=null;hideQ1Modal($('q4-delete-confirm'),()=>{render();save();document.querySelector('#allocations-delivery')?.focus({preventScroll:true});});};
+let q4DeleteSaving=false;
+$('q4-delete-commit').onclick=async()=>{if(!q4DeleteCandidateId||q4DeleteSaving)return;const id=q4DeleteCandidateId;q4DeleteSaving=true;const result=await save({...S,allocations:S.allocations.filter(a=>a.id!==id)},{errorId:'q4-delete-error',canCommit:()=>q4DeleteCandidateId===id&&$('q4-delete-confirm').open&&!$('q4-delete-confirm').classList.contains('is-closing')});q4DeleteSaving=false;if(!result.ok)return;q4DeleteCandidateId=null;hideQ1Modal($('q4-delete-confirm'),()=>{render();document.querySelector('#allocations-delivery')?.focus({preventScroll:true});});};
 let q4PendingConfirmation=null;
 const q4OnceConfirmDialog=document.createElement('dialog');q4OnceConfirmDialog.id='q4-once-month-confirm';q4OnceConfirmDialog.className='q1-sku-dialog q1-delete-dialog t-modal';
 q4OnceConfirmDialog.innerHTML='<h2 id="q4-once-confirm-heading">1회 납품 수량 확인</h2><p id="q4-once-confirm-description"></p><div id="q4-once-confirm-sites"></div><p>이번 1회 납품 수량이 월 사용량 이상입니다. 입력한 수량이 맞나요?</p><div class="sku-delete-actions ui-transaction-group"><button type="button" class="ui-transaction-action" id="q4-once-return">수정하기</button><button type="button" class="ui-transaction-action ui-transaction-action--primary" id="q4-once-approve">맞습니다, 저장</button></div>';
@@ -873,8 +938,8 @@ function beginQ4Context(lineId,allocations,id,trigger,selectionPending=false){
  window.OrderQ4Review.open({revision:S.allocationRevision||0,line:q4ReviewClone(line),allocations:q4ReviewClone(allocations),locations:q4ReviewClone(locations),selectedIndex:Math.max(0,allocations.findIndex(a=>a.id===id)),returnSelector:selector});$('q4-regular-dialog').dataset.entryOrigin=trigger?.dataset.q3Q4Edit?'q3':'q4';$('q4-regular-save').textContent=trigger?.dataset.q3Q4Edit?'적용':'저장';refreshCompletionBadges();return true;
 }
 function q4ReviewClosed(){q4ReviewContext=null;deliveryDraft=null;editingAllocationId=null;q4ReviewPending=null;q4ValidationAttempted=false;q4SiteDemandDraft=null;q4OnceDraft=null;if(q4OnceConfirmDialog.open)q4OnceConfirmDialog.close();err('err-q4','');renderDelivery();renderAddress();refreshCompletionBadges();}
-function q4ReviewCommit(patches,confirmedFingerprint=null){
- const c=q4ReviewContext;if(!c)return {ok:false,message:'열린 납품 조건이 없습니다.'};
+async function q4ReviewCommit(patches,confirmedFingerprint=null,canCommit=()=>true){
+ const c=q4ReviewContext;if(!c)return {ok:false,message:'열린 납품 조건이 없습니다.'};if(!canCommit())return {ok:false,status:'CANCELLED',message:'입력이 변경되었습니다. 다시 저장해 주세요.'};
  const current=S.allocations.filter(a=>a.lineId===c.lineId),line=lineById(c.lineId),locations=current.map(a=>locationById(a.locationId));
  if(JSON.stringify([line,current,S.locations])!==c.signature)return {ok:false,message:'상위 입력이 변경되었습니다. 취소 후 다시 열어 주세요.'};
  if(patches.length!==c.ids.length||patches.some(a=>!c.ids.includes(a.id)||a.lineId!==c.lineId))return {ok:false,message:'사업장 연결을 다시 확인해 주세요.'};
@@ -885,14 +950,15 @@ function q4ReviewCommit(patches,confirmedFingerprint=null){
  const blocking=verdict.fieldErrors.filter(e=>e.stage!=='q4'||e.lineId===c.lineId);
  if(blocking.length)return {ok:false,message:blocking[0].message,issues:blocking};
  const warning=verdict.confirmations.find(w=>w.lineId===c.lineId);
- if(warning){q4ReviewPending={patches:q4ReviewClone(patches),warning};
+ if(warning){q4ReviewPending={patches:q4ReviewClone(patches),warning,canCommit};
   $('q4-once-confirm-description').textContent=`${itemIdentity(line)} · 월 사용량 ${warning.monthly}${warning.baseUnit==='each'?'개':unit(line.pack)} · 이번 납품 총 ${warning.total}${warning.baseUnit==='each'?'개':unit(line.pack)}`;
   $('q4-once-confirm-sites').textContent=warning.sites.map(x=>`${x.name} ${x.qty}${unit(line.pack)}`).join(' · ');
   showQ1Modal(q4OnceConfirmDialog);return {ok:false,confirmation:true};
  }
  if(confirmedFingerprint)staged.filter(a=>a.lineId===c.lineId&&a.mode==='ONCE').forEach(a=>a.onceConfirmedFingerprint=confirmedFingerprint);
  // The only committed-state assignment; repeated Save clicks cannot apply again after closing.
- S.allocations=staged;q4ReviewCommitCount++;save();q4ReviewPending=null;return {ok:true};
+ const result=await save({...S,allocations:staged},{errorId:'q4-commit-error',canCommit:()=>canCommit()&&q4ReviewContext===c&&(!confirmedFingerprint||q4ReviewPending?.warning.fingerprint===confirmedFingerprint&&q4OnceConfirmDialog.open&&!q4OnceConfirmDialog.classList.contains('is-closing'))&&$('q4-regular-dialog').open&&!$('q4-regular-dialog').classList.contains('is-closing')&&JSON.stringify([lineById(c.lineId),S.allocations.filter(a=>a.lineId===c.lineId),S.locations])===c.signature});
+ if(!result.ok)return {...result,message:result.status==='CANCELLED'?'저장을 취소했습니다.':storageText(result)};q4ReviewCommitCount++;q4ReviewPending=null;return {ok:true};
 }
 window.OrderRegularQ4Bridge=Object.freeze({
  allocationContext:lineId=>{const id=lineId||q4ReviewContext?.lineId;const allocations=q4ReviewContext?.selectionPending&&id===q4ReviewContext.lineId?q4ReviewContext.openingAllocations:S.allocations.filter(a=>a.lineId===id);return q4ReviewClone({line:lineById(id),allocations,locations:S.locations,revision:S.allocationRevision||0});},
@@ -915,7 +981,8 @@ window.OrderRegularQ4Bridge=Object.freeze({
 
 });
 $('q4-once-return').onclick=()=>{q4ReviewPending=null;window.OrderModalShell.close(q4OnceConfirmDialog,{after:()=> $('q4-regular-save').focus({preventScroll:true})});};
-$('q4-once-approve').onclick=()=>{if(!q4ReviewPending)return;const p=q4ReviewPending,r=q4ReviewCommit(p.patches,p.warning.fingerprint);if(r.ok){window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>window.OrderQ4Review.close()});}else if(!r.confirmation){q4ReviewPending=null;window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>window.OrderQ4Review.commitError(r)});}};
+let onceSaving=false;
+$('q4-once-approve').onclick=async()=>{if(!q4ReviewPending||onceSaving)return;onceSaving=true;const p=q4ReviewPending,r=await q4ReviewCommit(p.patches,p.warning.fingerprint,p.canCommit);onceSaving=false;if(!q4OnceConfirmDialog.open||!r.ok&&q4ReviewPending!==p)return;if(r.ok){window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>window.OrderQ4Review.close()});}else if(!r.confirmation){q4ReviewPending=null;window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>window.OrderQ4Review.commitError(r)});}};
 window.OrderModalShell.bind(q4OnceConfirmDialog,()=> $('q4-once-return').click());
 
 
@@ -940,5 +1007,5 @@ window.OrderEmailLifecycle=Object.freeze((()=>{
  return {boot(){booted=true;reconcile();},reconcile,retry};
 })());
 
-window.OrderValidationState=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify(orderValidationProjection())),line:id=>JSON.parse(JSON.stringify(lineById(id)||null))});window.__orderReviewBoot=()=>{render();fromHash();OrderEmailLifecycle.boot();};
+window.OrderValidationState=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify(orderValidationProjection())),line:id=>JSON.parse(JSON.stringify(lineById(id)||null))});window.__orderReviewBoot=async()=>{const restored=await storageHydration;storageRevision=restored.revision;storageToken=restored.versionToken;document.documentElement.dataset.storageStatus=restored.status;if(restored.ok&&restored.data){S=ensureMigration(restored.data);lastCommitted=structuredClone(S);editorMode=S.lines.length?null:'initial';}else if(!restored.ok)storageFailure=restored;storageReady=true;$('app').inert=false;render();fromHash();if(storageFailure)storageFeedback(storageFailure);OrderEmailLifecycle.boot();document.documentElement.dataset.storageReady='true';storagePaint();};
 })();

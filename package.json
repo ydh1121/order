@@ -12,7 +12,8 @@
     "smoke:dns": "node scripts/engine/dns-smoke.mjs",
     "update:iana": "node scripts/engine/update-iana.mjs",
     "build": "node scripts/build-pages.mjs",
-    "build:engine": "node scripts/build-pages.mjs --engine-only"
+    "build:engine": "node scripts/build-pages.mjs --engine-only",
+    "build:qa-lab": "node scripts/build-qa-lab.mjs"
   },
   "devDependencies": {
     "acorn": "8.15.0",

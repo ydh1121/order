@@ -10,7 +10,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const dist=join(root,'dist'),evidence=resolve(process.env.ORDER_SMOKE_EVIDENCE_DIR||join(root,'browser-evidence/product'));
-const key='order_v015R2_draft';
+const key='order_q1_q4_v1';
 const checks=[],pageErrors=[],network=[],externalBlocked=[],transportErrors=[];
 const report={schemaVersion:1,classification:'ACTUAL_CHROMIUM_LOCAL_HTTP_PRODUCT_DOM_WITH_SYNTHETIC_DNS_AND_TEST_CONTACTS',
   browser:null,build:null,checks,pageErrors,network,externalBlocked,transportErrors,
@@ -18,8 +18,10 @@ const report={schemaVersion:1,classification:'ACTUAL_CHROMIUM_LOCAL_HTTP_PRODUCT
 let server,browser,page,base;
 const mime={'.html':'text/html; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml'};
 async function check(id,fn){const row={id,status:'RUNNING'};checks.push(row);try{await fn();row.status='PASS';}catch(error){row.status='FAIL';row.error=String(error.stack||error);throw error;}}
-const persisted=()=>page.evaluate(storageKey=>JSON.parse(sessionStorage.getItem(storageKey)||'null'),key);
-async function formReady(){await page.locator('#page-form.active').waitFor({state:'visible'});assert.equal(new URL(page.url()).hash,'#/form');assert.equal(await page.locator('#page-form').evaluate(el=>el.inert||el.getAttribute('aria-hidden')==='true'),false);}
+async function storageSettled(){await page.waitForFunction(()=>document.documentElement.dataset.storageReady==='true'&&document.documentElement.dataset.storagePending!=='true');}
+const persisted=async()=>{await storageSettled();return page.evaluate(storageKey=>JSON.parse(localStorage.getItem(storageKey)||'null')?.data??null,key);};
+async function seedDurable(fixture){await storageSettled();const result=await page.evaluate(async fixture=>{const {createBrowserStorage}=await import('/storage.mjs');const adapter=createBrowserStorage(),loaded=await adapter.load();if(!loaded.ok)return loaded;return adapter.commit(fixture,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'product-fixture-'+crypto.randomUUID()});},fixture);assert.equal(result.ok,true,JSON.stringify(result));}
+async function formReady(){await storageSettled();await page.locator('#page-form.active').waitFor({state:'visible'});assert.equal(new URL(page.url()).hash,'#/form');assert.equal(await page.locator('#page-form').evaluate(el=>el.inert||el.getAttribute('aria-hidden')==='true'),false);}
 async function stage(name){await formReady();const trigger=page.locator(`.accordion-trigger[data-open="${name}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await page.waitForFunction(name=>document.querySelector(`#section-${name}`)?.dataset.open==='true'&&!document.querySelector(`#body-${name}>div`)?.inert,name);}
 async function closed(id){await page.waitForFunction(id=>document.getElementById(id)?.open===false,id);await page.locator('#'+id).waitFor({state:'hidden'});}
 async function editSite(id){await stage('q3');const trigger=page.locator(`[id="q3-site-${id}"] > .accordion-trigger`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await page.locator(`[data-site-edit="${id}"]`).click();await page.locator('#site-editor-dialog[open]').waitFor({state:'visible'});}
@@ -33,7 +35,7 @@ async function allocationSite(index){const trigger=page.locator(`[data-acc="site
 function q4Fixture(){
  const holiday={days:[],none:true,irregular:false,conflict:'협의 후 조정',weekend:'협의 후 조정',holiday:'협의 후 조정',subholiday:'협의 후 조정',request:''};
  const repeat={period:'매주',frequency:'1회',date:'',dateMode:'custom',weeklyCheck:false,weekdays:{},weekOpen:0,semantics:'per-week-v1',legacyReviewRequired:false};
- return {lines:[{id:'qa-line',housing:'4',size:'특란',pack:'30',qty:'120',price:'8000'}],current:'qa-line',open:'q4',
+ return {allocationRevision:0,lines:[{id:'qa-line',housing:'4',size:'특란',pack:'30',qty:'120',price:'8000'}],current:'qa-line',open:'q4',
  locations:[{id:'qa-site',name:'합성 QA 사업장',road:'합성 주소 — 실제 공급자 조회 아님',detail:'합성 상세',postal:'00000',contactPhone:'010-2345-6789',email:'qa@example.com',storePhone:'',status:'QA_SYNTHETIC',providerId:'QA_SYNTHETIC_NOT_PROVIDER',addressState:'PRESENT_REQUIRES_PROVIDER_POLICY',basicInfoDraft:false,mailboxVerified:false}],
  allocations:[{id:'qa-allocation',lineId:'qa-line',locationId:'qa-site',mode:'FLEX',modeExplicit:true,qty:'10',monthlyDemandQty:'120',variableQty:false,qtyMin:'',qtyMax:'',qualityTest:false,
  advanced:{contactChannels:['phone'],fixedOrderProcess:'seller',flexOrderProcess:'store',storeOffDays:[],storeOffNone:true,storeOffPolicy:'ask',weekend:'ask',holiday:'ask',substituteHoliday:'ask'},
@@ -82,7 +84,7 @@ try{
   }catch(error){transportErrors.push(String(error.stack||error));await route.abort('failed').catch(()=>{});}
  });
  page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',error=>pageErrors.push(String(error)));
- await page.goto(base);await page.locator('#start').waitFor();
+ await page.goto(base);await storageSettled();await page.locator('#start').waitFor();
  await check('P01_F00_Q1_Q2_REAL_DOM',async()=>{
   await page.locator('#start').click();await formReady();assert.equal(await page.locator('#page-home').evaluate(el=>el.inert&&el.getAttribute('aria-hidden')==='true'),true);
   for(const [field,value]of [['housing','4'],['size','특란'],['pack','30']])await page.locator(`[data-pick="${field}"][data-value="${value}"]`).click();
@@ -124,7 +126,7 @@ try{
   await editSite(saved[0].id);assert.equal((await phoneState()).value,'010-2345-6789');await page.locator('#cancel-site').click();await closed('site-editor-dialog');
  });
  await check('P05_Q4_SYNTHETIC_RESTORE_CANCEL_ATOMICITY',async()=>{
-  const fixture=q4Fixture();await page.evaluate(({key,fixture})=>sessionStorage.setItem(key,JSON.stringify(fixture)),{key,fixture});await page.reload();await page.locator('[data-open="q4"]').waitFor();await emailReady();
+  const fixture=q4Fixture();await seedDurable(fixture);await page.reload();await page.locator('[data-open="q4"]').waitFor();await emailReady();
   const prior=(await persisted()).allocations;await editAllocation();await page.locator('[data-qty="0:base"]').fill('11');await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
  });
  await check('P06_Q4_SYNTHETIC_RESTORE_SAVE_AND_RELOAD',async()=>{
@@ -140,7 +142,7 @@ try{
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
  });
  await check('P08_Q4_MULTISITE_DERIVED_REMAINDER_EXCESS_CANCEL',async()=>{
-  const fixture=multiSiteFixture();await page.evaluate(({key,fixture})=>sessionStorage.setItem(key,JSON.stringify(fixture)),{key,fixture});await page.reload();await emailReady();
+  const fixture=multiSiteFixture();await seedDurable(fixture);await page.reload();await emailReady();
   const prior=(await persisted()).allocations;await editAllocation();
   assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'50');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'150');
   assert.equal(await page.locator('[data-field-group="1-monthly"]').getAttribute('data-quantity-source'),'derived');
@@ -160,7 +162,7 @@ try{
  await check('P10_CONTACT_COPY_SELECT_REVIEW_CANCEL_CONFIRM_RELOAD',async()=>{
   const fixture=multiSiteFixture();fixture.open='q3';
   Object.assign(fixture.locations[1],{contactPhone:'070-2345-6789',email:'qa-target@example.com',storePhone:'02-234-5678',road:'',detail:'',postal:'',addressState:'ADDRESS_UI_PENDING',basicInfoDraft:true});
-  await page.evaluate(({key,fixture})=>sessionStorage.setItem(key,JSON.stringify(fixture)),{key,fixture});await page.reload();await emailReady();await stage('q3');
+  await seedDurable(fixture);await page.reload();await emailReady();await stage('q3');
   const source=page.locator('#q3-site-qa-site > .accordion-trigger');if(await source.getAttribute('aria-expanded')!=='true')await source.click();
   const prior=await persisted();
   const openCopy=async()=>{await page.locator('[data-contact-copy="qa-site"]').click();const dialog=page.locator('#q3-contact-copy');await dialog.waitFor({state:'visible'});assert.equal(await dialog.getAttribute('data-copy-stage'),'select');return dialog;};
@@ -171,7 +173,7 @@ try{
   dialog=await openCopy();await reviewCopy(dialog);await dialog.locator('[data-copy-apply]').click();await dialog.waitFor({state:'detached'});
   const confirmed=await persisted(),expected=structuredClone(prior);expected.locations[1].contactPhone='010-2345-6789';expected.locations[1].email='qa@example.com';expected.allocationRevision=prior.allocationRevision+1;
   assert.deepEqual(confirmed,expected,'one confirmation updates only the selected target fields in a single save');
-  assert.equal(confirmed.locations[1].mailboxVerified,false);assert.equal(confirmed.locations[1].basicInfoDraft,true);assert.equal(confirmed.locations[1].addressState,'ADDRESS_UI_PENDING');
+  assert.notEqual(confirmed.locations[1].mailboxVerified,true);assert.equal(confirmed.locations[1].basicInfoDraft,true);assert.equal(confirmed.locations[1].addressState,'ADDRESS_UI_PENDING');
   assert.equal(await page.locator('#q3-site-qa-site-b').getAttribute('data-complete'),'false');assert.equal(await page.locator('#section-q3').getAttribute('data-complete'),'false','copying contacts must not complete an address-pending site');
   await page.reload();await emailReady();await stage('q3');assert.deepEqual((await persisted()).locations,expected.locations);assert.deepEqual((await persisted()).allocations,expected.allocations);
   assert.equal(await page.locator('#q3-site-qa-site-b').getAttribute('data-complete'),'false');assert.equal(await page.locator('#section-q3').getAttribute('data-complete'),'false');
