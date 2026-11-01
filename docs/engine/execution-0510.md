@@ -1,5 +1,7 @@
 # MSG0510 — Q1~Q4 입력 유지와 로컬 QA LAB
 
+2026-11-01 구현 추적: PR #4에서 `dc34d3e` 구현과 `bd0bf96` LAB 기준시점 수정을 검토했고, PR CI [41273270674](https://github.com/ydh1121/order/actions/runs/41273270674)가 성공한 후 main `f28818924bc3df27d1e6e0ce2894ed424426d936`으로 병합했다. 이 문서의 아래 슬롯은 구현 시점 기록이다. 최종 반환의 원격 main/동일 SHA CI/정본 검수와 provider 제한은 지정 증거 폴더의 `ORDER_ASTRA_CURRENT.md`와 MSG0510 회차 보고서를 따른다. 후속 증거 패키징 변경은 테스트를 통과한 LAB HTML 원본 바이트를 CI artifact에 보관하며 제품 `dist`에 포함하지 않는다.
+
 이 보고서는 WO-ORDER-20261101-ASTRA-ENGINE-001의 MSG0510 후속 구현을 기록한다. 확정 입력의 저장·복원과 동일 제품 소스로 만든 로컬 QA LAB이 이번 변경 범위다. 아래 `PENDING_FINAL_READBACK`은 최종 커밋·원격 CI·배포 증거를 기록할 자리이며 PASS를 뜻하지 않는다.
 
 공식 지시: [MSG0510](https://drive.google.com/file/d/1h-lV2neyfAjZM0p8J7SA5rsRlZcc3hEm/view). 기준 저장소는 [ydh1121/order](https://github.com/ydh1121/order), 정규 제품 주소는 [order-ooo.pages.dev](https://order-ooo.pages.dev/)다.

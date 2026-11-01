@@ -57,6 +57,7 @@ jobs:
         run: |
           npm run build:qa-lab
           node test/browser/qa-lab.smoke.mjs .qa-lab/order-qa-lab.html
+          cp .qa-lab/order-qa-lab.html browser-evidence/qa-lab/order-qa-lab.html
       - name: Computed styles against frozen UX source
         if: always()
         run: node test/browser/styles.smoke.mjs
