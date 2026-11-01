@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "AWAITING_UX_HANDOFF",
+  "status": "INTEGRATED",
   "repository": "ydh1121/order",
   "project": "order-ooo",
   "canonicalUrl": "https://order-ooo.pages.dev/",
@@ -12,8 +12,59 @@
     "bytes": 489401,
     "sha256": "e13f200945b9277e986b1994fc4f91998fc68f18d1bcbc0b69cb8dc6dd54d6a8"
   },
-  "uxHandoff": null,
-  "frontendFiles": [],
+  "uxHandoff": {
+    "fileId": "1e-Ob5RvvbYXtJDyrWWLb3xRU_GP-h_o7",
+    "reportFileId": "1P-nAAfv8Dp3JkuEr1fkrm-BPDBd6a6Ed",
+    "bytes": 495479,
+    "sha256": "c02467f859829b438b3142435fe4698f335c42bae592d9f32255774ffe210e16"
+  },
+  "frontendFiles": [
+    {
+      "source": "web/allocation-ui.mjs",
+      "output": "allocation-ui.mjs",
+      "sha256": "bf8110bb04c5b177f16796294a65bf600deb3d7045adc6c7665032221ad0c020"
+    },
+    {
+      "source": "web/app.mjs",
+      "output": "app.mjs",
+      "sha256": "c76cddc7da36e11eee525bcf8e06110ad11bbd987e29f895bf22db7dd0ef8bd5"
+    },
+    {
+      "source": "web/common-ui.mjs",
+      "output": "common-ui.mjs",
+      "sha256": "30db7fecb244136a09132f6b128f6f7db69f1ce95ba50f70c473494a13e18ab8"
+    },
+    {
+      "source": "web/contact-ui.mjs",
+      "output": "contact-ui.mjs",
+      "sha256": "e6bc7a0e819679e2eaad7942d75c1577904255c3a5fb13ebf4d82c70dbe5689b"
+    },
+    {
+      "source": "web/index.html",
+      "output": "index.html",
+      "sha256": "11b15ead8a2bc5a0f68e007d3e9b57487d4bf430df36fd2b191ac8fde4f313ed"
+    },
+    {
+      "source": "web/main.mjs",
+      "output": "main.mjs",
+      "sha256": "40c4aa418682f869b8b4aef1320dc042e1701ce481fc0050851a2bd483bfccd0"
+    },
+    {
+      "source": "web/q4-review.mjs",
+      "output": "q4-review.mjs",
+      "sha256": "f36ef035c2035398099b99aa76dbd8ab2e783a9e1763469931c1743af4785b3f"
+    },
+    {
+      "source": "web/quantity-contract.mjs",
+      "output": "quantity-contract.mjs",
+      "sha256": "b90d9afb9b2ad50a90dda3934a744be735c621308639b32c50844dc2f549f299"
+    },
+    {
+      "source": "web/styles.css",
+      "output": "styles.css",
+      "sha256": "4cf5e09785604872c51b6f9726cb9f97936ba4867fa7eb7dfbfc0d0da9d242fd"
+    }
+  ],
   "engineEntry": "src/browser/engine.mjs",
   "outputDirectory": "dist"
 }

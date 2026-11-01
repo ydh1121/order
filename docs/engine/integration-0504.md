@@ -6,15 +6,15 @@ The original four commits ending at `544b8ffada3f7b09f816d1fa5a3bbc78b97364d3` r
 
 ## Fixed intake and ownership
 
-Latest received UX parent: Drive `1e6BuwKzqiVBu6F2VDzFqOpKeVtE58IUD`, 489401 bytes, SHA-256 `e13f200945b9277e986b1994fc4f91998fc68f18d1bcbc0b69cb8dc6dd54d6a8`. The old eab019/489172-byte comparison is historical. MSG0505's U1–U4 result has not yet been received. Its HTML/CSS remains UX-owned; no frontend source has been substituted or modified here.
+Latest received UX parent: Drive `1e6BuwKzqiVBu6F2VDzFqOpKeVtE58IUD`, 489401 bytes, SHA-256 `e13f200945b9277e986b1994fc4f91998fc68f18d1bcbc0b69cb8dc6dd54d6a8`. The old eab019/489172-byte comparison is historical. MSG0505 handoff received: file `1e-Ob5RvvbYXtJDyrWWLb3xRU_GP-h_o7`, 495479B, SHA256 `c02467f859829b438b3142435fe4698f335c42bae592d9f32255774ffe210e16`. Report `1P-nAAfv8Dp3JkuEr1fkrm-BPDBd6a6Ed` §4.1 explicitly froze the HTML and transferred integration ownership; Astra recorded its own receipt ACK in MSG0504. `web/` is extracted from that source, with separate common UI, contact adapter, allocation adapter, Q4 editor and page assembly.
 
-`src/browser/engine.mjs` exports the independent browser entry. The phone adapter exposes the existing OrderPhone API; the email service owns field generations and domain request sharing; the allocation module accepts stable line/location IDs and exact explicit units. Their detailed contracts and examples are in `phone.md`, `browser-email.md` and `allocation.md`. These are integration-ready modules, not proof that the product fields already consume them.
+`src/browser/engine.mjs` exports the independent browser entry. The phone adapter exposes the existing OrderPhone API; the email service owns field generations and domain request sharing; the allocation module accepts stable line/location IDs and exact explicit units. Their detailed contracts and examples are in `phone.md`, `browser-email.md` and `allocation.md`. Product contact fields, parent validity and commit gates now consume these modules; actual product Chromium results are recorded by CI separately from core tests. Unit changes preserve exact base quantities, including 50 each ↔ 5/3 tray, and retain raw/unit metadata.
 
 ## Build boundary
 
 - `npm ci && npm test`: deterministic core and adapter tests. Synthetic observations are explicitly named.
 - `npm run build:engine`: verifies static ESM dependencies with build-only Acorn, emits only the browser module closure and exact verified IANA projection into ignored `.build-engine/`. No product index or public QA page is created.
-- `npm run build`: requires `config/pages-build.json` status INTEGRATED, a valid UX handoff SHA and an explicit frontend file/hash list. Until that handoff, it exits nonzero with UX_HANDOFF_REQUIRED. It never falls back to PR #1 or old HTML.
+- `npm run build`: requires `config/pages-build.json` status INTEGRATED, a valid UX handoff SHA and an explicit frontend file/hash list. The received handoff and current integrated frontend hashes are pinned in this config. Missing/unverified handoffs still fail explicitly in build tests. It never falls back to PR #1 or old HTML.
 - Final Pages settings are project order-ooo, main automatic production ON, preview None, build `npm run build`, output `dist`. The config expresses the requested state; it is not provider readback.
 
 Frontend integration must use the received U1–U4 result, record its immutable source hash, then update the exact `web/` file allowlist and hashes after module extraction. Only imported source modules enter dist. Node adapters, tests, fixtures, reports, bundles and QA HTML are excluded. Build identity records Git SHA and actual reference/file hashes outside visible customer copy. No Worker, server or DB is needed.
@@ -29,4 +29,8 @@ Open tabs retrieve the fixed same-origin reference asset without cache. Failed/s
 
 ## Remaining gates
 
-Actual UX handoff, integration, computed styles/screens, product transaction regressions, public HTTPS/CORS, Windows/iPhone, provider configuration, main merge and canonical deployment need their own actual evidence. USER_APPROVED_LOWFI remains NONE and G11 remains FAIL_USER_REWORK. Prices/DB/payments/orders remain unapproved. Address QA is not imported.
+Local integration and build checks are implemented. Remote product transactions and computed styles, canonical HTTPS, Windows/iPhone, provider configuration, main merge and canonical deployment require their own actual evidence. CI records Linux Chromium synthetic product transactions separately from live external-origin DNS observations. Temporary transport files are absent from the current tree; original four Astra commits remain ancestors. USER_APPROVED_LOWFI remains NONE and G11 remains FAIL_USER_REWORK. Prices/DB/payments/orders remain unapproved. Address QA is not imported.
+
+## Removed public QA paths
+
+Synthetic price scenarios, the 6600/7200 sample offers and mutable low-fi injection globals were removed. Product build emits no fixture, comparison lab, QA HTML, evidence ZIP or alternate entry. Same-origin IANA and explicit module imports are verified against the output inventory. External test runners intercept DNS or seed synthetic storage outside product code. Current purchase amounts use exact arithmetic from user-entered quantities and prices; actual supplier prices remain unavailable. Calendar forecasts no longer assume four weeks: absent schedule/holiday policy stays unresolved without blocking monthly allocation.

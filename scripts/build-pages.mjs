@@ -57,6 +57,21 @@ export async function buildPages({root=repositoryRoot,engineOnly=false,outputDir
       if(digest(bytes)!==item.sha256)throw Error('BUILD_FRONTEND_HASH_MISMATCH:'+item.source);
       files.set(item.output,bytes);
     }
+    // Validate every frontend module against the emitted inventory after URL
+    // resolution. A moved consumer cannot silently retain a legacy/test import.
+    for(const [path,bytes] of files){
+      if(!config.frontendFiles.some(item=>item.output===path)||!['.mjs','.js'].includes(extname(path)))continue;
+      const ast=parse(bytes.toString('utf8'),{ecmaVersion:2024,sourceType:'module'});
+      const visit=node=>{if(!node||typeof node!=='object')return;
+        if(node.type==='ImportExpression'||node.type==='Identifier'&&['Buffer','require','__orderLowfiQA','__ORDER_LOWFI_TEST_ONLY__'].includes(node.name)||node.type==='MemberExpression'&&node.object?.name==='process')throw Error('BUILD_FRONTEND_FORBIDDEN_IMPORT_OR_TEST_HOOK:'+path);
+        if(['ImportDeclaration','ExportNamedDeclaration','ExportAllDeclaration'].includes(node.type)&&node.source){
+          const spec=node.source.value;if(!/^(?:\.\.?\/|\/)/.test(spec))throw Error('BUILD_FRONTEND_EXTERNAL_IMPORT:'+spec);
+          const target=new URL(spec,'https://order-ooo.pages.dev/'+path).pathname.slice(1);
+          if(!files.has(target))throw Error('BUILD_FRONTEND_IMPORT_NOT_EMITTED:'+target);
+        }
+        for(const value of Object.values(node)){if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);}
+      };visit(ast);
+    }
   }
   const reference=await buildBrowserReference({now});
   files.set('assets/iana-reference.json',Buffer.from(JSON.stringify(reference)+'\n'));

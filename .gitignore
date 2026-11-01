@@ -1,3 +1,4 @@
 dist/
 .build-engine/
 node_modules/
+browser-evidence/

@@ -26,6 +26,23 @@ emails.close(); references.close();
 
 Parallel fields on the same normalized domain share one DNS evaluation. Same-field local-part changes reuse a still-needed domain request. Removing one subscriber does not cancel another; the final subscriber leaving aborts the shared request. Late cancelled results cannot fill the cache or call `onResult`. TTL cache uses the core's complete dependency `validUntil`; unknown/zero TTL results are not cached. `invalidateDomain(domain)` clears the cached/current evaluation, and `clear()` cancels all work. Cache and request ownership exist only in memory.
 
+## Product contact integration
+
+`web/contact-ui.mjs` installs the shared `createOrderPhoneAdapter()` as `OrderPhone`. Its `OrderEmail.parse()` calls the core syntax parser with the browser IDNA adapter; a syntactically valid address remains editable while reference/DNS checks are pending. The local part and raw input are preserved. The existing email editor retains composition, caret, paste/drop, suggestion, undo/redo, cancellation and dialog-reset behavior. Suggestions are an editing convenience, never a domain allowlist.
+
+`OrderEmailDomain` preserves the existing `validate`, `status`, `peek`, `subscribe`, `isSuccess`, `isHard` and `clearCache` call sites. The underlying browser service owns DNS traversal, budgets, cancellation, single-flight and TTL. A small compatibility projection maps its current result into the existing UI states; it contains no second DNS implementation. Parent, badge and save consumers read that same projection. Reference data comes only from the verified same-origin asset. Mutable resolver/snapshot QA hooks are absent from the shipped module; tests intercept transport outside the product.
+
+| Shared result | Existing UI state | Completion |
+| --- | --- | --- |
+| VALID with current reference and positive reusable DNS TTL | `MX_ROUTE_FOUND` / `IMPLICIT_ROUTE_CANDIDATE` | Allowed as domain preflight only |
+| Definitive invalid TLD or DNS absence with current reusable evidence | `INVALID_TLD` / `DOMAIN_NOT_FOUND` / `MAIL_DISABLED` / `NO_MAIL_ROUTE` | Blocked |
+| UNKNOWN, expired reference, network failure or current-query-only DNS proof | `UNKNOWN` | Preserved draft, neutral, blocked |
+| Query pending | `CHECKING` | Preserved draft, blocked |
+
+Compatibility proof expiry is the earlier of the full DNS dependency expiry and IANA freshness expiry. Zero/unknown-TTL evidence remains attached as `engineResult`/`domainContract`, but this synchronous UI facade projects it as UNKNOWN rather than inventing a cache lifetime. Thus a current-query-only core result cannot appear successful in the field while the immediately following parent/save lookup is unchecked. Clearing a dialog request revokes that consumer's write lease without cancelling another consumer of the same domain.
+
+`node --test test/engine/contact-ui-contract.test.mjs` passes seven synthetic Node cases covering public API compatibility, literal IDN and phone expectations, shared current proof, missing TLD, no invented TTL, cancellation/deduplication, expiry, raw preservation and absence of mutable QA hooks. This test does not mount a DOM or establish actual browser/CORS/OS acceptance; the product browser suite owns those checks.
+
 ## Browser IDNA and DoH
 
 `browserDomainToASCII()` uses WHATWG `URL` host mapping, rejects URL authority/path injection, and validates each A-label with a bounded RFC3492 decode plus Unicode-to-URL round-trip. This covers the runtime where malformed A-labels may otherwise be left unchanged. The validator still owns the supported ASCII local-part profile; Unicode local-parts remain UNSUPPORTED.
@@ -65,6 +82,17 @@ node --test test/engine/browser-email.test.mjs
 node --test test/engine/browser-email.test.mjs test/engine/review-browser-email.test.mjs test/engine/email*.test.mjs test/engine/review-email.test.mjs
 node scripts/engine/browser-email-smoke.mjs https://order-ooo.pages.dev
 ```
+
+The probe resolves the repository's pinned `playwright` dependency normally. An explicit `PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.js` can select a different installed module; it no longer depends implicitly on a host runtime package directory. Install the matching Chromium with that pinned Playwright CLI before invoking it. CI must retain stdout JSON even for nonzero exit status.
+
+| Exit | Probe outcome | Meaning |
+| --- | --- | --- |
+| 0 | PASS | HTTP origin/secure context/IDNA/budget assertions pass, and both public sample domains yield definitive DNS observations through real readable browser HTTPS/CORS responses. No particular live DNS answer is hardcoded. |
+| 1 | FAIL_STRUCTURAL | A required origin, IDNA, runtime error, input-contract or budget assertion failed. |
+| 2 | FAIL_EXECUTION | Dependency/browser launch, HTTP origin navigation, module loading/CSP or other execution prerequisite failed; successful online evidence was not established. |
+| 3 | ONLINE_INCONCLUSIVE | Structural checks passed, but UNKNOWN, timeout, CORS/network, or insufficient readable response evidence prevents online PASS. |
+
+The JSON includes checkout commit, dirty source paths, exact source-module hashes and graph digest, Node/OS/Playwright/Chromium versions, timestamps, navigation status and actual origin, browser request/response/failure records, exposed and Playwright-observed CORS headers, readable JSON question/status, IDNA assertions and final per-domain verdicts. It explicitly marks deployed build/IANA and product acceptance as unverified. Module data URLs carry the local checkout bytes into the requested HTTPS page; no network interception, CSP bypass or public QA hosting is used. `https://example.com` is permitted as an adapter-only origin when the canonical page is not yet available, and cannot satisfy W04.
 
 The 13 new deterministic tests and 3 independent review cases cover literal IDN expectations, browser import boundaries, request options, Null MX, sixth MX/query budgets, all-absent/IPv6 paths, HTTP retry/timeout/abort, malformed answers, alias TTL/HTTP Age, raw hash verification, stale input preservation, reference late-response leases, parallel-field cancellation, same-field deduplication and TTL expiry. The previous 26 email cases also remain applicable. These are synthetic transport tests, not browser online PASS.
 

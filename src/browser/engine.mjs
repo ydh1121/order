@@ -5,3 +5,4 @@ export {createBrowserEmailService} from '../engine/adapters/email-browser.mjs';
 export {createBrowserIanaProvider, verifyBrowserIana, browserIanaFreshness} from '../engine/adapters/iana-browser.mjs';
 export {evaluateAllocation, beginAllocationEdit, editAllocation, confirmAllocation, cancelAllocation, evaluateOnceAllocation, changeAllocationTopology} from '../engine/calculation/allocation.mjs';
 export {calculateQuote} from '../engine/calculation/quote.mjs';
+export {calendarForecast} from '../engine/calculation/calendar-forecast.mjs';
