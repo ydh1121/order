@@ -738,7 +738,7 @@ function monthlyResultData(){
  // Original regular contract intentionally leaves multi-allocation forecasts unresolved.
  if(state.count!==1||siteMode(0)==='ONCE')return base;
  const r=state.siteRepeat[0],repeat=isIndividual()?r:state;
- const data=window.OrderRegularQ4Bridge.forecast({allocation:{...regularContext.allocations[0],mode:siteMode(0)},quantity:state.values[0].base,rangeMin:state.values[0].min,rangeMax:state.values[0].max,variable:state.variable[0],period:repeat.period,frequency:repeat.frequency,date:repeat.date,monthly:regularContext.line.qty});
+ const data=window.OrderRegularQ4Bridge.forecast({allocation:{...regularContext.allocations[0],mode:siteMode(0)},quantity:state.values[0].base,rangeMin:state.values[0].min,rangeMax:state.values[0].max,variable:state.variable[0],repeat:OrderRepeatContract.snapshot(repeat),period:repeat.period,frequency:repeat.frequency,date:repeat.date,monthly:regularContext.line.qty});
  if(!data)return base;if(data.resolved===false)return {...base,status:data.status||base.status};
  return {...base,...data,value:data.low===data.high?data.low.toLocaleString('ko-KR'):`${data.low.toLocaleString('ko-KR')} ~ ${data.high.toLocaleString('ko-KR')}`,complete:true};
 }

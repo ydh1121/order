@@ -5,13 +5,13 @@ export const quantityLabel = line => ({each:'개',tray:'판',pack:'팩'})[quanti
 export function monthlyQuantity(line) {
   if(line.qtyExact?.representation==='rational'){
     const value=fromRatio(line.qtyExact);
-    if(line.qty!==`${value.n}/${value.d}`||value.n<=0n)throw Error('MONTHLY_QUANTITY_METADATA');
+    if(line.qtyExact.conversionReviewed!==true||line.qty!==`${value.n}/${value.d}`||value.n<=0n)throw Error('MONTHLY_QUANTITY_METADATA');
     return value;
   }
   if(!/^[1-9]\d*$/.test(String(line.qty)))throw Error('MONTHLY_QUANTITY_INVALID');
   return exact(String(line.qty));
 }
-export function validMonthlyQuantity(line){try{return monthlyQuantity(line).n>0n;}catch{return false;}}
+export function validMonthlyQuantity(line){try{if(!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityUnit(line)))return false;quantityFactor(line);return monthlyQuantity(line).n>0n;}catch{return false;}}
 export function monthlyQuantityText(line){try{return exactDisplay(monthlyQuantity(line).d===1n?monthlyQuantity(line).n.toString():line.qtyExact);}catch{return String(line.qty??'');}}
 export function quantityFactor(line,unit=quantityUnit(line)) {
   if(unit==='each')return exact('1');

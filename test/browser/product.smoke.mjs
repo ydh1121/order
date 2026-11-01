@@ -19,8 +19,10 @@ let server,browser,page,base;
 const mime={'.html':'text/html; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml'};
 async function check(id,fn){const row={id,status:'RUNNING'};checks.push(row);try{await fn();row.status='PASS';}catch(error){row.status='FAIL';row.error=String(error.stack||error);throw error;}}
 const persisted=()=>page.evaluate(storageKey=>JSON.parse(sessionStorage.getItem(storageKey)||'null'),key);
-async function stage(name){const trigger=page.locator(`[data-open="${name}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await page.waitForFunction(name=>document.querySelector(`#section-${name}`)?.dataset.open==='true',name);}
-async function closed(id){await page.waitForFunction(id=>!document.getElementById(id)?.open,id);}
+async function formReady(){await page.locator('#page-form.active').waitFor({state:'visible'});assert.equal(new URL(page.url()).hash,'#/form');assert.equal(await page.locator('#page-form').evaluate(el=>el.inert||el.getAttribute('aria-hidden')==='true'),false);}
+async function stage(name){await formReady();const trigger=page.locator(`.accordion-trigger[data-open="${name}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await page.waitForFunction(name=>document.querySelector(`#section-${name}`)?.dataset.open==='true'&&!document.querySelector(`#body-${name}>div`)?.inert,name);}
+async function closed(id){await page.waitForFunction(id=>document.getElementById(id)?.open===false,id);await page.locator('#'+id).waitFor({state:'hidden'});}
+async function editSite(id){await stage('q3');const trigger=page.locator(`[id="q3-site-${id}"] > .accordion-trigger`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await page.locator(`[data-site-edit="${id}"]`).click();await page.locator('#site-editor-dialog[open]').waitFor({state:'visible'});}
 async function phoneState(){return page.evaluate(()=>{const c=OrderPhone.instance(document.getElementById('site-contact-phone'));return {value:c.get(),valid:c.parse().valid,contract:typeof c.contract==='function'?c.contract():null,parts:c.parts.filter(p=>!p.hidden).map(p=>p.value)};});}
 async function phonePaste(text){await page.locator('#site-contact-phone').focus();await page.locator('#site-contact-phone').evaluate((el,text)=>{const data=new DataTransfer();data.setData('text/plain',text);el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));},text);}
 async function emailReady(){await page.waitForFunction(()=>window.OrderEmailDomain&&OrderEmailDomain.isSuccess(OrderEmailDomain.status('qa@example.com')),{},{timeout:10000});}
@@ -82,7 +84,7 @@ try{
  page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',error=>pageErrors.push(String(error)));
  await page.goto(base);await page.locator('#start').waitFor();
  await check('P01_F00_Q1_Q2_REAL_DOM',async()=>{
-  await page.locator('#start').click();await page.waitForFunction(()=>document.getElementById('app').dataset.page==='form');
+  await page.locator('#start').click();await formReady();assert.equal(await page.locator('#page-home').evaluate(el=>el.inert&&el.getAttribute('aria-hidden')==='true'),true);
   for(const [field,value]of [['housing','4'],['size','특란'],['pack','30']])await page.locator(`[data-pick="${field}"][data-value="${value}"]`).click();
   await page.locator('[data-line-qty]').fill('120');await page.locator('[data-line-price]').fill('8000');
   assert.equal((await persisted()).lines[0].qty,'120');assert.equal((await persisted()).lines[0].price,'8000');
@@ -117,9 +119,9 @@ try{
   await page.locator('#site-email').fill('qa@example.com');await page.locator('#site-name').focus();await emailReady();
   await page.locator('#save-site').click();await closed('site-editor-dialog');
   const saved=(await persisted()).locations;assert.equal(saved.length,1);assert.equal(saved[0].contactPhone,'010-2345-6789');assert.equal(saved[0].storePhone,'1588-1234');assert.equal(saved[0].road,'');assert.equal(saved[0].basicInfoDraft,true,'address pending is not false product completion');
-  await page.locator(`[data-site-edit="${saved[0].id}"]`).click();await page.locator('#site-name').fill('취소할 합성 변경');await page.locator('#cancel-site').click();await closed('site-editor-dialog');assert.deepEqual((await persisted()).locations,saved);
+  await editSite(saved[0].id);await page.locator('#site-name').fill('취소할 합성 변경');await page.locator('#cancel-site').click();await closed('site-editor-dialog');assert.deepEqual((await persisted()).locations,saved);
   await page.reload();await stage('q3');assert.deepEqual((await persisted()).locations,saved);
-  await page.locator(`[data-site-edit="${saved[0].id}"]`).click();assert.equal((await phoneState()).value,'010-2345-6789');await page.locator('#cancel-site').click();await closed('site-editor-dialog');
+  await editSite(saved[0].id);assert.equal((await phoneState()).value,'010-2345-6789');await page.locator('#cancel-site').click();await closed('site-editor-dialog');
  });
  await check('P05_Q4_SYNTHETIC_RESTORE_CANCEL_ATOMICITY',async()=>{
   const fixture=q4Fixture();await page.evaluate(({key,fixture})=>sessionStorage.setItem(key,JSON.stringify(fixture)),{key,fixture});await page.reload();await page.locator('[data-open="q4"]').waitFor();await emailReady();

@@ -18,4 +18,5 @@ test('legacy quantities retain their displayed package unit and exact total is n
   assert.deepEqual(totalPurchaseCost([{qty:'1',qtyUnit:'each',pack:'30',price:'1000'},{qty:'2',qtyUnit:'each',pack:'30',price:'1000'}]),{numerator:'100',denominator:'1'});
   assert.equal(exactDisplay({numerator:'5000',denominator:'3'}),'5,000/3');
   assert.equal(currentPurchaseCost({qty:'200',qtyUnit:'each',pack:'30',price:''}),null);
+  assert.equal(validMonthlyQuantity({qty:'2',qtyUnit:'tray',pack:'10'}),false,'unsupported restored unit cannot be relabeled as packs');
 });

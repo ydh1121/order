@@ -56,6 +56,18 @@ test('production integrated allowlist requires file hash and excludes unlisted f
  assert.equal(await readFile(join(f.root,'dist/index.html'),'utf8'),index,'failed build retains previous output');
 });
 
+test('frontend consumers must import an emitted browser module and contain no QA injection hook',async t=>{
+ const f=await fixture(t);const index='<script type="module" src="/main.mjs"></script>';
+ await f.put('web/index.html',index);
+ async function source(value){await f.put('web/main.mjs',value);await f.writeConfig({status:'INTEGRATED',uxHandoff:{sha256:sha(index)},frontendFiles:[{source:'web/index.html',output:'index.html',sha256:sha(index)},{source:'web/main.mjs',output:'main.mjs',sha256:sha(value)}]});}
+ await source("import '../src/engine/missing.mjs';");
+ await assert.rejects(buildPages({root:f.root,now:freshNow,commitSha}),/BUILD_FRONTEND_IMPORT_NOT_EMITTED/);
+ await source('window.__orderLowfiQA = {};');
+ await assert.rejects(buildPages({root:f.root,now:freshNow,commitSha}),/BUILD_FRONTEND_FORBIDDEN/);
+ await source("import '../src/engine/answer.mjs'; const process='seller'; export {process};");
+ const built=await buildPages({root:f.root,now:freshNow,commitSha});assert.equal(built.scope,'INTEGRATED_PRODUCT');
+});
+
 test('production handoff requires a real SHA256 identifier rather than a truthy placeholder',async t=>{
  const f=await fixture(t);const html='<!doctype html><title>fixture</title>';await f.put('web/index.html',html);
  await f.writeConfig({status:'INTEGRATED',uxHandoff:{sha256:'not-a-hash'},frontendFiles:[{source:'web/index.html',output:'index.html',sha256:sha(html)}]});

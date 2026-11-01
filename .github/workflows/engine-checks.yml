@@ -43,6 +43,7 @@ jobs:
       - name: Built product transactions with synthetic DNS and contact fixtures
         run: node test/browser/product.smoke.mjs
       - name: Computed styles against frozen UX source
+        if: always()
         run: node test/browser/styles.smoke.mjs
       - name: Actual HTTPS DNS observation from external origin
         if: always()

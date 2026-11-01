@@ -32,35 +32,6 @@ const deliveryLabel=a=>a.mode==='FIXED'?(()=>{const r=OrderRepeatContract.fromAl
 
 // Q3 completeness means every SKU has an assigned, valid site; not merely 1 allocation.
 const addressComplete=()=>S.locations.length>0&&S.locations.every(siteValid);
-// A weekday's number of occurrences in a given calendar month is unambiguous;
-// no FLEX or ONCE allocation may be projected as a monthly commitment.
-const JS_WEEKDAY={일:0,월:1,화:2,수:3,목:4,금:5,토:6};
-function comparisonMonth(now=new Date()){return {year:now.getFullYear(),month:now.getMonth()+1};}
-function weekdayOccurrences(day,period=comparisonMonth()){
- const weekday=JS_WEEKDAY[day];if(weekday===undefined)return 0;
- const max=new Date(period.year,period.month,0).getDate();let count=0;
- for(let dayOfMonth=1;dayOfMonth<=max;dayOfMonth++)if(new Date(period.year,period.month-1,dayOfMonth).getDay()===weekday)count++;
- return count;
-}
-function monthlyComparisonBasis(){
- const period=comparisonMonth(), monthly=new Map(), issues=[];
- for(const l of S.lines)monthly.set(l.id,0);
- if(!addressComplete())issues.push('납품지가 지정되지 않은 계란이 있습니다.');
- for(const a of S.allocations){
-  const l=lineById(a.lineId);
-  if(!l||!allocationValid(a)){issues.push('저장되지 않은 납품 조건이 있습니다.');continue;}
-  if(a.mode==='ONCE'){issues.push('1회 납품은 월간 반복 주문으로 계산할 수 없습니다.');continue;}
-  if(a.mode==='FLEX'){issues.push('소진 시 주문은 월 주문 횟수가 확정되지 않았습니다.');continue;}
-  if(Number(a.intervalWeeks)>1&&!a.cycleAnchorDate){issues.push('반복 납품 시작일이 확정되지 않아 월간 납품 횟수를 계산할 수 없습니다.');continue;}
-  if(['holiday','substituteHoliday','storeOffPolicy'].some(key=>a.advanced?.[key]==='skip')&&!S.calendarPolicyApproved){issues.push('휴무일 제외 적용을 확정해야 월간 수량을 계산할 수 있습니다.');continue;}
-  const times=a.days.reduce((n,day)=>n+weekdayOccurrences(day,period),0);
-  const quantity=Number(a.qty)*times, prev=monthly.get(a.lineId)||0;
-  if(!Number.isSafeInteger(quantity)||!Number.isSafeInteger(quantity+prev)){issues.push('납품 수량이 계산 범위를 벗어납니다.');continue;}
-  monthly.set(a.lineId,prev+quantity);
- }
- for(const l of S.lines){if(!validMonthlyQuantity(l)||monthly.get(l.id)!==Number(l.qty))issues.push(`${itemIdentity(l)}: 이번 달 납품 예정 ${monthly.get(l.id)||0}${unit(l.pack)}와 월 구매량 ${l.qty||0}${unit(l.pack)}이 일치하지 않습니다.`);}
- return {period,counts:Object.fromEntries(monthly),issues,comparable:issues.length===0&&S.lines.length>0};
-}
 const allocationValid=a=>{
  if(a.q4Review?.version==='0460')return q4ReviewAllocationIssues(a).length===0;
  if(!lineById(a.lineId)||!locationById(a.locationId)||!['FLEX','FIXED','ONCE'].includes(a.mode))return false;
@@ -395,7 +366,7 @@ function render(){if(editorMode==='initial'&&S.lines.length)editorMode=null;
  renderQ2();renderAddress();renderDelivery();$('q1-step-actions').hidden=!S.lines.length||!!editorMode;if(orderErrorExposure)renderOrderPageFeedback();
 }
 function renderQ2(){
- $('q2-lines').innerHTML=S.lines.map(l=>`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(l.qtyExact?l.qty:showComma(l.qty))}" placeholder="0"><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}"><option value="each" ${quantityUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityUnit(l)!=='each'?'selected':''}>${unit(l.pack)}</option></select></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal"><span>월 구매비용</span><output data-line-subtotal="${esc(l.id)}">${lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l))}</output></div></fieldset>`).join('');
+ $('q2-lines').innerHTML=S.lines.map(l=>`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(l.qtyExact?l.qty:showComma(l.qty))}" placeholder="0"><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}">${!['each',String(l.pack)==='30'?'tray':'pack'].includes(quantityUnit(l))?'<option value="" selected disabled>단위 확인</option>':''}<option value="each" ${quantityUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityUnit(l)===(String(l.pack)==='30'?'tray':'pack')?'selected':''}>${unit(l.pack)}</option></select></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal"><span>월 구매비용</span><output data-line-subtotal="${esc(l.id)}">${lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l))}</output></div></fieldset>`).join('');
  $('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());
  if(orderErrorExposure)paintPageFieldIssues(orderValidationProjection().exposedErrors);
 }
@@ -498,7 +469,7 @@ function invoiceDetails(stats){
 }
 
 
-function calcExample(){const basis=monthlyComparisonBasis(),buyer=buyerTotal();return {items:S.lines.map(l=>({id:l.id,buyer:lineSubtotal(l),unitOffer:null,supply:null,saving:null})),buyer,supply:null,saving:null,comparable:false,basis,reason:'실제 공급가와 비용 조건 확인이 필요합니다.'};}
+function calcExample(){const buyer=buyerTotal();return {items:S.lines.map(l=>({id:l.id,buyer:lineSubtotal(l),unitOffer:null,supply:null,saving:null})),buyer,supply:null,saving:null,comparable:false,basis:null,reason:'실제 공급가와 비용 조건 확인이 필요합니다.'};}
 const moneyOr=x=>x===null?'대조 불가':w(x);
 function resultSkuLines(stats){return S.lines.map((l,i)=>`<div class="r1-item" role="group" aria-label="${esc(itemIdentity(l))}"><span>${esc(itemIdentity(l))}</span><span>월 ${monthlyQuantityText(l)}${quantityLabel(l)} · ${w(l.price)}/${unit(l.pack)}</span><strong>${w(stats.items[i].buyer)}</strong></div>`).join('');}
 function renderResult(){
@@ -882,10 +853,10 @@ function q4ReviewVerdict(source=S,confirmation=null){
  const legacy=CODE1_ORDER_VALIDATION.validateOrderDraft(source,{scope:'full',confirmedFingerprint:confirmation});
  const currentLines=new Set(source.lines.filter(l=>{const a=source.allocations.filter(x=>x.lineId===l.id);return a.length&&a.every(x=>x.q4Review?.version==='0460');}).map(l=>l.id));
  const issues=legacy.fieldErrors.filter(e=>e.stage!=='q4'||!currentLines.has(e.lineId)||e.code==='BLOCK_ASSIGNMENT');
- const confirmations=legacy.confirmations.filter(item=>!currentLines.has(item.lineId));
+ const confirmations=[]; // Shared ONCE quantities own warnings for both restored and current records.
  for(const a of source.allocations)if(currentLines.has(a.lineId))issues.push(...q4ReviewAllocationIssues(a,source.allocations));
- for(const line of source.lines)if(currentLines.has(line.id)){
-  const allocations=source.allocations.filter(a=>a.lineId===line.id);
+ for(const line of source.lines){
+  const allocations=source.allocations.filter(a=>a.lineId===line.id);if(!allocations.length)continue;
   issues.push(...monthlyIssues(source,line,allocations));
   const once=inspectOnceAllocations({line,allocations,locations:source.locations,revision:source.allocationRevision||0});
   for(const issue of once.issues||[]){const a=allocations.find(a=>a.locationId===issue.locationId)||allocations[0];issues.push({...q4ReviewIssue(a,'once',issue.message),code:issue.code});}
@@ -927,17 +898,19 @@ window.OrderRegularQ4Bridge=Object.freeze({
  allocationContext:lineId=>{const id=lineId||q4ReviewContext?.lineId;const allocations=q4ReviewContext?.selectionPending&&id===q4ReviewContext.lineId?q4ReviewContext.openingAllocations:S.allocations.filter(a=>a.lineId===id);return q4ReviewClone({line:lineById(id),allocations,locations:S.locations,revision:S.allocationRevision||0});},
  inspect:patches=>{const line=lineById(patches[0]?.lineId);return [...patches.flatMap(a=>q4ReviewAllocationIssues(a,patches)||[]),...(line?monthlyIssues(S,line,patches):[])];},open:q4ReviewOpen,commit:q4ReviewCommit,closed:q4ReviewClosed,
  get commitCount(){return q4ReviewCommitCount;},get committed(){return q4ReviewClone(S);},
- forecast({allocation,quantity,rangeMin,rangeMax,variable,period,frequency,date,monthly}){
+ forecast({allocation,quantity,rangeMin,rangeMax,variable,repeat,period,frequency,date,monthly}){
   const line=lineById(allocation.lineId)||q4ReviewContext&&lineById(q4ReviewContext.lineId),now=OrderDatePolicy.today();
   const weekDays=['월','화','수','목','금','토','일'];
-  const plans=(allocation.weekPlans||[]).map(plan=>(plan.weekdays||[]).map(day=>weekDays.indexOf(day)+1));
-  const schedule=period==='매월'?{kind:'MONTHLY',day:date==='last'||date==='말일'?'last':Number(date)}:period==='매주'?{kind:'WEEKLY',weekdays:plans[0]||[]}:{kind:'CYCLE',weekPlans:plans,anchorDate:allocation.cycleAnchorDate};
+  const packed=OrderRepeatContract.serialize(repeat||{period,frequency,date,weeklyCheck:false,weekdays:{}});
+  const plans=(packed.ok?packed.value.weekPlans:[]).map(plan=>(plan.weekdays||[]).map(day=>weekDays.indexOf(day)+1));
+  const intent=OrderRepeatContract.monthValue(date);
+  const schedule=period==='매월'?{kind:'MONTHLY',day:intent.valid?(intent.value==='last'?'last':Number(intent.value)):null}:period==='매주'?{kind:'WEEKLY',weekdays:plans[0]||[]}:{kind:'CYCLE',weekPlans:plans,anchorDate:allocation.cycleAnchorDate};
   const policy=allocation.calendarPolicy; // Only explicitly approved policy is forwarded; no four-week or holiday default.
   const result=calendarForecast({year:now.year,month:now.month,mode:allocation.mode,quantity:String(quantity),...(variable?{range:{min:String(rangeMin),max:String(rangeMax)}}:{}),schedule,calendarPolicy:policy});
-  if(result.status!=='VALID'||!line)return {resolved:false,status:allocation.mode==='FLEX'?'실제 주문 일정에 따라 달라집니다.':'납품일·휴무일 적용 기준 확인 필요',evidence:result};
+  if(result.status!=='VALID'||!line||!validMonthlyQuantity(line)||!['10','20','30'].includes(String(line.pack)))return {resolved:false,status:allocation.mode==='FLEX'?'실제 주문 일정에 따라 달라집니다.':'납품일·휴무일 적용 기준 확인 필요',evidence:result};
   const low=fromRatio(result.normalized.low),high=fromRatio(result.normalized.high),demand=baseQuantity(line,monthly),factor=quantityFactor(line,String(line.pack)==='30'?'tray':'pack');
-  const delta=compare(multiply(high,factor),demand),comparison=delta===0?'equal':delta<0?'short':'over';
-  return {resolved:true,low:exactDisplay(result.normalized.low),high:exactDisplay(result.normalized.high),comparison,status:comparison==='equal'?'월 사용량과 동일':comparison==='short'?'월 사용량보다 미달':'월 사용량보다 초과',evidence:result};
+  const lowDelta=compare(multiply(low,factor),demand),highDelta=compare(multiply(high,factor),demand),comparison=lowDelta===0&&highDelta===0?'equal':highDelta<0?'short':lowDelta>0?'over':'range';
+  return {resolved:true,low:exactDisplay(result.normalized.low),high:exactDisplay(result.normalized.high),comparison,status:comparison==='equal'?'월 사용량과 동일':comparison==='short'?'월 사용량보다 미달':comparison==='over'?'월 사용량보다 초과':'납품 수량 범위에 따라 달라집니다.',evidence:result};
  }
 
 });
