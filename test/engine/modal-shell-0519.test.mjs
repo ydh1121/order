@@ -10,14 +10,14 @@ const source=await readFile(new URL('../../web/common-ui.mjs',import.meta.url),'
 const node=parse(source,{ecmaVersion:'latest',sourceType:'module'}).body.find(n=>n.type==='ExpressionStatement'&&n.expression.type==='AssignmentExpression'&&n.expression.left.property?.name==='OrderModalShell');
 const script=source.slice(node.start,node.end);
 function style(){const values=new Map();return {getPropertyValue:k=>values.get(k)?.[0]||'',getPropertyPriority:k=>values.get(k)?.[1]||'',setProperty:(k,v,p='')=>values.set(k,[v,p]),removeProperty:k=>values.delete(k)};}
-function element(){const classes=new Set(),listeners=new Map();return {style:style(),dataset:{},isConnected:true,tabIndex:0,
+function element(){const classes=new Set(),listeners=new Map(),attrs=new Map();return {style:style(),dataset:{},isConnected:true,tabIndex:0,setAttribute:(k,v)=>attrs.set(k,String(v)),getAttribute:k=>attrs.get(k)??null,
  classList:{contains:k=>classes.has(k),add:(...names)=>names.forEach(k=>classes.add(k)),remove:(...names)=>names.forEach(k=>classes.delete(k)),toggle:(k,b)=>b?classes.add(k):classes.delete(k)},
  addEventListener:(k,fn)=>{const list=listeners.get(k)||[];list.push(fn);listeners.set(k,list);},
  fire(k,e={}){for(const f of listeners.get(k)||[]){f(e);if(e.immediateStopped)break;}},getClientRects:()=>[{}],matches:()=>false,closest:()=>null,
  hasAttribute:()=>true,contains:()=>false};}
 function harness({reduced=false,mobile=false,withHistory=false}={}){
  const root=element(),body=element(),frames=new Map(),animations=[],scrolls=[];let frameId=0;
- const document={documentElement:root,body,activeElement:null};
+ const document=Object.assign(element(),{documentElement:root,body,activeElement:null}),created=[];
  const window=element();window.visualViewport=Object.assign(element(),{height:800,offsetTop:0});
  const historyStack=[{state:{route:'form',untouched:'keep'},url:'https://order.test/#/form'}],historyQueue=[];let historyIndex=0,historyBacks=0;
  if(withHistory){window.location={href:historyStack[0].url};window.history={get state(){return historyStack[historyIndex].state;},pushState(state,unused,url){historyStack.splice(++historyIndex);historyStack.push({state:structuredClone(state),url});window.location.href=url;},replaceState(state,unused,url){historyStack[historyIndex]={state:structuredClone(state),url};window.location.href=url;},back(){historyBacks++;historyQueue.push(-1);},forward(){historyQueue.push(1);}};}
@@ -31,8 +31,10 @@ function harness({reduced=false,mobile=false,withHistory=false}={}){
   panel.natural=natural;panel.querySelector=()=>scroll;panel.getBoundingClientRect=()=>({height:Math.min(parseFloat(panel.style.getPropertyValue('--ui-modal-editor-session-block'))||panel.natural,parseFloat(d.style.getPropertyValue('--ui-modal-max-block'))||Infinity)});panel.animate=(k,o)=>animate(panel,k,o);
   d.panel=panel;d.scroll=scroll;d.children=[];d.querySelector=()=>panel;d.querySelectorAll=()=>d.children;d.contains=el=>d.children.includes(el);d.getBoundingClientRect=()=>({left:100,right:500,top:100,bottom:500});d.animate=(k,o)=>animate(d,k,o);d.showModal=()=>{d.open=true;};d.close=()=>{d.open=false;d.fire('close');};focus(d);return d;
  }
+ document.createElement=()=>{const d=dialog(''),keep=focus(element()),discard=focus(element());d.children=[keep,discard];d.querySelector=selector=>selector==='[data-discard-continue]'?keep:selector==='[data-discard-confirm]'?discard:d.panel;return d;};
+ body.append=d=>{created.push(d);d.isConnected=true;};
  vm.runInNewContext(script,context);
- return {shell:window.OrderModalShell,root,body,window,document,context,dialog,focus,animations,scrolls,historyStack,get historyIndex(){return historyIndex;},get historyBacks(){return historyBacks;},stepHistory(){const move=historyQueue.shift();if(move===undefined)return false;const next=historyIndex+move;if(next<0||next>=historyStack.length)return false;historyIndex=next;window.location.href=historyStack[next].url;window.fire('popstate',{state:historyStack[next].state,stopImmediatePropagation(){this.immediateStopped=true;}});return true;},flush(){const pending=[...frames.values()];frames.clear();pending.forEach(f=>f());}};
+ return {shell:window.OrderModalShell,root,body,window,document,context,dialog,focus,animations,scrolls,historyStack,get discardDialog(){return created.find(d=>d.id==='order-discard-dialog');},get historyIndex(){return historyIndex;},get historyBacks(){return historyBacks;},stepHistory(){const move=historyQueue.shift();if(move===undefined)return false;const next=historyIndex+move;if(next<0||next>=historyStack.length)return false;historyIndex=next;window.location.href=historyStack[next].url;window.fire('popstate',{state:historyStack[next].state,stopImmediatePropagation(){this.immediateStopped=true;}});return true;},flush(){const pending=[...frames.values()];frames.clear();pending.forEach(f=>f());}};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
@@ -50,7 +52,9 @@ test('A07 native cancel and backdrop are consumed only by top modal',()=>{
  h.shell.bind(parent,()=>p++);h.shell.bind(child,()=>c++);h.shell.open(parent);h.shell.open(child);
  const event={preventDefault(){prevent++;},stopPropagation(){stop++;}};parent.fire('cancel',event);child.fire('cancel',event);
  parent.fire('click',{target:parent,clientX:0,clientY:0});child.fire('click',{target:child,clientX:0,clientY:0});
- assert.equal(p,0);assert.equal(c,2);assert.equal(prevent,2);assert.equal(stop,2);
+ // A standalone click has no safe outside pointer origin; native cancel still
+ // reaches only the top dialog. Full pointer gestures are covered below.
+ assert.equal(p,0);assert.equal(c,1);assert.equal(prevent,2);assert.equal(stop,2);
 });
 
 test('A05 content resize supersedes old animation, preserves scroll, and stale completion cannot clear new motion',async()=>{
@@ -125,4 +129,63 @@ test('A07 Forward into discarded history cannot resurrect draft or strand parent
 test('A07 non-opted dialogs do not write history and cleanup never traverses an unrelated URL',()=>{
  const h=harness({reduced:true,withHistory:true}),p=h.dialog('parent');h.shell.open(p);h.shell.close(p);assert.equal(h.historyStack.length,1);assert.equal(h.historyBacks,0);
  h.shell.open(p,{history:true});h.window.history.pushState({route:'other'},'','https://order.test/#/other');h.shell.close(p);assert.equal(h.historyBacks,0);assert.equal(h.window.location.href,'https://order.test/#/other');assert.deepEqual(h.window.history.state,{route:'other'});
+});
+
+const pointer=(target,x,y)=>({target,clientX:x,clientY:y,pointerId:1,detail:1,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;},stopImmediatePropagation(){this.immediateStopped=true;}});
+const settleHistory=h=>{for(let i=0;i<12&&h.stepHistory();i++);};
+
+test('R01 editor backdrop and both drag directions preserve draft without a discard prompt',()=>{
+ const h=harness({reduced:true}),d=h.dialog('editor');let disposals=0,dirty=true;
+ h.shell.bind(d,()=>disposals++,{editable:true,isDirty:()=>dirty});h.shell.open(d);
+ for(const [start,end] of [[[0,0],[0,0]],[[200,200],[0,0]],[[0,0],[200,200]]]){
+  h.document.fire('pointerdown',pointer(d,...start));h.document.fire('pointerup',pointer(d,...end));d.fire('click',pointer(d,...end));
+ }
+ dirty=false;h.document.fire('pointerdown',pointer(d,0,0));h.document.fire('pointerup',pointer(d,0,0));d.fire('click',pointer(d,0,0));
+ assert.equal(disposals,0);assert.equal(d.open,true);assert.equal(h.discardDialog,undefined);
+});
+
+test('R01 explicit dirty exit offers one confirmation; continue retains input/focus and discard disposes once',()=>{
+ const h=harness({reduced:true,withHistory:true}),d=h.dialog('editor'),input=h.focus(element());d.children=[input];input.value='unsaved';let disposals=0;
+ h.shell.bind(d,()=>{disposals++;h.shell.close(d);},{editable:true,isDirty:()=>input.value==='unsaved'});h.shell.open(d,{history:true});input.focus();
+ assert.equal(h.shell.requestClose(d,'close'),false);const prompt=h.discardDialog;assert.equal(prompt.open,true);assert.equal(d.open,true);assert.equal(disposals,0);
+ h.shell.requestClose(d,'close');assert.deepEqual([...h.shell.activeIds],['editor','order-discard-dialog']);
+ prompt.querySelector('[data-discard-continue]').fire('click');settleHistory(h);h.flush();assert.equal(d.open,true);assert.equal(disposals,0);assert.equal(input.value,'unsaved');assert.equal(h.document.activeElement,input);
+ h.shell.requestClose(d,'cancel');prompt.querySelector('[data-discard-confirm]').fire('click');prompt.querySelector('[data-discard-confirm]').fire('click');settleHistory(h);
+ assert.equal(disposals,1);assert.equal(d.open,false);assert.equal(prompt.open,false);assert.equal(h.historyIndex,0);
+});
+
+test('R02 dirty child Back is reversible and never cascades to parent; prompt Back means continue',()=>{
+ const h=harness({reduced:true,withHistory:true}),p=h.dialog('parent'),c=h.dialog('child');let parentDiscards=0,childDiscards=0;
+ h.shell.bind(p,()=>{parentDiscards++;h.shell.close(p);},{editable:true,isDirty:()=>true});h.shell.bind(c,()=>{childDiscards++;h.shell.close(c);},{editable:true,isDirty:()=>true});h.shell.open(p,{history:true});h.shell.open(c,{history:true});
+ h.window.history.back();h.stepHistory();assert.equal(h.discardDialog.open,true);assert.equal(c.open,true);assert.equal(p.open,true);assert.equal(childDiscards,0);
+ h.window.history.back();settleHistory(h);assert.equal(h.discardDialog.open,false);assert.equal(c.open,true);assert.equal(p.open,true);
+ h.window.history.back();h.stepHistory();h.discardDialog.querySelector('[data-discard-confirm]').fire('click');settleHistory(h);
+ assert.equal(childDiscards,1);assert.equal(parentDiscards,0);assert.equal(c.open,false);assert.equal(p.open,true);assert.equal(h.historyIndex,1);
+});
+
+test('R02 exit intent invalidates a pending transaction before discard choice without clearing draft',()=>{
+ const h=harness({reduced:true}),d=h.dialog('editor');let revision=4,draft='modified',commits=0;
+ const reviewedRevision=revision,canCommit=()=>revision===reviewedRevision;
+ h.shell.bind(d,()=>{draft='';h.shell.close(d);},{editable:true,isDirty:()=>true,onExitIntent:()=>revision++});h.shell.open(d);
+ h.shell.requestClose(d,'escape');if(canCommit())commits++;assert.equal(commits,0);assert.equal(draft,'modified');
+ h.discardDialog.querySelector('[data-discard-continue]').fire('click');assert.equal(draft,'modified');assert.equal(d.open,true);
+});
+
+test('R02 save/forced cleanup closes pending guard and stale confirmation cannot close a reopened session',()=>{
+ const h=harness({reduced:true,withHistory:true}),d=h.dialog('editor');let disposals=0;
+ h.shell.bind(d,()=>{disposals++;h.shell.close(d);},{editable:true,isDirty:()=>true});h.shell.open(d,{history:true});h.shell.requestClose(d,'close');const prompt=h.discardDialog;
+ h.shell.close(d);h.shell.open(d,{history:true});settleHistory(h);prompt.querySelector('[data-discard-confirm]').fire('click');assert.equal(disposals,0);assert.equal(d.open,true);assert.equal(prompt.open,false);assert.equal(h.shell.inspect().pendingDiscard,null);
+});
+
+test('R01 pointer gesture from a closed child cannot click through to parent or page',()=>{
+ const h=harness({reduced:true}),p=h.dialog('parent'),c=h.dialog('child');h.shell.open(p);h.shell.open(c);
+ h.document.fire('pointerdown',pointer(c,200,200));h.shell.close(c);const up=pointer(p,200,200);h.document.fire('pointerup',up);const click=pointer(p,200,200);h.document.fire('click',click);assert.equal(up.prevented,true);assert.equal(click.immediateStopped,true);assert.equal(p.open,true);
+ const next=pointer(p,200,200);h.document.fire('pointerdown',next);h.document.fire('pointerup',next);h.document.fire('click',next);assert.equal(next.prevented,undefined);
+});
+
+test('R02 inner popup dismissal precedes dirty guard and keeps browser history armed',()=>{
+ const h=harness({reduced:true,withHistory:true}),d=h.dialog('editor');let inner=true,disposals=0;
+ h.shell.bind(d,()=>disposals++,{editable:true,isDirty:()=>true,beforeClose:()=>{if(inner){inner=false;return false;}}});h.shell.open(d,{history:true});
+ h.window.history.back();settleHistory(h);assert.equal(inner,false);assert.equal(d.open,true);assert.equal(h.discardDialog,undefined);assert.equal(h.historyIndex,1);
+ h.window.history.back();h.stepHistory();assert.equal(h.discardDialog.open,true);assert.equal(disposals,0);
 });

@@ -1,5 +1,8 @@
-import {createMonthlyAllocationDraft,monthlyAllocationDisplay,monthlyQuantityInputText,monthlyQuantityUnit,allocationUnitLabel} from './allocation-ui.mjs';
-import {validMonthlyQuantity,monthlyQuantityText,quantityLabel} from './quantity-contract.mjs';
+import {createMonthlyAllocationDraft,monthlyAllocationDisplay,monthlyQuantityInputText,allocationUnitLabel} from './allocation-ui.mjs';
+import {validMonthlyQuantity,monthlyQuantityText,quantityLabel,exactDisplay} from './quantity-contract.mjs';
+import {bindNumericInputs} from './numeric-input.mjs';
+import {frequencyText,deliverySuggestion,distributionText,repeatVisitPlan,nominalQuantity,sumNominalByReference,planningInputSignature,deliveryPlanIsCurrent,restoredDeliverySettings} from './q4-planning.mjs';
+import {fromRatio,toJSON,compare,exact} from '../src/engine/calculation/exact.mjs';
 (()=>{'use strict';
 // Preserved UX shell and interactions; monthly quantities use the shared engine.
 // The regular-state bridge remains the sole persistence owner.
@@ -13,9 +16,10 @@ let monthlyEditor=null;
 const monthlyLocation=i=>regularContext?.allocations[i]?.locationId;
 const monthlyRow=i=>monthlyEditor?.rows.find(row=>row.locationId===monthlyLocation(i));
 const monthlyPending=i=>siteMode(i)!=='ONCE'&&monthlyRow(i)?.source==='derived';
-function monthlyFeedback(i){const data=monthlyAllocationDisplay(monthlyEditor?.evaluate(),monthlyLocation(i)),suffix=allocationUnitLabel(data.baseUnit);if(!data.row)return '월 사용량의 수량과 단위를 확인해 주세요.';const source=monthlyRow(i)?.source==='derived'?'자동 계산 · 확인 시 반영. ':'';return `${source}${data.excess!=='0'&&data.excess!=='미확정'?`초과 배분량 ${data.excess}${suffix}`:`남은 배분량 ${data.remaining}${suffix}`} · 현재 입력 상한 ${data.maximum}${suffix}${data.proposed?` · 자동 배분 후 ${data.projectedRemaining}${suffix}`:''}`;}
-function syncMonthlyFields(){if(!monthlyEditor)return;for(let i=0;i<state.count;i++){const row=monthlyRow(i);if(!row)continue;state.values[i].monthly=row.quantity.raw;const input=document.querySelector(`[data-qty="${i}:monthly"]`);if(input&&input!==document.activeElement)input.value=monthlyQuantityInputText(row.quantity);const group=input?.closest('.qa-field');if(group){group.dataset.quantitySource=row.source;const label=group.querySelector('.qa-unit');if(label)label.textContent=allocationUnitLabel(row.quantity.unit);const note=group.querySelector('[data-monthly-feedback]');if(note)note.textContent=monthlyFeedback(i);}refreshStatus(i);syncRegularQuantityErrors(i);}}
-const monthEditing=new Set();
+function monthlyFeedback(i){const data=monthlyAllocationDisplay(monthlyEditor?.evaluate(),monthlyLocation(i)),suffix=unit();if(!data.row)return '<span>—</span>';const label=(name,value,suffix='')=>`<span><strong>${name}</strong> <span>${escapeHTML(value)}${value==='—'?'':suffix}</span></span>`;return label('남은 수량:',data.remaining,suffix)+label('전체 수량:',data.total==='—'?'—':'총'+data.total,suffix)+(data.excess!=='0'&&data.excess!=='—'?label('초과 수량:',data.excess,allocationUnitLabel(data.excessUnit)):'')+(data.shortage!=='—'&&data.shortage!=='0'?label('부족 수량:',data.shortage,'개'):'')+(data.slack!=='—'&&data.slack!=='0'&&!data.slack.startsWith('-')?label('포장 여유:',data.slack,'개'):'');}
+function syncMonthlyModes(){if(!monthlyEditor)return;for(let i=0;i<state.count;i++){const row=monthlyRow(i),mode=siteMode(i);if(row&&row.mode!==mode)monthlyEditor.setMode(monthlyLocation(i),mode);}}
+function syncMonthlyFields(){if(!monthlyEditor)return;syncMonthlyModes();for(let i=0;i<state.count;i++){const row=monthlyRow(i);if(!row)continue;state.values[i].monthly=row.quantity.raw;const input=document.querySelector(`[data-qty="${i}:monthly"]`);if(input&&input!==document.activeElement)input.value=monthlyQuantityInputText(row.quantity);const group=input?.closest('.qa-field');if(group){group.dataset.quantitySource=row.source;const label=group.querySelector('.qa-unit');if(label)label.textContent=unit();const note=group.querySelector('[data-monthly-feedback]');if(note)note.innerHTML=monthlyFeedback(i);}refreshStatus(i);syncRegularQuantityErrors(i);}q4Numeric.refresh();refreshQuantitySupport();}
+const monthEditing=new Set(),numericComposing=new Set();
 // MSG0425 site-owned UI draft state: individual-mode edits never alias global data.
 const newSiteContacts=()=>({phone:true,sms:true,kakao:true,email:false});
 const newSiteHoliday=()=>({days:[],none:false,irregular:false,conflict:'협의 후 조정',weekend:'협의 후 조정',holiday:'협의 후 조정',subholiday:'협의 후 조정',request:''});
@@ -31,12 +35,12 @@ const siteMode=i=>state.mode==='MIXED'?state.siteModes[i]:state.mode;
 const requiredStar='<span class="ui-required qa-required-star" aria-hidden="true">*</span>';
 const holidayComplete=()=>((state.holidayNone||state.holidayIrregular||state.holidayDays.length>0)&&!['','선택 안 함'].includes(state.holiday.conflict));
 const isValid=v=>/^\d+$/.test(String(v??''))&&Number(v)>=1&&Number(v)<=99999;
-function fields(i){const m=siteMode(i);return m==='ONCE'?['once']:state.count===1?['base',...(state.variable[i]?['min','max']:[])]:['monthly','base',...(state.variable[i]?['min','max']:[])];}
+function fields(i){const m=siteMode(i);return m==='ONCE'?['once']:['monthly','base',...(state.variable[i]?['min','max']:[])];}
 function status(i,acceptProposal=false){const v=state.values[i]||{},keys=fields(i),present=keys.filter(k=>String(v[k]??'')!=='').length,amountComplete=keys.every(k=>!q4QuantityInvalid(i,k));
  const contactOk=!isIndividual()||siteContactComplete(i);
  const holidayOk=!isIndividual()||!appliesSiteHoliday(i)||siteHolidayComplete(i);
  const repeatOk=siteMode(i)!=='FIXED'||OrderRepeatContract.inspect(isIndividual()?state.siteRepeat[i]:state).valid;
- const all=amountComplete&&contactOk&&holidayOk&&repeatOk&&dateIssue(i).valid;
+ const all=!numericComposing.size&&amountComplete&&contactOk&&holidayOk&&repeatOk&&dateIssue(i).valid;
  if(state.attempted&&!all)return 'error';if(all)return !acceptProposal&&monthlyPending(i)?'partial':'complete';if(present||state.variable[i]||(isIndividual()&&appliesSiteHoliday(i)&&state.siteHolidays[i].days.length)||(isIndividual()&&siteMode(i)==='FIXED'&&state.siteRepeat?.[i]?.weeklyCheck))return 'partial';return 'empty';}
 function checkbox(id,label,checked,attrs='',multiline=false){
  return `<label class="q4-check-row${multiline?' q4-check-row--multiline':''}"><input id="${id}" type="checkbox" ${checked?'checked':''} ${attrs}><span class="q4-check-icon" aria-hidden="true">✓</span><span class="q4-check-copy">${label}</span></label>`;
@@ -54,7 +58,7 @@ function q4AnimateCheckedTransition(el){
 const CODE1_UI=Object.freeze({copyIcon:window.OrderIcons.svg('clone'),accordion:options=>window.OrderAccordionView.render({...options,bindKey:true,requiredLabel:true}),button:({label,action,filled=false})=>`<button type="button" class="subaction ui-continue-action" ${action}>${label}</button>`});
 function acc(id,label,body,open=false,st='empty',extra='qa-site-parent',required=false){return CODE1_UI.accordion({id,label:escapeHTML(label),content:body,complete:st==='complete',expanded:open,error:st==='error',extraClass:extra,required});}
 function quantity(i,key,label,placeholder){placeholder=['min','max'].includes(key)?'수량 입력':key==='monthly'?'월 사용량 입력':'수량 입력';const v=state.values[i]?.[key]??'',invalid=state.attempted&&q4QuantityInvalid(i,key),id=`q0394-${i}-${key}`,monthly=key==='monthly',row=monthly?monthlyRow(i):null;
- return `<div class="qa-site-field qa-field" data-field-group="${i}-${key}" data-error="${invalid}" ${monthly?`data-quantity-source="${row?.source||'manual'}"`:''}><label class="qa-site-label ui-field-title ${['min','max'].includes(key)?'ui-field-title--dependent':''}" for="${id}">${label} ${!['min','max'].includes(key)?requiredStar:''}</label><div class="qa-number"><input id="${id}" data-qty="${i}:${key}" ${monthly?'type="text"':'type="number" min="1" max="99999" step="1"'} inputmode="numeric" value="${escapeHTML(monthly?monthlyQuantityInputText(row?.quantity):v)}" placeholder="${escapeHTML(placeholder)}" aria-invalid="${invalid}" ${monthly?`aria-describedby="${id}-allocation"`:''}/><span class="qa-unit">${monthly?allocationUnitLabel(row?.quantity.unit||monthlyQuantityUnit(regularContext.line)):unit()}</span></div>${monthly?`<p class="qa-label" id="${id}-allocation" data-monthly-feedback="${i}" aria-live="polite">${escapeHTML(monthlyFeedback(i))}</p>`:''}<p class="qa-inline-error qa-error qa-qty-a11y-only ui-feedback-sr" ${invalid?'':'hidden'} aria-label="입력 확인 필요"></p></div>`;}
+ return `<div class="qa-site-field qa-field" data-field-group="${i}-${key}" data-error="${invalid}" ${monthly?`data-quantity-source="${row?.source||'manual'}"`:''}><label class="qa-site-label ui-field-title ${['min','max'].includes(key)?'ui-field-title--dependent':''}" for="${id}">${label} ${!['min','max'].includes(key)?requiredStar:''}</label><div class="qa-number"><input id="${id}" data-qty="${i}:${key}" type="text" inputmode="numeric" value="${escapeHTML(monthly?monthlyQuantityInputText(row?.quantity):v)}" placeholder="${escapeHTML(placeholder)}" aria-invalid="${invalid}" ${monthly?`aria-describedby="${id}-allocation"`:''}/><span class="qa-unit">${unit()}</span></div>${monthly?`<p class="qa-label qa-quantity-support" id="${id}-allocation" data-monthly-feedback="${i}" aria-live="polite">${monthlyFeedback(i)}</p>`:''}<p class="qa-inline-error qa-error qa-qty-a11y-only ui-feedback-sr" ${invalid?'':'hidden'} aria-label="입력 확인 필요"></p></div>`;}
 
 function choice(label,choices,val,key){return `<section class="qa-form-section" data-section="${key}"><div class="qa-section-title ui-field-title ui-field-title--top">${label} <span class="ui-required" aria-hidden="true">*</span></div><div class="qa-mode-choices ${choices.length===2?'qa-two':''}" role="group" aria-label="${label}">${choices.map(([v,t])=>`<button type="button" class="ui-choice" data-choice="${key}" data-value="${v}" aria-pressed="${val===v}">${t}</button>`).join('')}</div></section>`;}
 function comboSelected(id,chosen){if(id==='date'||/^site-repeat-\d+-date$/.test(id))return OrderRepeatContract.monthValue(chosen).valid;if(id==='freq'||/^site-repeat-\d+-freq$/.test(id))return /^[1-7]회$/.test(String(chosen));return !['','선택 안 함','일괄 설정','사업장 일괄 설정','undefined','null'].includes(String(chosen??''));}
@@ -176,7 +180,7 @@ function requestCopy(i){if(!isIndividual()||$('qa-copy-confirm'))return;closeQ4D
  const targets=Array.from({length:state.count},(_,n)=>n).filter(n=>n!==i).map(n=>checkbox(`qa-copy-target-${n}`,`<span class="qa-copy-target-text">${escapeHTML(names[n])}</span>`,false,`data-copy-target="${n}" aria-label="${escapeHTML(names[n])}"`,true)).join('');
  const host=window.OrderCopyDialog.create({title:names[i]+' 설정 복제',fields:copyOptions(i),targets});
  document.body.append(host);q4SeedCheckboxes(host);bindCopyDialogEvents(host);updateCopyValidation();
- window.OrderModalShell.bind(host,()=>closeCopy());window.OrderModalShell.open(host,{variant:'copy',returnFocus:()=>document.querySelector(`[data-copy-from="${i}"]`),initialFocus:()=>host.querySelector('[data-copy-cancel]')});
+ window.OrderModalShell.bind(host,()=>disposeCopy(),{editable:true,isDirty:()=>!!state.copyTargets.length||Object.values(state.copyFields||{}).some(Boolean)});window.OrderModalShell.open(host,{variant:'copy',history:true,returnFocus:()=>document.querySelector(`[data-copy-from="${i}"]`),initialFocus:()=>host.querySelector('[data-copy-cancel]')});
 }
 function copyIncompatibleReason(i){const f=state.copyFields,src=state.copySource;if(src===null||!state.copyTargets.includes(i))return '';
  const srcMode=state.siteModes[src],effective=f.mode?srcMode:state.siteModes[i];
@@ -199,7 +203,8 @@ function updateCopyValidation(){const host=$('qa-copy-confirm');if(!host)return;
  if(bt)bt.setAttribute('aria-invalid',String(state.copyAttempted&&!r.count));
  if(feedback){feedback.textContent=r.errors[0]||'';feedback.dataset.error=String(r.errors.length>0);feedback.classList.toggle('ui-feedback-sr',r.errors.every(x=>/입력해|선택해/.test(x)));}
  host.querySelectorAll('[data-copy-target]').forEach(el=>{const n=Number(el.dataset.copyTarget);el.setAttribute('aria-invalid',String(r.errors.some(e=>e.startsWith(names[n]+':'))));});}
-function closeCopy(restore=true){
+function closeCopy(restore=true){if(restore)return window.OrderModalShell.requestClose($('qa-copy-confirm'),'cancel');return disposeCopy(false);}
+function disposeCopy(restore=true){
  const host=$('qa-copy-confirm');if(!host)return;
  const from=state.copySource;
  if(copyOpenAnimation){copyOpenAnimation.cancel();copyOpenAnimation=null;}
@@ -232,26 +237,38 @@ function applyCopy(){if(!isIndividual()||!copyEligibility().valid){validateCopyA
  for(const dest of targets){if(f.mode)state.siteModes[dest]=srcMode;
  if(f.contact)state.siteContacts[dest]={...state.siteContacts[from]};
  if(f.monthly)state.values[dest].monthly=state.values[from].monthly;
- if(f.base)state.values[dest].base=state.values[from].base;
+ if(f.base){state.values[dest].base=state.values[from].base;state.qtySources[dest]='user';state.deliveryPlans[dest]=null;}
  if(f.holiday){const memo=state.siteHolidays[dest].request;state.siteHolidays[dest]={...state.siteHolidays[from],days:[...state.siteHolidays[from].days],request:memo};}
  }if(f.monthly)monthlyEditor?.clone(monthlyLocation(from),targets.map(monthlyLocation));syncMonthlyFields();closeCopy(false);state.siteOpen=from;render();travel(from);}
 function animateCopyCardHeight(){/* The disclosure body owns height; compact flex panel follows it naturally. No second animation on the same size change. */}
 function resizeCopyCardAfterToggle(){/* Error/target content changes use natural height within the common capped, single-scroll shell. */}
+function activeRepeat(i){return isIndividual()?state.siteRepeat[i]:state;}
+function supportInput(i){return {monthlyPlan:numericComposing.size||q4Numeric.inspect?.().valid===false?'':monthlyRow(i)?.quantity.raw||'',repeat:OrderRepeatContract.snapshot(activeRepeat(i)),reference:state.planningReferences?.[i],count:state.nominalVisitCounts?.[i]||'',quantity:state.values[i]?.base||'',variable:!!state.variable[i],min:state.values[i]?.min||'',max:state.values[i]?.max||''};}
+function proposalFingerprint(i){const x=supportInput(i),row=monthlyRow(i);delete x.quantity;delete x.repeat.weekOpen;const monthly=row?{quantity:{raw:row.quantity.raw,unit:row.quantity.unit},source:row.source,demand:row.demand,demandOrigin:row.demandOrigin,demandSource:row.demandSource,mode:row.mode}:null;const line=regularContext?.line;return planningInputSignature({...x,line:{id:line?.id,housing:line?.housing,size:line?.size,pack:state.pack,qty:line?.qty,qtyUnit:line?.qtyUnit,qtyExact:line?.qtyExact},targets:regularContext.allocations.map((a,n)=>({id:a.id,locationId:a.locationId,mode:siteMode(n)})).sort((a,b)=>a.id.localeCompare(b.id)),location:monthlyLocation(i),monthly});}
+function restoreAcceptedPlans(){for(let i=0;i<state.count;i++){const plan=state.deliveryPlans[i];if(!plan)continue;const input=supportInput(i),visits=repeatVisitPlan(input.repeat,input.reference,input.count),signature=proposalFingerprint(i);if(siteMode(i)!=='FIXED'||!visits.resolved||!deliveryPlanIsCurrent(plan,{signature,monthlyPlan:input.monthlyPlan,unit:monthlyRow(i)?.quantity.unit,reference:input.reference,visits:visits.visits,variable:input.variable,range:input.variable?{min:input.min,max:input.max}:undefined,quantity:input.quantity})){state.deliveryPlans[i]=null;continue;}state.deliveryPlanFingerprints[i]=signature;}}
+
+function proposal(i){return deliverySuggestion(supportInput(i));}
+function frequencyField(i){return `<div class="qa-field qa-frequency-field"><label class="qa-label ui-field-title" for="q4-frequency-${i}">예상 주문</label><input id="q4-frequency-${i}" class="qa-readonly-control" type="text" readonly value="${escapeHTML(frequencyText(supportInput(i)))}" data-frequency-output="${i}" aria-label="${escapeHTML(names[i])} 월평균 예상 주문"/></div>`;}
+function planningFields(i){const r=state.planningReferences[i],repeat=activeRepeat(i),weeks=repeat.period==='매주'?1:Number.parseInt(repeat.period,10);return `<div class="qa-planning-reference" data-planning-reference="${i}"><div class="qa-inline-pair"><div class="qa-field"><label class="qa-label ui-field-title" for="q4-reference-year-${i}">참조월</label><div class="qa-date-anchor"><div class="qa-date-segments"><input id="q4-reference-year-${i}" data-plan-reference="year" data-plan-site="${i}" type="text" inputmode="numeric" aria-label="${escapeHTML(names[i])} 참조 연도" value="${escapeHTML(r.year)}"/><span>년</span><input id="q4-reference-month-${i}" data-plan-reference="month" data-plan-site="${i}" type="text" inputmode="numeric" aria-label="${escapeHTML(names[i])} 참조 월" value="${escapeHTML(r.month)}"/><span>월</span></div></div></div>${repeat.weeklyCheck&&weeks>1?`<div class="qa-field"><label class="qa-label ui-field-title" for="q4-anchor-${i}">시작 주</label><input id="q4-anchor-${i}" data-plan-reference="anchorDate" data-plan-site="${i}" type="date" value="${escapeHTML(r.anchorDate||'')}"/></div>`:!repeat.weeklyCheck&&repeat.period!=='매월'?`<div class="qa-field"><label class="qa-label ui-field-title" for="q4-visit-count-${i}">월 예상 횟수</label><div class="qa-number"><input id="q4-visit-count-${i}" data-plan-count="${i}" type="text" inputmode="numeric" value="${escapeHTML(state.nominalVisitCounts[i])}" placeholder="횟수 입력"/><span class="qa-unit">회</span></div></div>`:''}</div></div>`;}
+function proposalFields(i){const p=proposal(i);return `<div class="qa-delivery-proposal" data-proposal-owner="${i}"><p class="qa-quantity-support"><span><strong>회당 수량 제안:</strong> <span data-proposal-output="${i}">${escapeHTML(distributionText(p,unit()))}</span></span></p><p class="qa-label" data-proposal-note="${i}">${escapeHTML(proposalNote(p))}</p><button type="button" class="subaction ui-continue-action" data-apply-plan="${i}" ${p.feasible?'':'hidden'}>제안 적용</button></div>`;}
+function proposalNote(p){if(!p.resolved)return p.message||'—';if(!p.feasible)return p.result?.reasonCodes?.includes('VARIABLE_PLAN_PERMISSION_REQUIRED')?'정수 수량을 나누려면 가변 수량과 범위를 확인해 주세요.':p.result?.reasonCodes?.includes('INTEGER_PLAN_OUTSIDE_RANGE')?'월 수량에 맞게 횟수 또는 최소·최대 수량을 조정해 주세요.':'수량과 횟수를 확인해 주세요.';return `${p.visits}회 · ${p.message}`;}
+function refreshQuantitySupport(){if(!regularContext||!state.values)return;for(let i=0;i<state.count;i++){const output=document.querySelector(`[data-frequency-output="${i}"]`);if(output)output.value=frequencyText(supportInput(i));const p=proposal(i),text=document.querySelector(`[data-proposal-output="${i}"]`),note=document.querySelector(`[data-proposal-note="${i}"]`),button=document.querySelector(`[data-apply-plan="${i}"]`);if(text)text.textContent=distributionText(p,unit());if(note)note.textContent=proposalNote(p);if(button)button.hidden=!p.feasible;if(state.deliveryPlans?.[i]&&state.deliveryPlanFingerprints[i]!==proposalFingerprint(i))state.deliveryPlans[i]=null;}}
+function applyDeliveryPlan(i){const p=proposal(i);if(!p.feasible)return;state.values[i].base=p.constantQuantity||p.distribution[0].quantity;state.qtySources[i]='auto';state.deliveryPlans[i]={version:'1.0.0',monthlyPlan:monthlyRow(i).quantity.raw,visits:p.visits,unit:monthlyRow(i).quantity.unit,distribution:structuredClone(p.distribution),...(state.variable[i]?{range:{min:state.values[i].min,max:state.values[i].max}}:{}),reference:structuredClone(state.planningReferences[i]),source:'derived',reviewed:true,inputSignature:proposalFingerprint(i)};state.deliveryPlanFingerprints[i]=state.deliveryPlans[i].inputSignature;const input=document.querySelector(`[data-qty="${i}:base"]`);if(input)input.value=state.values[i].base;q4Numeric.refresh();refreshQuantitySupport();refreshStatus(i);syncRegularQuantityErrors(i);refreshResultsOnly();}
 function siteBody(i){
  const mode=siteMode(i),individual=isIndividual(),wrap=(name,html,child=false)=>`<div class="${child?'qa-child-block':'qa-parent-block'}" data-site-block="${name}">${html}</div>`;
  const modeHTML=individual?`<div class="qa-site-field qa-site-mode"><div class="qa-site-label ui-field-title">납품 방식 ${requiredStar}</div><div class="qa-mode-choices qa-three" role="group" aria-label="사업장${i+1} 납품 방식">${Object.entries(mName).map(([v,t])=>`<button type="button" class="ui-choice" data-site-choice="${i}" data-value="${v}" aria-pressed="${mode===v}">${t}</button>`).join('')}</div></div>`:'';
  const process=()=>`<div class="qa-site-field qa-site-process"><div class="qa-site-label ui-field-title">주문 진행 방식 ${requiredStar}</div><div class="qa-mode-choices qa-two" role="group" aria-label="사업장${i+1} 주문 진행 방식">${[['contact','상호 확인 후 배송'],['auto','자동 배송']].map(([v,t])=>`<button type="button" class="ui-choice" data-site-process="${i}" data-value="${v}" aria-pressed="${(state.siteProcess[i]||'contact')===v}">${t}</button>`).join('')}</div></div>`;
  const variable=()=>`<div class="qa-var-row qa-check-wrap">${checkbox(`qa-variable-${i}`,'예상 납품 수량이 가변적일 경우 체크해주세요.',state.variable[i],`data-var="${i}"`,true)}</div>${state.variable[i]?`<div class="qa-var-range">${quantity(i,'min','최소','13')}${quantity(i,'max','최대','17')}</div>`:''}`;
- const quantities=()=>`${state.count>1?wrap('monthly',quantity(i,'monthly','월 사용량','최대 50')):''}${wrap('base',quantity(i,'base','회당 예상 납품 수량','최대 15')+variable())}`;
+ const monthly=()=>wrap('monthly',quantity(i,'monthly','월 수량','수량 입력'));const delivery=()=>wrap('base',(mode==='FLEX'?`<div class="qa-inline-pair">${quantity(i,'base','회당 예상 납품 수량','수량 입력')}${frequencyField(i)}</div>`:quantity(i,'base','회당 예상 납품 수량','수량 입력'))+variable());
  const copy=()=>individual?`<button type="button" class="qa-site-copy-action ui-copy-action" data-copy-from="${i}">다른 사업장에 설정 복사${CODE1_UI.copyIcon}</button>`:'';
  const next=()=>CODE1_UI.button({label:i===state.count-1?'입력완료':'다음 사업장 입력',action:`data-next="${i}"`,filled:i===state.count-1});
  let rows=[];if(individual)rows.push(wrap('mode',modeHTML));
  // MSG0474: presentation order and tab order share the same keyed DOM sequence.
  if(mode==='FLEX'){
-  rows.push(quantities());if(individual)rows.push(wrap('contact',scopedContacts(i)),wrap('holiday',scopedHoliday(i)));
+  rows.push(monthly(),delivery());if(individual)rows.push(wrap('contact',scopedContacts(i)),wrap('holiday',scopedHoliday(i)));
  }else if(mode==='FIXED'){
   if(individual)rows.push(wrap('process',process()));
-  rows.push(quantities());if(individual)rows.push(wrap('repeat',repeatSection(i)),wrap('contact',scopedContacts(i)),wrap('holiday',scopedHoliday(i)));
+  rows.push(monthly());if(individual)rows.push(wrap('repeat',repeatSection(i)));else if(i===0)rows.push(wrap('repeat',repeatSection()));rows.push(wrap('planning',planningFields(i)+proposalFields(i)),delivery());if(individual)rows.push(wrap('contact',scopedContacts(i)),wrap('holiday',scopedHoliday(i)));
  }else if(state.count>1){
   rows.push(wrap('once',quantity(i,'once','1회 납품량','최대 20')),wrap('date',dateSection(i)));
   if(individual)rows.push(wrap('contact',scopedContacts(i)));
@@ -290,7 +307,7 @@ function dateData(i=state.calendarSite??0){return state.datesByAllocation?.[date
 function monthDayCount(y,m){return datePolicy.days(y,m);}
 function dateValid(i=state.calendarSite??0){return datePolicy.validate(dateData(i)).valid;}
 function dateSection(i){const d=dateData(i),v=datePolicy.validate(d),error=!v.valid&&(state.attempted||state.dateTouched?.has(dateKey(i))),owner=escapeHTML(dateKey(i));
- return `<div class="qa-site-field qa-delivery-date" data-section="preferred-date" data-date-owner="${owner}"><label class="qa-site-label ui-field-title" for="${dateID(i,'day')}">납품일</label><div class="qa-date-anchor" data-date-error="${error}"><div class="qa-date-segments">${[['year','연도',2000,2100],['month','월',1,12],['day','일',1,31]].map(([part,label,min,max])=>`<input id="${dateID(i,part)}" data-date-site="${i}" data-date-part="${part}" aria-label="${escapeHTML(names[i])} 납품 ${label}" aria-describedby="${dateID(i,'error')}" type="number" inputmode="numeric" min="${min}" max="${max}" ${part==='day'?'placeholder="__"':''} value="${escapeHTML(d[part])}" aria-invalid="${error}"/><span>${part==='year'?'년':part==='month'?'월':'일'}</span>`).join('')}</div><button type="button" class="qa-calendar-trigger" id="${dateID(i,'trigger')}" data-calendar-for="${i}" aria-label="${escapeHTML(names[i])} 납품 희망일 달력 열기" aria-haspopup="dialog" aria-controls="qa-date-popover" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 2v6 M17 2v6 M3 10h18" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div><p id="${dateID(i,'error')}" class="qa-date-error qa-inline-error ui-feedback-sr" ${error?'':'hidden'}>${error?v.message:''}</p></div>`;
+ return `<div class="qa-site-field qa-delivery-date" data-section="preferred-date" data-date-owner="${owner}"><label class="qa-site-label ui-field-title" for="${dateID(i,'day')}">납품일</label><div class="qa-date-anchor" data-date-error="${error}"><div class="qa-date-segments">${[['year','연도',2000,2100],['month','월',1,12],['day','일',1,31]].map(([part,label,min,max])=>`<input id="${dateID(i,part)}" data-date-site="${i}" data-date-part="${part}" aria-label="${escapeHTML(names[i])} 납품 ${label}" aria-describedby="${dateID(i,'error')}" type="text" inputmode="numeric" ${part==='day'?'placeholder="__"':''} value="${escapeHTML(d[part])}" aria-invalid="${error}"/><span>${part==='year'?'년':part==='month'?'월':'일'}</span>`).join('')}</div><button type="button" class="qa-calendar-trigger" id="${dateID(i,'trigger')}" data-calendar-for="${i}" aria-label="${escapeHTML(names[i])} 납품 희망일 달력 열기" aria-haspopup="dialog" aria-controls="qa-date-popover" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 2v6 M17 2v6 M3 10h18" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div><p id="${dateID(i,'error')}" class="qa-date-error qa-inline-error ui-feedback-sr" ${error?'':'hidden'}>${error?v.message:''}</p></div>`;
 }
 let calendarBoundaryTimer=null;
 function calendarElement(){return $('qa-date-popover');}
@@ -377,7 +394,7 @@ function calendarKeydown(e){if(!state.calendarOpen)return false;
 function onceQuantityData(){const indexes=Array.from({length:state.count},(_,i)=>i).filter(i=>siteMode(i)==='ONCE');
  const complete=indexes.length>0&&indexes.every(i=>isValid(state.values[i]?.once));
  const total=complete?indexes.reduce((sum,i)=>sum+Number(state.values[i].once),0):null;
- return {indexes,complete,total,value:total===null?'합계 미확정':total.toLocaleString('ko-KR')+' '+unit(),siteCount:indexes.length+'개'};}
+ return {indexes,complete,total,value:total===null?'—':total.toLocaleString('ko-KR')+' '+unit(),siteCount:indexes.length+'개'};}
 
 function resultSection(){const hasRecurring=state.mode==='MIXED'?state.siteModes.some(m=>m!=='ONCE'):state.mode!=='ONCE';
  const hasOnce=state.mode==='MIXED'?state.siteModes.some(m=>m==='ONCE'):state.mode==='ONCE';
@@ -433,7 +450,7 @@ function render(){syncMonthlyFields();closeQ4Dropdown();if(state.calendarOpen)to
  const modeChoice=state.count>=2?`<section class="qa-form-section" data-section="delivery"><div class="qa-section-title ui-field-title ui-field-title--top">납품 방식 ${requiredStar}</div><div class="qa-bulk-row"><button type="button" class="qa-individual-button ui-choice" data-individual aria-pressed="${state.mode==='MIXED'}">사업장 개별 설정</button><div class="qa-bulk-dropdown">${dropdown('bulk','', ['소진 시 주문','정기 납품','1회 납품'],state.mode==='MIXED'?'사업장 일괄 설정':mName[state.mode])}</div></div></section>`:choice('납품 방식',modeChoices,state.mode,'delivery');
  const process=state.mode!=='FIXED'?'':choice('주문 진행 방식',[['contact','상호 확인 후 배송'],['auto','자동 배송']],state.process,'process');
  const contacts=contactField();
- $('q4-regular-fields').innerHTML=modeChoice+process+(isIndividual()?'':contacts)+repeatSection()+sitesSection()+extras();
+ $('q4-regular-fields').innerHTML=modeChoice+process+(isIndividual()?'':contacts)+sitesSection()+extras();q4Numeric.refresh();
  if(scroller)scroller.scrollTop=sc;
  const modal=$('q4-regular-dialog');modal.dataset.closed=String(state.dialogClosed);refreshHolidayStatus();if(isIndividual())for(let i=0;i<state.count;i++)siteHolidayMark(i);
  q4SeedCheckboxes($('q4-regular-fields'));paintWeekDemo();if(state.weeklyCheck){for(const n of [1,2,3,4])refreshWeekStatus(n);}
@@ -522,12 +539,12 @@ function renderSite(i){syncMonthlyFields();q4ValidationEpoch++;const el=$(`site-
   }
   oldForm.replaceWith(newForm);
  }else body.replaceChildren(newForm);
- if(scroll)scroll.scrollTop=oldY;q4SeedCheckboxes(newForm);paintWeekDemo();refreshStatus(i);
+ q4Numeric.refresh();if(scroll)scroll.scrollTop=oldY;q4SeedCheckboxes(newForm);paintWeekDemo();refreshStatus(i);
 }
 function renderRepeatOnly(i=null){
- const old=i===null?document.querySelector('#q4-regular-fields > .qa-repeat-section'):$(`site-${i}`)?.querySelector(`[data-site-repeat="${i}"]`);if(!old){render();return;}
+ const old=i===null?document.querySelector('#q4-regular-fields .qa-repeat-section:not([data-site-repeat])'):$(`site-${i}`)?.querySelector(`[data-site-repeat="${i}"]`);if(!old){render();return;}
  const wrapper=document.createElement('div');wrapper.innerHTML=repeatSection(i);const fresh=wrapper.firstElementChild;
- const scroll=$('q4-regular-scroll'),y=scroll?.scrollTop||0;old.replaceWith(fresh);if(scroll)scroll.scrollTop=y;q4SeedCheckboxes(fresh);paintWeekDemo();if(i!==null)refreshStatus(i);refreshResultsOnly();
+ const scroll=$('q4-regular-scroll'),y=scroll?.scrollTop||0;old.replaceWith(fresh);if(scroll)scroll.scrollTop=y;q4SeedCheckboxes(fresh);paintWeekDemo();if(i!==null)refreshStatus(i);for(let n=0;n<state.count;n++){if(siteMode(n)!=='FIXED'||i!==null&&n!==i)continue;const host=document.querySelector(`[data-site-block="planning"]:has([data-planning-reference="${n}"])`);if(host)host.innerHTML=planningFields(n)+proposalFields(n);}q4Numeric.refresh();refreshResultsOnly();
 }
 
 function changeVariant(i){
@@ -537,7 +554,7 @@ function changeVariant(i){
  const existing=form.querySelector('.qa-var-range');
  if(state.variable[i]&&!existing){const block=document.createElement('div');block.className='qa-var-range';block.innerHTML=quantity(i,'min','최소','13')+quantity(i,'max','최대','17');const control=form.querySelector('.qa-var-row');control?.after(block);}
  else if(!state.variable[i]&&existing)existing.remove();
- refreshStatus(i);refreshResultsOnly();
+ q4Numeric.refresh();refreshStatus(i);refreshResultsOnly();
 }
 
 
@@ -563,21 +580,22 @@ function selectedOption(id,val){
   closeQ4Dropdown();renderRepeatOnly(site);
   (key==='date'?document.querySelector(`[data-month-date="${id}"]`):document.querySelector(`[data-combo="${id}"]`))?.focus({preventScroll:true});return;
  }
- if(id==='bulk'){state.mode=Object.keys(mName).find(k=>mName[k]===val)||'MIXED';state.process=state.mode==='FIXED'?'contact':'shop';closeQ4Dropdown();render();return;}
+ if(id==='bulk'){state.mode=Object.keys(mName).find(k=>mName[k]===val)||'MIXED';if(state.mode==='FIXED'&&!['contact','auto'].includes(state.process))state.process='contact';closeQ4Dropdown();render();return;}
  if(id.startsWith('site-holiday-')){const m=id.match(/^site-holiday-(\d+)-(conflict|weekend|holiday|subholiday)$/);if(m)state.siteHolidays[+m[1]][m[2]]=val;}
  else if(id.startsWith('holiday-'))state.holiday[id.split('-')[1]]=val;
  else if(id.startsWith('site-mode-')){const n=Number(id.replace('site-mode-',''));state.siteModes[n]=Object.keys(mName).find(k=>mName[k]===val)||'FLEX';}
  closeQ4Dropdown();if(id.startsWith('site-holiday-')){const i=Number(id.match(/^site-holiday-(\d+)-/)[1]);q4ValidationEpoch++;const trigger=document.querySelector(`[data-combo="${id}"]`);if(trigger){trigger.querySelector('span')?.replaceChildren(document.createTextNode(val));trigger.dataset.selected=String(comboSelected(id,val));trigger.setAttribute('aria-invalid','false');trigger.focus({preventScroll:true});}siteHolidayMark(i);}else render();refreshHolidayStatus();refreshResultsOnly();
 }
-function closeProductModal(){
+function disposeProductModal(){
  q4CancelNavigation();q4ValidationEpoch++;
  if($('qa-copy-confirm'))closeCopy(false);closeQ4Dropdown();if(state.calendarOpen)toggleCalendar(false);
  const dialog=$('q4-regular-dialog');if(state.dialogClosed||!dialog.open)return;
  state.dialogClosed=true;window.OrderModalShell.close(dialog,{after:endRegularClose});
 }
+function closeProductModal(reason='cancel'){return window.OrderModalShell.requestClose($('q4-regular-dialog'),reason);}
 function openProductModal(){
  state.dialogClosed=false;const context=regularContext,original=returnFocus;
- window.OrderModalShell.open($('q4-regular-dialog'),{variant:'editor',returnFocus:()=>original?.isConnected?original:context.returnSelector?document.querySelector(context.returnSelector):document.querySelector(`[data-edit-allocation="${CSS.escape(context.allocations[context.selectedIndex||0].id)}"]`),initialFocus:()=> $('q4-regular-close')});
+ window.OrderModalShell.open($('q4-regular-dialog'),{variant:'editor',history:true,returnFocus:()=>original?.isConnected?original:context.returnSelector?document.querySelector(context.returnSelector):document.querySelector(`[data-edit-allocation="${CSS.escape(context.allocations[context.selectedIndex||0].id)}"]`),initialFocus:()=> $('q4-regular-close')});
 }
 
 function repeatValidationIssue(site=null){const r=repeatDraft(site),v=OrderRepeatContract.inspect(r),prefix=site===null?'':`site-repeat-${site}-`;if(v.valid)return null;const issue=v.issue;
@@ -593,11 +611,9 @@ function monthOwner(id){const m=id.match(/^site-repeat-(\d+)-date$/);return m?Nu
 function monthFeedback(input,{commit=false}={}){if(commit)monthEditing.delete(input.dataset.monthDate);const id=input.dataset.monthDate,site=monthOwner(id),r=repeatDraft(site),valid=OrderRepeatContract.monthValue(r.date).valid,bad=state.attempted&&!valid;
  const shell=input.closest('.qa-combo-editable');const committed=valid&&!monthEditing.has(id);shell.dataset.selected=String(committed);shell.dataset.error=String(bad);shell.querySelector('.qa-month-suffix').hidden=!committed||r.date==='말일';input.size=Math.max(1,input.value.length);input.style.setProperty('--ui-month-width',r.date==='말일'?'2em':Math.max(1,input.value.length)+'ch');input.setAttribute('aria-invalid',String(bad));const note=document.querySelector(`[data-month-error="${id}"]`);if(note)note.hidden=!bad;if(site!==null)refreshStatus(site);refreshResultsOnly();
 }
-$('q4-regular-dialog').addEventListener('beforeinput',e=>{if(e.target.matches('[data-month-date]')&&!e.isComposing&&e.inputType==='insertText'&&e.data&&!/^[0-9]+$/.test(e.data))e.preventDefault();});
-$('q4-regular-dialog').addEventListener('paste',e=>{if(e.target.matches('[data-month-date]')&&!/^[0-9]*$/.test(e.clipboardData?.getData('text')||''))e.preventDefault();});
-function acceptMonthInput(input){if(!/^[0-9]*$/.test(input.value)){input.value=input.dataset.monthPrevious||'';return;}const magnitude=input.value.replace(/^0+/,'');if(magnitude.length>2||(magnitude.length===2&&magnitude>'31'))input.value='31';input.dataset.monthPrevious=input.value;const r=repeatDraft(monthOwner(input.dataset.monthDate));r.date=input.value;r.dateMode='custom';monthEditing.add(input.dataset.monthDate);q4ValidationEpoch++;monthFeedback(input);}
+const q4Numeric=bindNumericInputs($('q4-regular-dialog'),{selector:'[data-qty],[data-date-part],[data-month-date],[data-plan-reference="year"],[data-plan-reference="month"],[data-plan-count]',options:input=>({grouped:false,allowEmpty:true,allowZero:true,maxDigits:input.dataset.qty?.endsWith(':monthly')?null:input.matches('[data-qty]')?5:input.matches('[data-month-date]')?null:input.matches('[data-plan-count]')?3:input.matches('[data-date-part=year],[data-plan-reference=year]')?4:2,clampMax:input.matches('[data-month-date]')?31:null})});
+function acceptMonthInput(input){input.dataset.monthPrevious=input.value;const r=repeatDraft(monthOwner(input.dataset.monthDate));r.date=input.value;r.dateMode='custom';monthEditing.add(input.dataset.monthDate);q4ValidationEpoch++;monthFeedback(input);}
 $('q4-regular-dialog').addEventListener('input',e=>{if(e.target.matches('[data-month-date]')&&!e.isComposing)acceptMonthInput(e.target);});
-$('q4-regular-dialog').addEventListener('compositionend',e=>{if(e.target.matches('[data-month-date]'))acceptMonthInput(e.target);});
 $('q4-regular-dialog').addEventListener('keydown',e=>{
  const input=e.target.closest('[data-month-date]');
  if(input){if(e.key==='Enter'){e.preventDefault();e.stopImmediatePropagation();monthFeedback(input,{commit:true});return;}if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeQ4Dropdown();return;}if(e.key==='ArrowDown'&&e.altKey){e.preventDefault();e.stopImmediatePropagation();openQ4Dropdown(input.dataset.monthDate);$('qa-dropdown-host')?.querySelector('button')?.focus();return;}}
@@ -610,6 +626,7 @@ function normalizeSavedRepeat(saved,a){const r=saved?clone(saved):OrderRepeatCon
 $('q4-regular-dialog').addEventListener('click',e=>{if(!state.calendarOpen||e.target.closest('#qa-date-popover')||e.target.closest('[data-calendar-for]'))return;e.preventDefault();e.stopImmediatePropagation();toggleCalendar(false);},true);
 $('q4-regular-dialog').addEventListener('focusin',()=>{if(state.calendarOpen)refreshCalendarBoundary();});
 $('q4-regular-dialog').addEventListener('click',e=>{
+ const apply=e.target.closest('[data-apply-plan]');if(apply){applyDeliveryPlan(Number(apply.dataset.applyPlan));return;}
  if(e.target.id==='qa-open'){openProductModal();return;}
 
  const trigger=e.target.closest('[data-calendar-for]');if(trigger){const i=Number(trigger.dataset.calendarFor);toggleCalendar(!(state.calendarOpen&&state.calendarSite===i),i);return;}
@@ -623,10 +640,10 @@ $('q4-regular-dialog').addEventListener('click',e=>{
  const day=e.target.closest('[data-weekday]');if(day){const [n,d]=day.dataset.weekday.split(':');toggleRepeatDay(null,Number(n),d,day);return;}
  const accB=e.target.closest('[data-acc]');if(accB){const id=accB.dataset.acc;if(id==='qa-copy-fields'){const open=accB.getAttribute('aria-expanded')!=='true';const card=document.querySelector('#qa-copy-confirm .qa-copy-card'),body=$('qa-copy-fields-body');const from=card?.getBoundingClientRect().height||0;const prior=body?.getBoundingClientRect().height||0;setOpen(id,open);const targetBody=open?(body?.scrollHeight||0):0;animateCopyCardHeight(from,from+targetBody-prior);return;}if(id==='business-parent'){state.parentOpen=!state.parentOpen;setOpen(id,state.parentOpen);}else if(id==='qa-holiday'){state.advancedOpen=!state.advancedOpen;setOpen(id,state.advancedOpen);}else if(id.startsWith('site-holiday-')){const i=Number(id.split('-').at(-1));state.siteHolidayOpen[i]=!state.siteHolidayOpen[i];setOpen(id,state.siteHolidayOpen[i]);}else if(id.startsWith('site-week-')){const m=id.match(/^site-week-(\d+)-(\d+)$/);if(m){const r=state.siteRepeat[+m[1]],n=+m[2];r.weekOpen=r.weekOpen===n?0:n;setOpen(id,r.weekOpen===n);}}else if(id.startsWith('week-')){state.weekOpen=state.weekOpen===Number(id.slice(5))?0:Number(id.slice(5));setOpen(id,state.weekOpen===Number(id.slice(5)));}else if(id.startsWith('site-')){const i=Number(id.slice(5));if(state.siteOpen===i){state.siteOpen=-1;setOpen(id,false);}else travel(i);}else if(id==='q1-ref'){setOpen(id,accB.getAttribute('aria-expanded')!=='true');}return;}
  if(e.target.closest('[data-individual]')){state.mode='MIXED';render();return;}
- const siteChoice=e.target.closest('[data-site-choice]');if(siteChoice){const i=Number(siteChoice.dataset.siteChoice);state.siteModes[i]=siteChoice.dataset.value;state.siteProcess[i]=state.siteModes[i]==='FIXED'?'contact':'shop';/* preserve existing per-site values and variable state */renderSite(i);refreshResultsOnly();travel(i);return;}
+ const siteChoice=e.target.closest('[data-site-choice]');if(siteChoice){const i=Number(siteChoice.dataset.siteChoice);state.siteModes[i]=siteChoice.dataset.value;if(state.siteModes[i]==='FIXED'&&!['contact','auto'].includes(state.siteProcess[i]))state.siteProcess[i]='contact';/* preserve existing per-site values and variable state */renderSite(i);refreshResultsOnly();travel(i);return;}
  const siteProcess=e.target.closest('[data-site-process]');if(siteProcess){const i=Number(siteProcess.dataset.siteProcess);state.siteProcess[i]=siteProcess.dataset.value;document.querySelectorAll(`[data-site-process="${i}"]`).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.value===state.siteProcess[i])));return;}
  const scday=e.target.closest('[data-site-closed-day]');if(scday){const [a,d]=scday.dataset.siteClosedDay.split(':');const i=Number(a),h=state.siteHolidays[i];h.none=false;h.irregular=false;h.days=h.days.includes(d)?h.days.filter(x=>x!==d):[...h.days,d];document.querySelectorAll(`[data-site-closed-day^="${i}:"]`).forEach(el=>el.setAttribute('aria-pressed',String(h.days.includes(el.dataset.siteClosedDay.split(':')[1]))));const none=$(`qa-holiday-none-site-${i}`),irr=$(`qa-holiday-irregular-site-${i}`);if(none)none.checked=false;if(irr)irr.checked=false;q4ValidationEpoch++;siteHolidayMark(i);return;}
- if(e.target.id==='qa-copy-confirm'){closeCopy();return;}
+ if(e.target.id==='qa-copy-confirm')return;
  const copy=e.target.closest('[data-copy-from]');if(copy){requestCopy(Number(copy.dataset.copyFrom));return;}
  if(e.target.closest('[data-copy-cancel]')){closeCopy();return;}
  if(e.target.closest('[data-copy-apply]')){applyCopy();return;}
@@ -634,7 +651,7 @@ $('q4-regular-dialog').addEventListener('click',e=>{
  if(e.target.closest('[data-global-holiday-done]')){if(!holidayComplete()){exposeHolidayInvalid();return;}state.advancedOpen=false;navigateAfterAccordionLayout([setOpen('qa-holiday',false)],()=>document.querySelector('[data-section="results"]'),{result:true});return;}
  const holidayDone=e.target.closest('[data-site-holiday-done]');if(holidayDone){completeSiteHoliday(Number(holidayDone.dataset.siteHolidayDone));return;}
  const next=e.target.closest('[data-next]');if(next){nextSite(Number(next.dataset.next));return;}
- const choice=e.target.closest('[data-choice]');if(choice){const k=choice.dataset.choice,v=choice.dataset.value;if(k==='delivery'){state.mode=v;state.process=v==='FIXED'?'contact':'shop';state.drop=null;render();}if(k==='process'){state.process=v;document.querySelectorAll('[data-choice="process"]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===v)));}return;}
+ const choice=e.target.closest('[data-choice]');if(choice){const k=choice.dataset.choice,v=choice.dataset.value;if(k==='delivery'){state.mode=v;if(v==='FIXED'&&!['contact','auto'].includes(state.process))state.process='contact';state.drop=null;render();}if(k==='process'){state.process=v;document.querySelectorAll('[data-choice="process"]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===v)));}return;}
  if(e.target.id==='q4-regular-save'){saveRegularDraft();return;}
  if(e.target.closest('#q4-regular-cancel,#q4-regular-close')){closeProductModal();return;}
 
@@ -653,13 +670,14 @@ $('q4-regular-dialog').addEventListener('change',e=>{const el=e.target;if(!el.ma
  else if('quality' in el.dataset)state.quality=el.checked;
  else if('var' in el.dataset){const i=Number(el.dataset.var);state.variable[i]=el.checked;changeVariant(i);}
 });
-$('q4-regular-dialog').addEventListener('input',e=>{const el=e.target;if(el.dataset.datePart){const i=Number(el.dataset.dateSite),k=el.dataset.datePart;state.datesByAllocation[dateKey(i)][k]=el.value===''?'':Number(el.value);state.dateTouched.add(dateKey(i));syncDateFields(i);return;}if(el.matches('[data-qty]')){const [i,k]=el.dataset.qty.split(':');state.values[Number(i)][k]=el.value;if(k==='monthly'){monthlyEditor?.set(monthlyLocation(Number(i)),el.value,{composing:e.isComposing});syncMonthlyFields();}refreshStatus(Number(i));refreshResultsOnly();syncRegularQuantityErrors(Number(i));if(state.attempted){const ok=!q4QuantityInvalid(Number(i),k),g=el.closest('.qa-field');g.dataset.error=String(!ok);el.setAttribute('aria-invalid',String(!ok));const msg=g.querySelector('.qa-inline-error');if(msg)msg.hidden=ok;}}
+$('q4-regular-dialog').addEventListener('input',e=>{const el=e.target;if(el.dataset.planReference){const i=Number(el.dataset.planSite),key=el.dataset.planReference;state.planningReferences[i][key]=key==='anchorDate'?el.value:el.value===''?'':Number(el.value);refreshResultsOnly();return;}if(el.dataset.planCount!==undefined){state.nominalVisitCounts[Number(el.dataset.planCount)]=el.value;refreshResultsOnly();return;}if(el.dataset.datePart){const i=Number(el.dataset.dateSite),k=el.dataset.datePart;state.datesByAllocation[dateKey(i)][k]=el.value===''?'':Number(el.value);state.dateTouched.add(dateKey(i));syncDateFields(i);return;}if(el.matches('[data-qty]')){const [i,k]=el.dataset.qty.split(':');state.values[Number(i)][k]=el.value;if(k==='base')state.qtySources[Number(i)]='user';if(k!=='monthly')state.deliveryPlans[Number(i)]=null;if(k==='monthly'){monthlyEditor?.set(monthlyLocation(Number(i)),el.value,{composing:e.isComposing});syncMonthlyFields();}refreshStatus(Number(i));refreshResultsOnly();syncRegularQuantityErrors(Number(i));if(state.attempted){const ok=!q4QuantityInvalid(Number(i),k),g=el.closest('.qa-field');g.dataset.error=String(!ok);el.setAttribute('aria-invalid',String(!ok));const msg=g.querySelector('.qa-inline-error');if(msg)msg.hidden=ok;}}
  if(el.id==='qa-request'){state.request=el.value;const count=$('qa-request-count');if(count)count.textContent=state.request.length+'/120';}
  if(el.dataset.siteRequest!==undefined){const i=Number(el.dataset.siteRequest);state.siteHolidays[i].request=el.value;const count=$('qa-request-site-'+i+'-count');if(count)count.textContent=el.value.length+'/120';}
 });
 
-$('q4-regular-dialog').addEventListener('compositionstart',e=>{if(e.target.dataset.qty?.endsWith(':monthly')){const i=Number(e.target.dataset.qty.split(':')[0]);monthlyEditor?.set(monthlyLocation(i),e.target.value,{composing:true});}});
-$('q4-regular-dialog').addEventListener('compositionend',e=>{if(e.target.dataset.qty?.endsWith(':monthly')){const i=Number(e.target.dataset.qty.split(':')[0]);monthlyEditor?.set(monthlyLocation(i),e.target.value);syncMonthlyFields();}});
+$('q4-regular-dialog').addEventListener('numericstatechange',()=>{if(regularContext)refreshResultsOnly();});
+$('q4-regular-dialog').addEventListener('compositionstart',e=>{if(e.target.matches('[data-qty],[data-date-part],[data-plan-reference],[data-plan-count],[data-month-date]')){numericComposing.add(e.target);refreshQuantitySupport();}});
+$('q4-regular-dialog').addEventListener('compositionend',e=>{numericComposing.delete(e.target);refreshQuantitySupport();});
 $('q4-regular-dialog').addEventListener('focusout',e=>{if(e.target.dataset.qty?.endsWith(':monthly')){monthlyEditor?.refresh();syncMonthlyFields();}});
 // MSG0441: navigating to another field must never auto-collapse the current business accordion.
 $('q4-regular-dialog').addEventListener('keydown',e=>{if(calendarKeydown(e))return;if(e.key==='Enter'&&$('qa-copy-confirm')&&e.target.closest('#qa-copy-confirm')&&!e.target.matches('button')&&!e.target.matches('input[type=checkbox]')){e.preventDefault();if(copyEligibility().valid)applyCopy();else validateCopyAttempt();return;}if(e.key==='Tab'&&$('qa-copy-confirm')){const host=$('qa-copy-confirm');const items=[...host.querySelectorAll('button:not(:disabled),input:not(:disabled),summary,[tabindex]')].filter(el=>el.getClientRects().length>0&&el.tabIndex>=0);if(items.length){const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}else if(!host.contains(document.activeElement)){e.preventDefault();first.focus();}}return;}if(e.key==='Tab'&&!state.dialogClosed&&!state.calendarOpen){const roots=$('q4-regular-dialog');const items=[...roots.querySelectorAll('.q4-regular-dialog button:not(:disabled),.q4-regular-dialog input:not([disabled]),.q4-regular-dialog textarea:not([disabled])')].filter(x=>x.getClientRects().length && !x.closest('[hidden]'));if(items.length){let first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}}if(e.key==='Escape'){e.preventDefault();if($('qa-copy-confirm')){closeCopy();return;}if(state.calendarOpen){e.preventDefault();toggleCalendar(false);return;}if(state.drop){const old=state.drop;closeQ4Dropdown();document.querySelector(`[data-combo="${old}"]`)?.focus({preventScroll:true});}else if(!state.dialogClosed){closeProductModal();}return;}
@@ -669,13 +687,11 @@ $('q4-regular-scroll')?.addEventListener('scroll',()=>{if(state.drop)positionQ4D
 
 
 
-window.OrderModalShell.bind($('q4-regular-dialog'),()=>{
- if($('qa-copy-confirm')){closeCopy();return;}if(state.calendarOpen){toggleCalendar(false);return;}
- if(state.drop){const old=state.drop;closeQ4Dropdown();document.querySelector(`[data-combo="${old}"]`)?.focus({preventScroll:true});return;}closeProductModal();
-});
+window.OrderModalShell.bind($('q4-regular-dialog'),disposeProductModal,{editable:true,isDirty:()=>!!regularContext&&dirtyFingerprint()!==dirtyBaseline,onExitIntent:()=>{commitEpoch++;commitAttempt++;committing=false;},beforeClose:()=>{if($('qa-copy-confirm')){closeCopy();return false;}if(state.calendarOpen){toggleCalendar(false);return false;}if(state.drop){const old=state.drop;closeQ4Dropdown();document.querySelector(`[data-combo="${old}"]`)?.focus({preventScroll:true});return false;}return true;}});
 
 // MSG0460 real-state adapter. This module never writes regular state directly.
-let regularContext=null,returnFocus=null,opening=false,committing=false;
+let regularContext=null,returnFocus=null,opening=false,committing=false,commitEpoch=0,commitAttempt=0,dirtyBaseline="";
+function dirtyFingerprint(){const values=serializedAllocations(true);for(const a of values){delete a.monthlyAllocationDraftRevision;for(const r of [a.q4Review?.common?.repeat,a.q4Review?.draft?.repeat,a.q4Review?.activeRepeat])if(r)delete r.weekOpen;}return JSON.stringify(values);}
 const clone=x=>JSON.parse(JSON.stringify(x));
 const optionToCode={'선택 안 함':'','협의 후 조정':'ask','휴무 전일 희망':'previous','휴무 다음날 희망':'next','공급사와 별도 협의':'negotiate'};
 const legacyPolicyLabels={conflict:{ask:'협의 후 조정',skip:'휴무일 납품 제외',deliver:'휴무일에도 납품'},weekend:{ask:'협의 후 조정',skip:'주말 제외',allow:'토·일 납품 가능'},holiday:{ask:'협의 후 조정',skip:'공휴일 제외',allow:'공휴일에도 납품'},subholiday:{ask:'협의 후 조정',skip:'대체공휴일 제외',allow:'대체공휴일에도 납품'}};
@@ -686,25 +702,26 @@ function allocationHoliday(a){if(a.q4Review?.activeHoliday)return clone(a.q4Revi
 function allocationRepeat(a){return OrderRepeatContract.fromAllocation(a);}
 function allocationContacts(a){return Object.fromEntries(['phone','sms','kakao','email'].map(k=>[k,(a.advanced?.contactChannels||[]).includes(k)]));}
 function initializeFromRegular(context){
- monthEditing.clear();context=clone(context);for(const a of context.allocations){if(a.q4Review?.pack&&String(a.q4Review.pack)!==String(context.line.pack)){a.qty='';a.oneTimeDeliveryQty='';a.monthlyDemandQty='';a.qtyMin='';a.qtyMax='';if(a.q4Review.draft)a.q4Review.draft.values={};}}
+ commitEpoch++;monthEditing.clear();numericComposing.clear();context=clone(context);for(const a of context.allocations){if(a.q4Review?.pack&&String(a.q4Review.pack)!==String(context.line.pack)){a.qty='';a.oneTimeDeliveryQty='';a.monthlyPlanQty='';a.qtyMin='';a.qtyMax='';if(a.q4Review.draft)a.q4Review.draft.values={};}}
  regularContext=clone(context);names.splice(0,names.length,...context.locations.map(x=>x.name));holidayValidationAttempt.clear();q4ValidationEpoch++;q4CancelNavigation();
  const first=context.allocations[0],count=context.allocations.length;
- const profile=count===1?(first.mode||'FLEX'):(first.q4Review?.profile||'MIXED');
+ const {profile,modes:restoredModes,sites:restoredSites,common}=restoredDeliverySettings(context.allocations,{holidayFromAllocation:allocationHoliday,repeatFromAllocation:allocationRepeat});
  const baseDate=datePolicy.today();
  Object.assign(state,{count,mode:profile,pack:String(context.line.pack),stage:'INPUT',attempted:false,parentOpen:true,siteOpen:Math.max(0,context.selectedIndex),advancedOpen:false,weekOpen:1,copySource:null,copyTargets:[],copyFields:null,drop:null,dialogClosed:true,calendarOpen:false,estimate:null,
   datesByAllocation:Object.fromEntries(context.allocations.map(a=>[JSON.stringify([context.line.id,a.id]),clone(a.q4Review?.deliveryDate||datePolicy.blank())])),dateTouched:new Set(),calendarSite:null,calendarView:{year:baseDate.year,month:baseDate.month},
-  values:context.allocations.map(a=>{const saved=a.q4Review?.draft?.values||{};const active=a.mode==='ONCE'?{once:String(a.oneTimeDeliveryQty??a.qty??'')}:{base:String(a.qty??''),monthly:String(count===1?context.line.qty:a.monthlyDemandQty??''),min:String(a.qtyMin??''),max:String(a.qtyMax??'')};return {...saved,...active};}),
+  values:context.allocations.map(a=>{const saved=a.q4Review?.draft?.values||{};const active=a.mode==='ONCE'?{once:String(a.oneTimeDeliveryQty??a.qty??'')}:{base:String(a.qty??''),monthly:String(a.monthlyPlanQty??''),min:String(a.qtyMin??''),max:String(a.qtyMax??'')};return {...saved,...active};}),
+  planningReferences:context.allocations.map(a=>clone(a.planningReference||{year:baseDate.year,month:baseDate.month,anchorDate:'',nominal:true})),nominalVisitCounts:context.allocations.map(a=>a.nominalVisitCount||''),deliveryPlans:context.allocations.map(a=>clone(a.deliveryPlan||null)),deliveryPlanFingerprints:Array(count).fill(''),qtySources:context.allocations.map(a=>a.qtySource||'user'),
   variable:context.allocations.map(a=>a.mode==='ONCE'?!!a.q4Review?.draft?.variable:!!a.variableQty),
-  siteModes:context.allocations.map(a=>a.q4Review?.draft?.mode||a.mode||'FLEX'),
-  siteProcess:context.allocations.map(a=>a.q4Review?.draft?.process||(a.advanced?.fixedOrderProcess==='auto'?'auto':'contact')),
-  siteContacts:context.allocations.map(a=>clone(a.q4Review?.draft?.contact||allocationContacts(a))),
-  siteHolidays:context.allocations.map(a=>clone(a.q4Review?.draft?.holiday||allocationHoliday(a))),
-  siteHolidayOpen:Array(count).fill(false),siteRepeat:context.allocations.map(a=>normalizeSavedRepeat(a.q4Review?.draft?.repeat, a)),siteQuality:context.allocations.map(a=>!!(a.q4Review?.draft?.quality??a.qualityTest))});
- const common=clone(first.q4Review?.common||{}),h=common.holiday||allocationHoliday(first),r=normalizeSavedRepeat(common.repeat,first);
- Object.assign(state,{contact:common.contact||allocationContacts(first),process:common.process||(first.advanced?.fixedOrderProcess==='auto'?'auto':'contact'),quality:!!(common.quality??first.qualityTest),period:r.period,frequency:r.frequency,date:r.date,dateMode:r.dateMode,semantics:r.semantics,legacyReviewRequired:!!r.legacyReviewRequired,legacyOriginal:r.legacyOriginal,weeklyCheck:r.weeklyCheck,weekdays:r.weekdays,weekOpen:r.weekOpen||0,
+  siteModes:restoredModes,
+  siteProcess:restoredSites.map(site=>site.process),
+  siteContacts:restoredSites.map(site=>clone(site.contact)),
+  siteHolidays:restoredSites.map(site=>clone(site.holiday)),
+  siteHolidayOpen:Array(count).fill(false),siteRepeat:restoredSites.map((site,i)=>normalizeSavedRepeat(site.repeat,context.allocations[i])),siteQuality:restoredSites.map(site=>site.quality)});
+ const h=common.holiday,r=normalizeSavedRepeat(common.repeat,first);
+ Object.assign(state,{contact:common.contact,process:common.process,quality:common.quality,period:r.period,frequency:r.frequency,date:r.date,dateMode:r.dateMode,semantics:r.semantics,legacyReviewRequired:!!r.legacyReviewRequired,legacyOriginal:r.legacyOriginal,weeklyCheck:r.weeklyCheck,weekdays:r.weekdays,weekOpen:r.weekOpen||0,
   holidayDays:[...h.days],holidayNone:h.none,holidayIrregular:h.irregular,holiday:{closed:'',conflict:h.conflict,weekend:h.weekend,holiday:h.holiday,subholiday:h.subholiday},request:h.request});
- monthlyEditor=createMonthlyAllocationDraft(context,{readCurrentContext:()=>window.OrderRegularQ4Bridge.allocationContext?.(context.line.id)||context});syncMonthlyFields();
- returnFocus=document.activeElement;render();openProductModal();fitAllResultNumbers();
+ monthlyEditor=createMonthlyAllocationDraft(context,{readCurrentContext:()=>window.OrderRegularQ4Bridge.allocationContext?.(context.line.id)||context});restoreAcceptedPlans();syncMonthlyFields();
+ returnFocus=document.activeElement;render();dirtyBaseline=dirtyFingerprint();openProductModal();fitAllResultNumbers();
 }
 function serializedAllocations(forReview=false){const patches=regularContext.allocations.map((original,i)=>{
  const a=clone(original),m=siteMode(i),v=state.values[i],r=isIndividual()?state.siteRepeat[i]:state;
@@ -712,17 +729,17 @@ function serializedAllocations(forReview=false){const patches=regularContext.all
  const c=isIndividual()?state.siteContacts[i]:state.contact,process=isIndividual()?state.siteProcess[i]:state.process;
  const period=r.period==='매월'?0:r.period==='매주'?1:parseInt(r.period,10);
  const plans=Array.from({length:period===0?0:Math.max(1,period)},(_,w)=>({weekdays:['월','화','수','목','금','토','일'].filter(d=>r.weekdays?.[`${w+1}:${d}`])}));
- Object.assign(a,{mode:m,modeExplicit:true,qty:String(m==='ONCE'?v.once??'':v.base??''),qtySource:'user',variableQty:m!=='ONCE'&&!!state.variable[i],qtyMin:m!=='ONCE'&&state.variable[i]?v.min??'':'',qtyMax:m!=='ONCE'&&state.variable[i]?v.max??'':'',qualityTest:!!state.siteQuality[i]});
- if(m==='ONCE')a.oneTimeDeliveryQty=String(v.once??'');else a.monthlyDemandQty=state.count===1?String(regularContext.line.qty):String(v.monthly??'');
+ Object.assign(a,{mode:m,modeExplicit:true,qty:String(m==='ONCE'?v.once??'':v.base??''),qtySource:state.qtySources[i],deliveryQtyUnit:state.pack==='30'?'tray':'pack',variableQty:m!=='ONCE'&&!!state.variable[i],qtyMin:m!=='ONCE'&&state.variable[i]?v.min??'':'',qtyMax:m!=='ONCE'&&state.variable[i]?v.max??'':'',qualityTest:!!state.siteQuality[i]});
+ if(m==='ONCE')a.oneTimeDeliveryQty=String(v.once??'');a.planningReference=clone(state.planningReferences[i]);a.nominalVisitCount=String(state.nominalVisitCounts[i]||'');delete a.deliveryPlan;if(state.deliveryPlans[i]&&state.deliveryPlanFingerprints[i]===proposalFingerprint(i))a.deliveryPlan=clone(state.deliveryPlans[i]);
  if(m==='FIXED'){const packed=OrderRepeatContract.serialize(r);if(!packed.ok&&!forReview)throw new Error(packed.issue.message);if(packed.ok)Object.assign(a,packed.value);}
- a.advanced={...(a.advanced||{}),contactChannels:Object.keys(c).filter(k=>c[k]),fixedOrderProcess:process==='auto'?'auto':'seller',flexOrderProcess:'store',orderProcess:process==='auto'?'auto':'seller',storeOffDays:[...h.days],storeOffNone:!!h.none,storeOffIrregular:!!h.irregular,storeOffPolicy:legacyPolicy(h.conflict,'conflict'),weekend:legacyPolicy(h.weekend,'weekend'),holiday:legacyPolicy(h.holiday,'holiday'),substituteHoliday:legacyPolicy(h.subholiday,'subholiday'),memo:h.request||''};
- a.q4Review={version:'0460',pack:String(regularContext.line.pack),profile:state.mode,activeHoliday:clone(h),activeRepeat:OrderRepeatContract.snapshot(r),deliveryDate:clone(dateData(i)),
+ a.advanced={...(a.advanced||{}),contactChannels:Object.keys(c).filter(k=>c[k]),...(m==='FIXED'?{fixedOrderProcess:process==='auto'?'auto':'seller',orderProcess:process==='auto'?'auto':'seller'}:m==='FLEX'?{flexOrderProcess:'store',orderProcess:'store'}:{}),...(m!=='ONCE'?{storeOffDays:[...h.days],storeOffNone:!!h.none,storeOffIrregular:!!h.irregular,storeOffPolicy:legacyPolicy(h.conflict,'conflict'),weekend:legacyPolicy(h.weekend,'weekend'),holiday:legacyPolicy(h.holiday,'holiday'),substituteHoliday:legacyPolicy(h.subholiday,'subholiday'),memo:h.request||''}:{})};
+ a.q4Review={version:'0460',pack:String(regularContext.line.pack),profile:state.mode,activeHoliday:m==='ONCE'?clone(original.q4Review?.activeHoliday||h):clone(h),activeRepeat:m==='FIXED'?OrderRepeatContract.snapshot(r):clone(original.q4Review?.activeRepeat||OrderRepeatContract.snapshot(r)),deliveryDate:clone(dateData(i)),
   common:{contact:clone(state.contact),process:state.process,quality:state.quality,holiday:{days:[...state.holidayDays],none:state.holidayNone,irregular:state.holidayIrregular,...state.holiday,request:state.request},repeat:OrderRepeatContract.snapshot(state)},
   draft:{mode:state.siteModes[i],process:state.siteProcess[i],values:clone(v),variable:state.variable[i],contact:clone(state.siteContacts[i]),holiday:clone(state.siteHolidays[i]),repeat:OrderRepeatContract.snapshot(state.siteRepeat[i]),quality:state.siteQuality[i]}};
  return a;
 });return monthlyEditor?monthlyEditor.serialize(patches):patches;}
 function validateForSave(){
- state.attempted=true;render();const globalIssue=q4GlobalValidationIssue();if(globalIssue){q4RevealGlobalIssue(globalIssue);return false;}
+ if(numericComposing.size||q4Numeric.inspect?.().valid===false)return false;for(let i=0;i<state.count;i++){if(siteMode(i)!=='FIXED')continue;const ref=state.planningReferences[i],count=state.nominalVisitCounts[i];if(!Number.isInteger(ref.year)||ref.year<2000||ref.year>2100||!Number.isInteger(ref.month)||ref.month<1||ref.month>12){showCommitError({message:'참조월을 확인해 주세요.'});return false;}if(count!==''&&(!/^[1-9]\d*$/.test(count)||Number(count)>366)){showCommitError({message:'월 예상 횟수는 1~366의 정수로 입력해 주세요.'});return false;}}state.attempted=true;render();const globalIssue=q4GlobalValidationIssue();if(globalIssue){q4RevealGlobalIssue(globalIssue);return false;}
  const modes=Array.from({length:state.count},(_,i)=>siteMode(i));if(modes.some(m=>m!=='ONCE')&&!monthlyEditor?.evaluate().normalized?.canConfirm){showCommitError({message:'사업장별 월 사용량 합계를 전체 월 사용량에 맞춰 주세요.'});return false;}
  const bad=Array.from({length:state.count},(_,i)=>i).find(i=>status(i,true)!=='complete');
  if(bad!==undefined){if(state.count>1)travel(bad);invalid(bad);return false;}
@@ -730,37 +747,47 @@ function validateForSave(){
  return true;
 }
 function showCommitError(result){let p=$('q4-commit-error');if(!p){p=document.createElement('p');p.id='q4-commit-error';p.className='ui-error';p.setAttribute('role','alert');$('q4-regular-fields').prepend(p);}p.classList.toggle('ui-feedback-sr',!!result.issues?.length);p.textContent=result.message||'입력값을 확인해 주세요.';p.setAttribute('tabindex','-1');p.focus({preventScroll:true});$('q4-regular-scroll').scrollTop=0;}
-async function saveRegularDraft(){if(committing||state.dialogClosed)return;committing=true;
+async function saveRegularDraft(){if(committing||state.dialogClosed)return;const attempt=++commitAttempt;committing=true;
  try{
   if(!validateForSave())return;
   const context=regularContext,patches=serializedAllocations(),fingerprint=JSON.stringify(patches);
-  const sameEditor=()=>regularContext===context&&!state.dialogClosed;
+  const epoch=commitEpoch;const sameEditor=()=>regularContext===context&&!state.dialogClosed;
   // Users can keep editing or cancel while storage waits for another tab.
   // Only the exact reviewed draft may cross the durable write boundary.
-  const canCommit=()=>{if(!sameEditor())return false;try{return JSON.stringify(serializedAllocations())===fingerprint;}catch{return false;}};
+  const canCommit=()=>{if(!sameEditor()||commitEpoch!==epoch||q4Numeric.inspect?.().valid===false||numericComposing.size)return false;try{return JSON.stringify(serializedAllocations())===fingerprint;}catch{return false;}};
   const prepared=monthlyEditor?.confirm({allocations:patches});
   if(!prepared?.ok){showCommitError(prepared||{message:'월 사용량을 확인해 주세요.'});return;}
   const result=await window.OrderRegularQ4Bridge.commit(prepared.allocations,null,canCommit);
-  if(!sameEditor())return;
-  if(result.ok)closeProductModal();
+  if(!sameEditor()||epoch!==commitEpoch||attempt!==commitAttempt)return;
+  if(result.ok)disposeProductModal();
   else if(!result.confirmation)showCommitError(result.status==='CANCELLED'&&!canCommit()?{message:'입력값이 변경되었습니다. 다시 저장해 주세요.'}:result);
- }finally{committing=false;}}
+ }finally{if(attempt===commitAttempt)committing=false;}}
 function monthlyResultData(){
- const usageValid=!!regularContext?.line&&validMonthlyQuantity(regularContext.line);
- const base={usage:usageValid?monthlyQuantityText(regularContext.line):'미확정',value:'미확정',comparison:'pending',status:'예상 수량 미확정',complete:false};
- // Original regular contract intentionally leaves multi-allocation forecasts unresolved.
- if(state.count!==1||siteMode(0)==='ONCE')return base;
- const r=state.siteRepeat[0],repeat=isIndividual()?r:state;
- const data=window.OrderRegularQ4Bridge.forecast({allocation:{...regularContext.allocations[0],mode:siteMode(0)},quantity:state.values[0].base,rangeMin:state.values[0].min,rangeMax:state.values[0].max,variable:state.variable[0],repeat:OrderRepeatContract.snapshot(repeat),period:repeat.period,frequency:repeat.frequency,date:repeat.date,monthly:regularContext.line.qty});
- if(!data)return base;if(data.resolved===false)return {...base,status:data.status||base.status};
- return {...base,...data,value:data.low===data.high?data.low.toLocaleString('ko-KR'):`${data.low.toLocaleString('ko-KR')} ~ ${data.high.toLocaleString('ko-KR')}`,complete:true};
+ const usageValid=!!regularContext?.line&&validMonthlyQuantity(regularContext.line),indexes=Array.from({length:state.count},(_,i)=>i).filter(i=>siteMode(i)!=='ONCE');
+ const base={usage:usageValid?monthlyQuantityText(regularContext.line):'—',value:'—',comparison:'pending',status:'예상 수량 확인 전',complete:false};
+ if(!indexes.length||numericComposing.size)return base;
+ const values=[],entries=[];
+ for(const i of indexes){
+  const entry={reference:state.planningReferences[i],value:null};entries.push(entry);
+  if(siteMode(i)==='FLEX')continue;
+  const input=supportInput(i),visits=repeatVisitPlan(input.repeat,input.reference,input.count);if(!visits.resolved)continue;
+  const accepted=state.deliveryPlans[i]&&state.deliveryPlanFingerprints[i]===proposalFingerprint(i)?state.deliveryPlans[i]:null;
+  const value=accepted?{low:toJSON(exact(accepted.monthlyPlan)),high:toJSON(exact(accepted.monthlyPlan))}:nominalQuantity({...input,visits:visits.visits});
+  if(value){values.push(value);entry.value=value;}
+ }
+ if(!values.length)return {...base,status:indexes.every(i=>siteMode(i)==='FLEX')?'소진 시 주문 · 월평균 빈도는 회당 수량 옆에서 확인':'예상 수량 확인 전'};
+ const scope=sumNominalByReference(entries);if(!scope.sameReference)return {...base,status:'사업장별 참조월을 같은 월로 맞춰 주세요.'};
+ const sum=scope.total,low=exactDisplay(toJSON(sum.low)),high=exactDisplay(toJSON(sum.high));
+ const complete=scope.complete,plan=monthlyEditor?.evaluate().normalized?.planSumPacks;let comparison='pending',status=complete?'참조월 예상 · 휴무 조정 전':`${values.length}/${indexes.length}개 사업장 부분합 · 휴무 조정 전`;
+ if(complete&&plan){const p=fromRatio(plan);comparison=compare(sum.low,p)===0&&compare(sum.high,p)===0?'match':compare(sum.high,p)<0?'short':compare(sum.low,p)>0?'over':'range';}
+ return {...base,value:low===high?low:`${low} ~ ${high}`,comparison,status,complete};
 }
 function Q4ResultSummary(mode,monthly,once){
- const card=(kind,title,number)=>`<article class="q4-result-card" data-card-kind="${kind}"><div class="q4-result-card-title">${title}</div><div class="q4-result-number-row"><span class="q4-result-number" data-result-value="${kind}" data-pending="${number==='미확정'||number==='합계 미확정'}">${escapeHTML(number)}</span>${kind==='once'?`<span class="q4-result-once-unit" aria-hidden="true">${unit()}</span>`:''}</div><div class="q4-result-card-foot">${kind==='once'?`<span data-result-count>${once?.indexes.length||0}개 사업장</span>`:`${kind==='usage'?quantityLabel(regularContext.line):unit()} / 월`}</div></article>`;
- const onceValue=once?.complete?once.total.toLocaleString('ko-KR'):'합계 미확정';
+ const card=(kind,title,number)=>`<article class="q4-result-card" data-card-kind="${kind}"><div class="q4-result-card-title">${title}</div><div class="q4-result-number-row"><span class="q4-result-number" data-result-value="${kind}" data-pending="${number==='—'}">${escapeHTML(number)}</span>${kind==='once'?`<span class="q4-result-once-unit" aria-hidden="true">${unit()}</span>`:''}</div><div class="q4-result-card-foot">${kind==='once'?`<span data-result-count>${once?.indexes.length||0}개 사업장</span>`:`${kind==='usage'?quantityLabel(regularContext.line):unit()} / 월`}</div></article>`;
+ const onceValue=once?.complete?once.total.toLocaleString('ko-KR'):'—';
  return `<section class="qa-form-section q4-result-section" data-section="results" data-summary-mode="${mode}" aria-label="납품 예상 요약"><h3 class="qa-result-heading" tabindex="-1">${mode==='both'?'납품 예상 요약':mode==='monthly'?'월간 납품 예상':'1회 납품 예상'}</h3><div class="q4-result-grid">${monthly?card('usage','기존 사용량',monthly.usage)+card('monthly','월간 납품 예상',monthly.value):''}${once?card('once','1회 납품',onceValue):''}${monthly?`<div class="q4-result-comparison" data-result-status data-comparison="${monthly.comparison}">${escapeHTML(monthly.status)}</div>`:''}</div></section>`;
 }
-function refreshResultsOnly(){const host=$('q4-regular-fields');if(!host)return;const t=document.createElement('template');t.innerHTML=resultSection();const fresh=t.content.firstElementChild,current=host.querySelector(':scope > [data-section="results"]');
+function refreshResultsOnly(){refreshQuantitySupport();const host=$('q4-regular-fields');if(!host)return;const t=document.createElement('template');t.innerHTML=resultSection();const fresh=t.content.firstElementChild,current=host.querySelector(':scope > [data-section="results"]');
  if(!fresh){current?.remove();return;}if(!current){host.append(fresh);observeResults();return;}
  if(current.dataset.summaryMode!==fresh.dataset.summaryMode){current.dataset.summaryMode=fresh.dataset.summaryMode;current.replaceChildren(...fresh.childNodes);observeResults();return;}
  for(const s of ['[data-result-value="usage"]','[data-result-value="monthly"]','[data-result-value="once"]','[data-result-count]','[data-result-status]']){const a=current.querySelector(s),b=fresh.querySelector(s);if(a&&b){if(a.textContent!==b.textContent)a.textContent=b.textContent;for(const k of ['pending','comparison'])if(b.dataset[k]!==undefined)a.dataset[k]=b.dataset[k];}}
@@ -798,7 +825,7 @@ function invalidateResultFonts(){document.querySelectorAll('#q4-regular-dialog .
 if(document.fonts){document.fonts.ready.then(invalidateResultFonts);document.fonts.addEventListener('loadingdone',invalidateResultFonts);}
 function setRegularGutter(){window.OrderModalShell.sync();}
 function endRegularClose(){monthlyEditor?.cancel();monthlyEditor=null;cancelAnimationFrame(popupBadgeFrame);popupBadgeFrame=0;resultObserver?.disconnect();window.OrderRegularQ4Bridge.closed();regularContext=null;}
-window.OrderQ4Review=Object.freeze({open:initializeFromRegular,close:closeProductModal,validate:validateForSave,commitError:showCommitError,
+window.OrderQ4Review=Object.freeze({open:initializeFromRegular,close:closeProductModal,complete:disposeProductModal,validate:validateForSave,commitError:showCommitError,
  get allocation(){return monthlyEditor?clone({evaluation:monthlyEditor.evaluate(),rows:monthlyEditor.rows,revision:monthlyEditor.session?.revision}):null;},get draft(){return regularContext?clone(state):null;},get serialized(){return regularContext?serializedAllocations():null;},get context(){return regularContext?clone(regularContext):null;}});
 // Global/single-site holiday view uses the same group-owned feedback as the preserved per-site view.
 function refreshHolidayStatus(){const p=$('qa-holiday');if(!p)return;const st=holidayStatus();p.dataset.state=st;p.dataset.complete=String(st==='complete');p.dataset.error=String(st==='error');

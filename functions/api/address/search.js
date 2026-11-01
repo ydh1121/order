@@ -8,7 +8,7 @@ const RESPONSE_BYTES = 65536;
 const HEADERS = {'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'};
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const boundedString = (value,max,required=false) => typeof value === 'string' && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value) && (!required || value.trim().length > 0);
-const fail = (reason,status=503) => new Response(JSON.stringify({version:1,status:status===400?'INVALID_REQUEST':'UNAVAILABLE',reason,items:[]}),{status,headers:HEADERS});
+const fail = (reason,status=503,providerCode=null) => new Response(JSON.stringify({version:1,status:status===400?'INVALID_REQUEST':'UNAVAILABLE',reason,items:[],...(typeof providerCode==='string'&&/^E[0-9]{4}$/.test(providerCode)?{providerCode}:{})}),{status,headers:HEADERS});
 
 async function boundedText(body,max) {
  if(Number(body.headers?.get('content-length')) > max) throw new Error('BODY_LIMIT');
@@ -31,7 +31,7 @@ function normalizeProvider(payload,page) {
  const result=payload?.results,common=result?.common;
  if(!plain(result)||!plain(common)||typeof common.errorCode!=='string')throw new Error('BAD_RESPONSE');
  // Do not echo provider messages: they may contain submitted data or key values.
- if(common.errorCode!=='0')throw new Error('PROVIDER_ERROR');
+ if(common.errorCode!=='0'){const error=new Error('PROVIDER_ERROR');if(/^E[0-9]{4}$/.test(common.errorCode))error.providerCode=common.errorCode;throw error;}
  const total=Number(common.totalCount),actualPage=Number(common.currentPage),perPage=Number(common.countPerPage);
  if(!/^(0|[1-9]\d*)$/.test(String(common.totalCount))||!Number.isSafeInteger(total)||total>10000000||actualPage!==page||perPage!==COUNT)throw new Error('BAD_RESPONSE');
  const rows=result.juso==null&&total===0?[]:result.juso;
@@ -76,7 +76,7 @@ export function createAddressSearchHandler({fetcher=globalThis.fetch,timeoutMs=5
    return normalizeProvider(payload,page);
   })();
   try {return new Response(JSON.stringify(await Promise.race([operation,stopped])),{headers:HEADERS});}
-  catch(error) {const reason=['TIMEOUT','CANCELLED','NETWORK','PROVIDER_HTTP','PROVIDER_ERROR','BAD_RESPONSE'].includes(error.message)?error.message:'UNAVAILABLE';return fail(reason,reason==='TIMEOUT'?504:reason==='CANCELLED'?499:502);}
+  catch(error) {const reason=['TIMEOUT','CANCELLED','NETWORK','PROVIDER_HTTP','PROVIDER_ERROR','BAD_RESPONSE'].includes(error.message)?error.message:'UNAVAILABLE';return fail(reason,reason==='TIMEOUT'?504:reason==='CANCELLED'?499:502,error.providerCode);}
   finally {clearTimeout(timer);request.signal.removeEventListener('abort',abortListener);controller.abort();}
  };
 }

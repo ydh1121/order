@@ -1,7 +1,7 @@
 import {engineResult} from '../contracts/result.mjs';
-import {exact,fromRatio,add,subtract,multiply,divide,compare,toJSON} from './exact.mjs';
+import {exact,fromRatio,add,subtract,multiply,divide,compare,toJSON,round} from './exact.mjs';
 
-export const ALLOCATION_RULE_VERSION='monthly-allocation-1.0.0';
+export const ALLOCATION_RULE_VERSION='monthly-allocation-2.0.0';
 const zero=()=>exact(0);
 const id=value=>typeof value==='string'&&value.length>0&&value.length<=200;
 const copy=value=>structuredClone(value);
@@ -27,6 +27,7 @@ function shape(state,lineId){
   if(!line)fail('LINE_NOT_FOUND');
   if(!id(line.specVersion)||!Array.isArray(line.locationIds)||!line.locationIds.every(id)||!uniq(line.locationIds)||line.locationIds.some(key=>!state.locations.some(l=>l.locationId===key)))fail('LINE_LINKS_INVALID');
   if(line.minimums!=null&&(!Array.isArray(line.minimums)||line.minimums.some(m=>!m||!line.locationIds.includes(m.locationId))||!uniq(line.minimums.map(m=>m.locationId))))fail('LINE_MINIMUMS_INVALID');
+  if(line.monthlyPlanning!==undefined&&(!line.monthlyPlanning||line.monthlyPlanning.version!=='2.0.0'||!['tray','pack'].includes(line.monthlyPlanning.unit)||Object.keys(line.monthlyPlanning).some(key=>!['version','unit'].includes(key))))fail('MONTHLY_PACKAGE_CONTRACT_UNSUPPORTED');
   const units=line.unitTable;
   if(!units||!id(units.version)||!id(units.baseUnit)||!units.factors||typeof units.factors!=='object')fail('UNIT_TABLE_REQUIRED');
   if(compare(unitFactor(units,units.baseUnit),exact(1))!==0)fail('BASE_UNIT_FACTOR_NOT_ONE');
@@ -70,11 +71,91 @@ function draftShape(draft,line){
   return {scope,entries};
 }
 
+const demandOrigins=['known','residual','single-total','package-plan','unknown'];
+const packagePolicy=line=>line.monthlyPlanning?.version==='2.0.0'&&['tray','pack'].includes(line.monthlyPlanning?.unit);
+const recurringCount=(state,line,entries=[])=>line.locationIds.filter(locationId=>(entries.find(row=>row.locationId===locationId)??state.allocations.find(row=>row.lineId===line.lineId&&row.locationId===locationId))?.mode!=='ONCE').length;
+function contextualPackageRecord(record,line,count){
+  if(record?.demandOrigin!=='single-total'||record.mode==='ONCE'||count<2||record.demandSource!=='derived'||parseQuantity(record.demand,line).status!=='VALID')return record;
+  const manual=record.source==='manual',quantity=manual?copy(record.quantity):{raw:'',unit:line.monthlyPlanning.unit};
+  return {...record,quantity,demand:null,demandOrigin:manual&&quantity.raw!==''?'package-plan':'unknown',demandSource:'manual'};
+}
+function packageQuantity(base,unit,line){return {raw:round(divide(base,unitFactor(line.unitTable,unit)),{scale:0,mode:'CEIL'}).decimal,unit};}
+function parsePackage(quantity,line){
+  if(quantity?.unit!==line.monthlyPlanning.unit)return {status:'INVALID',reason:'PACKAGE_UNIT_REQUIRED'};
+  if(quantity?.composing===true)return {status:'INCOMPLETE',reason:'QUANTITY_EDITING'};
+  if(quantity?.raw==='')return {status:'EMPTY',reason:'QUANTITY_EMPTY'};
+  if(typeof quantity?.raw!=='string'||!/^\d+$/.test(quantity.raw))return {status:'INVALID',reason:'INTEGER_PACKAGE_REQUIRED'};
+  return parseQuantity(quantity,line);
+}
+/** M (demand), known D and integer P are separate. P×size is a plan share, not observed demand. */
+function evaluatePackageAllocation(state,line,{scope,entries}){
+  const unit=line.monthlyPlanning.unit,factor=unitFactor(line.unitTable,unit),total=parseQuantity(line.total,line),recurring=recurringCount(state,line,entries);
+  if(factor.d!==1n)fail('INTEGER_PACKAGE_SIZE_REQUIRED');
+  const all=line.locationIds.map(locationId=>{
+    const saved=state.allocations.find(a=>a.lineId===line.lineId&&a.locationId===locationId),active=contextualPackageRecord(entries.find(a=>a.locationId===locationId)??saved,line,recurring);
+    const quantity=active?.quantity??{raw:'',unit},source=active?.source??'manual',origin=active?.demandOrigin??(active?.demand?'known':'unknown'),mode=active?.mode??'FLEX';
+    if(!['manual','derived'].includes(source)||!demandOrigins.includes(origin)||!['FLEX','FIXED','ONCE'].includes(mode)||active?.demandSource!==undefined&&!['manual','derived'].includes(active.demandSource))fail('ALLOCATION_SOURCE_INVALID');
+    const parsed=parsePackage(quantity,line),demand=active?.demand?parseQuantity(active.demand,line):null;
+    if(demand&&(!['known','residual','single-total'].includes(origin)||active.demand?.unit!==line.unitTable.baseUnit))fail('DEMAND_PROVENANCE_INVALID');
+    if(!demand&&['known','residual','single-total'].includes(origin))fail('DEMAND_REQUIRED');
+    if(origin==='single-total'&&active.demandSource!=='derived')fail('DEMAND_PROVENANCE_INVALID');
+    const editable=scope.includes(locationId),free=editable&&origin!=='known'&&(source==='derived'||parsed.status==='EMPTY');
+    const share=!free?(demand?.status==='VALID'?demand.base:parsed.status==='VALID'?parsed.base:null):null;
+    return {locationId,saved,active,quantity,source,origin,mode,parsed,demand,editable,free,share};
+  });
+  const records=all.filter(row=>row.mode!=='ONCE'),excludedLocationIds=all.filter(row=>row.mode==='ONCE').map(row=>row.locationId);
+  // One recurring site owns the complete source M. Its inferred demand is not
+  // changed to P×size when a user edits only the package plan.
+  if(records.length===1&&total.status==='VALID'){
+    const row=records[0];
+    if(row.origin!=='known'&&row.parsed.status==='VALID'&&(!row.demand||row.demand.status==='VALID')&&(row.source==='manual'||!row.editable)){
+      const demand=displayQuantity(total.base,line.unitTable.baseUnit,line);
+      row.inferredDemand=!row.demand||row.demand.status!=='VALID'||compare(row.demand.base,total.base)!==0||row.origin!=='single-total';
+      row.singleDemand=demand;row.demand=parseQuantity(demand,line);row.origin='single-total';row.share=total.base;row.free=false;
+    }
+  }
+  const notApplicable={lineId:line.lineId,notApplicable:true,totalBase:total.status==='VALID'?toJSON(total.base):null,baseUnit:line.unitTable.baseUnit,packageUnit:unit,proposals:[],sites:[],excludedLocationIds,projectedComplete:true,storedComplete:true,canConfirm:true,monthlyHardCapApplied:false};
+  if(!records.length)return out('VALID',[],notApplicable,{dataVersion:line.unitTable.version,evidence:{monthlyOnly:true,storageCommitPerformed:false}});
+  const invalid=records.filter(r=>!['VALID','EMPTY'].includes(r.parsed.status)||(r.demand&&r.demand.status!=='VALID'));
+  if(total.status!=='VALID'||invalid.length){
+    const reasons=[...(total.status==='VALID'?[]:[total.reason]),...invalid.map(r=>r.demand&&r.demand.status!=='VALID'?r.demand.reason:r.parsed.reason)];
+    return out(reasons.includes('QUANTITY_EDITING')?'INCOMPLETE':total.status==='EMPTY'&&!invalid.length?'EMPTY':'INVALID',[...new Set(reasons)],{lineId:line.lineId,baseUnit:line.unitTable.baseUnit,packageUnit:unit,totalBase:null,totalPlanPacks:null,planSumPacks:null,packSlackBase:null,fixedSum:null,residualBeforeSuggestions:null,rawResidualBase:null,projectedResidual:null,excess:null,proposals:[],excludedLocationIds,sites:records.map(r=>({locationId:r.locationId,status:r.parsed.status,raw:r.quantity.raw,unit,source:r.source,demandBase:null,currentMaximum:null,currentMaximumPacks:null,additionalCapacity:null,additionalCapacityPacks:null})),projectedComplete:false,storedComplete:false,canConfirm:false},{dataVersion:line.unitTable.version});
+  }
+  const fixed=records.filter(row=>row.share),fixedSum=fixed.reduce((sum,row)=>add(sum,row.share),zero()),residual=subtract(total.base,fixedSum),unfilled=records.filter(row=>!row.share),proposals=[];
+  for(const row of records.filter(row=>row.inferredDemand&&row.editable))proposals.push({locationId:row.locationId,quantity:copy(row.quantity),source:row.source,demand:copy(row.singleDemand),demandOrigin:'single-total',demandSource:'derived',baseQuantity:toJSON(row.demand.base),reason:'SINGLE_SITE_DEMAND_REUSE'});
+  // Known demand can independently require ceil(D/p), even when the global ceil(M/p) is smaller.
+  for(const row of records.filter(row=>row.origin==='known'&&row.editable&&(row.source==='derived'||row.parsed.status==='EMPTY'))){
+    proposals.push({locationId:row.locationId,quantity:packageQuantity(row.demand.base,unit,line),source:'derived',demand:copy(row.active.demand),demandOrigin:'known',demandSource:row.active?.demandSource??'manual',baseQuantity:toJSON(row.demand.base),reason:'KNOWN_SITE_DEMAND_PACK_CEIL'});
+  }
+  if(unfilled.length===1&&unfilled[0].editable&&residual.n>0n){
+    const row=unfilled[0];proposals.push({locationId:row.locationId,quantity:packageQuantity(residual,unit,line),source:'derived',demand:displayQuantity(residual,line.unitTable.baseUnit,line),demandOrigin:records.length===1?'single-total':'residual',demandSource:'derived',baseQuantity:toJSON(residual),allocatesResidual:true,reason:records.length===1?'SINGLE_SITE_TOTAL_REUSE':'SINGLE_REMAINING_LOCATION'});
+  }
+  const residualProposal=proposals.filter(p=>p.allocatesResidual===true),projectedResidual=subtract(residual,residualProposal.reduce((sum,p)=>add(sum,fromRatio(p.baseQuantity)),zero()));
+  const sites=records.map(row=>{
+    const proposal=proposals.find(p=>p.locationId===row.locationId),effective=proposal?parsePackage(proposal.quantity,line):row.parsed;
+    const demand=proposal?.demand?parseQuantity(proposal.demand,line):row.demand;
+    const share=proposal?fromRatio(proposal.baseQuantity):row.share;
+    const maximum=subtract(total.base,fixed.filter(other=>other.locationId!==row.locationId).reduce((sum,r)=>add(sum,r.share),zero()));
+    const maximumPacks=maximum.n>=0n?packageQuantity(maximum,unit,line).raw:null,currentPacks=effective.status==='VALID'?effective.value:null;
+    return {locationId:row.locationId,status:row.parsed.status,raw:row.quantity.raw,unit,source:row.source,demandOrigin:proposal?.demandOrigin??row.origin,demandSource:proposal?.demandSource??(row.singleDemand?'derived':row.active?.demandSource??null),editable:row.editable,baseQuantity:effective.status==='VALID'?toJSON(effective.base):null,demandBase:demand?.status==='VALID'?toJSON(demand.base):null,allocationShareBase:share?toJSON(share):null,planPacks:currentPacks?toJSON(currentPacks):null,packSlackBase:demand?.status==='VALID'&&effective.status==='VALID'?toJSON(subtract(effective.base,demand.base)):null,currentMaximum:toJSON(maximum),currentMaximumPacks:maximumPacks===null?null:toJSON(exact(maximumPacks)),additionalCapacity:share?toJSON(subtract(maximum,share)):toJSON(maximum),additionalCapacityPacks:maximumPacks===null?null:toJSON(subtract(exact(maximumPacks),currentPacks??zero())),proposal:proposal??null};
+  });
+  const completeRows=sites.every(row=>row.planPacks&&row.allocationShareBase),shortPackages=sites.filter(row=>row.packSlackBase&&fromRatio(row.packSlackBase).n<0n);
+  const projectedComplete=completeRows&&projectedResidual.n===0n&&!shortPackages.length;
+  const planSum=sites.reduce((sum,row)=>row.planPacks?add(sum,fromRatio(row.planPacks)):sum,zero()),capacity=multiply(planSum,factor);
+  const requiredPacks=packageQuantity(total.base,unit,line),allKnown=sites.every(row=>row.demandBase),knownSum=sites.reduce((sum,row)=>row.demandBase?add(sum,fromRatio(row.demandBase)):sum,zero());
+  const reasons=residual.n<0n?['MONTHLY_ALLOCATION_EXCEEDED']:shortPackages.length?['SITE_PACKAGE_PLAN_SHORT']:!completeRows?['MONTHLY_ALLOCATION_INCOMPLETE']:projectedResidual.n>0n?['MONTHLY_ALLOCATION_SHORT']:proposals.length?['DERIVED_PROPOSAL_AWAITING_CONFIRMATION']:[];
+  let storedComplete=false;
+  if(!entries.length)storedComplete=projectedComplete&&!proposals.length;
+  else {const saved=evaluatePackageAllocation(state,line,{scope:[],entries:[]});storedComplete=!!saved.normalized?.projectedComplete;}
+  return out(residual.n<0n||shortPackages.length?'INVALID':reasons.length?'INCOMPLETE':'VALID',reasons,{lineId:line.lineId,specVersion:line.specVersion,totalRaw:copy(line.total),totalBase:toJSON(total.base),baseUnit:line.unitTable.baseUnit,packageUnit:unit,packageSize:toJSON(factor),totalPlanPacks:toJSON(exact(requiredPacks.raw)),planSumPacks:toJSON(planSum),displayTotalPacks:toJSON(projectedComplete?planSum:exact(requiredPacks.raw)),packSlackBase:completeRows?toJSON(subtract(capacity,total.base)):null,knownDemandSum:toJSON(knownSum),allSiteDemandKnown:allKnown,fixedSum:toJSON(fixedSum),residualBeforeSuggestions:toJSON(residual),rawResidualBase:toJSON(residual),projectedResidual:toJSON(projectedResidual),excess:toJSON(residual.n<0n?subtract(zero(),residual):zero()),excessBase:toJSON(residual.n<0n?subtract(zero(),residual):zero()),proposals,sites,excludedLocationIds,projectedComplete,storedComplete,canConfirm:projectedComplete,monthlyHardCapApplied:false},{dataVersion:line.unitTable.version,evidence:{storageCommitPerformed:false,scope,monthlyOnly:true,deliveryQuantityModified:false,demandAndPlanSeparate:true}});
+}
+
 /** Read-only proposal. Saved entries outside the explicit edit scope are fixed. */
 export function evaluateAllocation({state,lineId,draft}={}){
   try{
     const line=shape(state,lineId),{scope,entries}=draftShape(draft,line);
     if(!line.locationIds.length)return out('UNAVAILABLE',['NO_LINKED_LOCATIONS']);
+    if(packagePolicy(line))return evaluatePackageAllocation(state,line,{scope,entries});
     if(state.locations.some(l=>line.locationIds.includes(l.locationId)&&l.required===false))return out('POLICY_UNRESOLVED',['OPTIONAL_LOCATION_POLICY_REQUIRED']);
     const total=parseQuantity(line.total,line);
     const records=line.locationIds.map(locationId=>{
@@ -136,8 +217,8 @@ export function beginAllocationEdit(state,{lineId,scope,transactionId,exposure={
     const line=shape(state,lineId);if(!id(transactionId))fail('TRANSACTION_ID_REQUIRED');
     const checked=draftShape({scope:scope??line.locationIds,entries:[]},line);
     const entries=checked.scope.map(locationId=>{
-      const saved=state.allocations.find(a=>a.lineId===lineId&&a.locationId===locationId);
-      return {locationId,quantity:copy(saved?.quantity??{raw:'',unit:line.total.unit}),source:saved?.source??'manual',mode:saved?.mode??'FLEX'};
+      const stored=state.allocations.find(a=>a.lineId===lineId&&a.locationId===locationId),saved=packagePolicy(line)?contextualPackageRecord(stored,line,recurringCount(state,line)):stored;
+      return {locationId,quantity:copy(saved?.quantity??{raw:'',unit:packagePolicy(line)?line.monthlyPlanning.unit:line.total.unit}),source:saved?.source??'manual',mode:saved?.mode??'FLEX',...(packagePolicy(line)?{demand:copy(saved?.demand??null),demandOrigin:saved?.demandOrigin??(saved?.demand?'known':'unknown'),demandSource:saved?.demandSource??'manual'}:{})};
     });
     const session={transactionId,lineId,baseRevision:state.revision,baseFingerprint:baseFingerprint(state,line),revision:0,scope:checked.scope,entries,exposureBefore:copy(exposure),exposure:copy(exposure),closed:false};
     session.integrityToken=sessionToken(session);
@@ -157,14 +238,19 @@ export function editAllocation(state,session,operation){
       const current=entry(operation.locationId);if(!current)fail('DRAFT_ENTRY_REQUIRED');
       if(current.quantity.unit!==operation.quantity?.unit)fail('UNIT_CHANGE_REQUIRES_CONVERSION');
       current.quantity=copy(operation.quantity);current.source='manual';
+      if(packagePolicy(line)&&current.demandOrigin!=='known'){current.demand=null;current.demandOrigin=operation.quantity.raw===''?'unknown':'package-plan';current.demandSource='manual';}
     }else if(operation?.type==='clear'){
       const current=entry(operation.locationId);if(!current)fail('DRAFT_ENTRY_REQUIRED');
       current.quantity={raw:'',unit:current.quantity.unit};current.source='manual';
+      if(packagePolicy(line)&&current.demandOrigin!=='known'){current.demand=null;current.demandOrigin='unknown';current.demandSource='manual';}
     }else if(operation?.type==='clone'){
       const source=entry(operation.from);if(!source||!Array.isArray(operation.targets)||!operation.targets.length||!uniq(operation.targets))fail('CLONE_TARGETS_INVALID');
-      for(const locationId of operation.targets){const target=entry(locationId);if(!target)fail('CLONE_TARGETS_INVALID');target.quantity=copy(source.quantity);target.source='manual';}
+      for(const locationId of operation.targets){const target=entry(locationId);if(!target)fail('CLONE_TARGETS_INVALID');target.quantity=copy(source.quantity);target.source='manual';if(packagePolicy(line)&&target.demandOrigin!=='known'){target.demand=null;target.demandOrigin='package-plan';target.demandSource='manual';}}
+    }else if(operation?.type==='setMode'){
+      const current=entry(operation.locationId);if(!current||!['FLEX','FIXED','ONCE'].includes(operation.mode))fail('ALLOCATION_MODE_INVALID');current.mode=operation.mode;
     }else if(operation?.type==='convertUnit'){
       const current=entry(operation.locationId);if(!current||operation.reviewed!==true)fail('UNIT_CONVERSION_REVIEW_REQUIRED');
+      if(packagePolicy(line)&&operation.unit!==line.monthlyPlanning.unit)fail('PACKAGE_UNIT_REQUIRED');
       const parsed=parseQuantity(current.quantity,line);if(parsed.status!=='VALID')fail('UNIT_CONVERSION_SOURCE_INVALID');
       const original=copy(current.quantity);current.quantity={...displayQuantity(parsed.base,operation.unit,line),conversionFrom:original};
     }else if(operation?.type==='refreshDerived'){
@@ -172,11 +258,13 @@ export function editAllocation(state,session,operation){
       if(!evaluation.normalized)fail('ALLOCATION_NOT_EVALUABLE');
       for(const current of next.entries){
         const proposal=evaluation.normalized.proposals.find(p=>p.locationId===current.locationId);
-        if(proposal){current.quantity=copy(proposal.quantity);current.source='derived';}
-        else if(current.source==='derived')current.quantity={raw:'',unit:current.quantity.unit};
+        if(current.mode==='ONCE')continue;
+        if(proposal){current.quantity=copy(proposal.quantity);current.source=proposal.source??'derived';if(packagePolicy(line)){current.demand=copy(proposal.demand);current.demandOrigin=proposal.demandOrigin;current.demandSource=proposal.demandSource;}}
+        else if(current.source==='derived'&&(!packagePolicy(line)||current.demandOrigin!=='known')){current.quantity={raw:'',unit:current.quantity.unit};if(packagePolicy(line)){current.demand=null;current.demandOrigin='unknown';}}
       }
     }else if(operation?.type==='exposure')next.exposure=copy(operation.value);
     else fail('ALLOCATION_OPERATION_UNSUPPORTED');
+    if(packagePolicy(line)){const count=recurringCount(state,line,next.entries);next.entries=next.entries.map(row=>contextualPackageRecord(row,line,count));}
     if(!Number.isSafeInteger(next.revision+1))fail('DRAFT_REVISION_RANGE');next.revision++;
     next.integrityToken=sessionToken(next);
     return out('VALID',[],null,{session:next,evaluation:evaluateAllocation({state,lineId:session.lineId,draft:next})});
@@ -201,7 +289,8 @@ export function confirmAllocation(state,session,{expectedDraftRevision,acceptPro
       if(!entry)fail('DRAFT_ENTRY_REQUIRED');
       const index=next.allocations.findIndex(a=>a.lineId===session.lineId&&a.locationId===locationId);
       const saved=index<0?{}:next.allocations[index];
-      const updated={...saved,lineId:session.lineId,locationId,quantity:copy(proposal?.quantity??entry.quantity),source:proposal?'derived':entry.source,mode:entry.mode??saved.mode??'FLEX'};
+      const updated={...saved,lineId:session.lineId,locationId,quantity:copy(proposal?.quantity??entry.quantity),source:proposal?.source??entry.source,mode:entry.mode??saved.mode??'FLEX'};
+      if(packagePolicy(line)){updated.demand=copy(proposal?.demand??entry.demand??null);updated.demandOrigin=proposal?.demandOrigin??entry.demandOrigin;updated.demandSource=proposal?.demandSource??entry.demandSource;}
       if(index<0)next.allocations.push(updated);else next.allocations[index]=updated;
     }
     if(!Number.isSafeInteger(next.revision+1))fail('REVISION_RANGE');next.revision++;

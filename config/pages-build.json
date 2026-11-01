@@ -32,32 +32,32 @@
     {
       "source": "web/address-ui.mjs",
       "output": "address-ui.mjs",
-      "sha256": "fa2fa9b72acaaf7278633785cd3a41efe545be7c8ecef8a67257d558f08de5ce"
+      "sha256": "d43af78db502c23de14e399f5328418be8769fd0d4101334e0ac019114ff815a"
     },
     {
       "source": "web/allocation-ui.mjs",
       "output": "allocation-ui.mjs",
-      "sha256": "a74549e006fb7722632e3f4bffed44bcd5d036342d402ef1780c3786e392e6ac"
+      "sha256": "4885d08ff3ee45d39761f905aa3de79c55302eace576eaec07cfa737c0e8f811"
     },
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "8c50a9b243e16015d169ab97f13c98ae38ad5c414423ca287c2fc41d00c593f4"
+      "sha256": "6c529f324ea50989556b77928a045152a0dd00b6867f2ffe2ff643de30760040"
     },
     {
       "source": "web/common-ui.mjs",
       "output": "common-ui.mjs",
-      "sha256": "8f133b06d85357c6dcc6f5f3faa42a8d90552144cde31f9e71e64c06e353aadd"
+      "sha256": "c0ce2e8f8a356e8c81705c821094195317e82c81ce63c79ec3e74aa34e70f7c3"
     },
     {
       "source": "web/contact-ui.mjs",
       "output": "contact-ui.mjs",
-      "sha256": "7a40b2e689bddfd078fa845c4e342a1d7c8c5e5bf56c792e99cbb21dfd80aeea"
+      "sha256": "cd1099f75d30f7da0c00f3bbccc3d9c0b1424e26039ff31b3170ddba620aeeea"
     },
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "8a9c2f6d2d9799d07946ed7f9f888e960d7c1b4ca458684f5000633e4d39c9e3"
+      "sha256": "ac98fecf987778a2ba4915769a49eb20f1082ef7eb6c42d1e9b903f3e22531ef"
     },
     {
       "source": "web/main.mjs",
@@ -65,24 +65,34 @@
       "sha256": "40c4aa418682f869b8b4aef1320dc042e1701ce481fc0050851a2bd483bfccd0"
     },
     {
+      "source": "web/numeric-input.mjs",
+      "output": "numeric-input.mjs",
+      "sha256": "766f0a06bb2e21ea88938c06d17092a4bb72335ee6156612a18048c901c7ddf0"
+    },
+    {
+      "source": "web/q4-planning.mjs",
+      "output": "q4-planning.mjs",
+      "sha256": "b6bb7a181108da605bd9c65dad9a8bb89d959673b77b28320ed882ff6fa52e33"
+    },
+    {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "f462eeadc8e9ce0e70ce72e140b0281f5c67130ab45b1cf73361b359cf8435e7"
+      "sha256": "d71bb90cc9ccf3db16936ee64e7e3416ce1b03e692b26922ace385beb9ecf708"
     },
     {
       "source": "web/quantity-contract.mjs",
       "output": "quantity-contract.mjs",
-      "sha256": "a752b842bed8098f40f2e18a063d4c7bd77f3f6174580e8d942ed9bcf8e965b5"
+      "sha256": "17e2af0d1445365d3e2de4b91cd91d42596ebca857732eb9e26e73fea5fcd2d8"
     },
     {
       "source": "web/storage.mjs",
       "output": "storage.mjs",
-      "sha256": "027a81935b8ebc6f98b0d521fbeeb4a1256486d06fe97269ace75dbd3a828163"
+      "sha256": "c501c4cf4ddb35b28613074bbe4b7ba0e97fb255f851693c38be5a9804e85e10"
     },
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "2957e1a1caab3d47c7004f2fce316c9b8b09135c9145c0f0848c8fed82d3a547"
+      "sha256": "63e34cefe835ae172b4bb70af17920a8e48c7be2f0ac0cc29db0b960dbe7a916"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",
@@ -91,7 +101,7 @@
     {
       "source": "functions/api/address/search.js",
       "route": "/api/address/search",
-      "sha256": "5c66eecd1bf94329a6c79e0742da5ad8795d6e29c33ab8cdaed6692016a8b1b3"
+      "sha256": "8ca49e6af49359a14823a99e771c88b56c985981a194a7adba81ddde350e7bfe"
     }
   ]
 }

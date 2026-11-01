@@ -46,13 +46,14 @@ test('F03 10 and 20 packages preserve demand; legacy reviewed rational can rende
 });
 
 test('F03 comma editing stays editable while invalid metadata never renders a fraction or throws',()=>{
- assert.equal(numericInput('6,05'),'605');assert.equal(quantityInputText({qty:'605/3',qtyUnit:'tray',pack:'30'}),'');
+ assert.equal(numericInput('6,05'),null);assert.equal(quantityInputText({qty:'605/3',qtyUnit:'tray',pack:'30'}),'');
+ assert.equal(quantityInputText({qty:'10가20',qtyUnit:'each',pack:'30'}),'10가20');
  assert.equal(quantityInputText({qty:'50',qtyUnit:'each',qtyDisplayUnit:'tray',pack:'10'}),'50');
 });
 
 test('F03 legacy fractional packages show exact base demand in summaries',()=>{
  const old={qty:'605/3',qtyUnit:'tray',pack:'30',price:'10000',qtyExact:{representation:'rational',conversionReviewed:true,numerator:'605',denominator:'3'}};
- assert.equal(quantityDisplayNote(old),'월 수요 6,050개 · 필요 포장 202판');
+ assert.equal(quantityDisplayNote(old),'6,050개');
  assert.equal(exactDisplay({numerator:'12345',denominator:'100'}),'123.45');
  assert.equal(exactDisplay({numerator:'-1',denominator:'2'}),'-0.5');
 });

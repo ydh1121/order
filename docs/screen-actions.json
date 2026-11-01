@@ -228,6 +228,62 @@
           "dropoff"
         ]
       }
+    },
+    {
+      "id": "MSG0521_EDIT_TRANSACTIONS",
+      "route": "/#/form",
+      "contract": "MSG0521_CURRENT_DRAFT_AND_PACKAGE_PLAN_V1",
+      "actions": [
+        {
+          "id": "editable-dialog-backdrop",
+          "type": "blocked-dismissal",
+          "durableWrites": 0
+        },
+        {
+          "id": "explicit-editor-close/X/Escape/back",
+          "type": "request-close",
+          "requires": "clean close; dirty shows common continue/discard confirmation; invalidate pending save attempt",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-discard-continue",
+          "type": "retain-editable-draft",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-discard-confirm",
+          "type": "discard-only-current-editor-draft",
+          "durableWrites": 0
+        },
+        {
+          "id": "to-result",
+          "type": "current-transaction-validation",
+          "requires": "unchanged revision, all required fields, current email proofs; TTL0 proof discarded after action",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-line-qty/data-line-price",
+          "type": "unsigned-numeric-edit",
+          "requires": "shared input adapter; malformed input rejected atomically; Q2 demand kept separate from package display"
+        },
+        {
+          "id": "q4-reference-year-{i}/q4-reference-month-{i}/q4-anchor-{i}/q4-visit-count-{i}",
+          "type": "nominal-calendar-reference",
+          "requires": "real calendar or explicit nominal count; not operational schedule/holiday approval",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-apply-plan",
+          "type": "explicit-package-plan-proposal-acceptance",
+          "requires": "current reference/monthly demand/range; manual quantity unchanged until explicit apply",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-frequency-output",
+          "type": "readonly-average-frequency",
+          "requires": "FLEX plan/quantity or existing variable range; never fixed delivery count"
+        }
+      ]
     }
   ]
 }

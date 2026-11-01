@@ -3,7 +3,7 @@
  * Address provenance records the selected provider result, not a live validation.
  */
 import {isVerifiedAddress} from './address-contract.mjs';
-export const STORAGE_SCHEMA_VERSION=3;
+export const STORAGE_SCHEMA_VERSION=4;
 export const STORAGE_KEY='order_q1_q4_v1';
 export const STORAGE_LOCK='order-q1-q4-storage';
 export const LEGACY_KEYS=Object.freeze(['order_v015R2_draft','order_v015R1_draft']);
@@ -35,6 +35,15 @@ const repeat=object({period:short,frequency:short,date:short,dateMode:short,week
  legacyOriginal:object({cycleCount:integer,freq:integer,intervalWeeks:integer,weekPlans})});
 const ratio=object({representation:oneOf(['rational']),conversionReviewed:boolean,numerator:short,denominator:short},['representation','numerator','denominator']);
 const monthlyExact=object({raw,unit,representation:oneOf(['rational']),conversionReviewed:boolean,numerator:short,denominator:short,phase:omit,composing:omit},['raw','unit','representation']);
+const packageRaw=(v,p)=>typeof v==='string'&&/^[1-9]\d{0,127}$/.test(v)?v:fail(p,'POSITIVE_INTEGER_PACKAGE');
+const optionalPackageRaw=(v,p)=>v===''?'':packageRaw(v,p);
+const packageUnit=oneOf(['tray','pack']);
+const positiveInteger=(v,p)=>Number.isSafeInteger(v)&&v>0?v:fail(p,'POSITIVE_INTEGER');
+const nominalVisits=(v,p)=>v===''?'':BigInt(packageRaw(v,p))<=366n?v:fail(p,'VISIT_COUNT');
+const civilDate=(v,p)=>{if(v==='')return '';if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))fail(p,'DATE');const [year,month,day]=v.split('-').map(Number),leap=year%4===0&&(year%100!==0||year%400===0),length=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][month-1];if(year<1||month<1||month>12||day<1||day>length)fail(p,'DATE');return v;};
+const planningReference=object({year:(v,p)=>Number.isInteger(v)&&v>=1&&v<=9999?v:fail(p,'YEAR'),month:(v,p)=>Number.isInteger(v)&&v>=1&&v<=12?v:fail(p,'MONTH'),anchorDate:civilDate,nominal:boolean},['year','month','anchorDate','nominal']);
+const deliveryPlanShape=object({version:oneOf(['1.0.0']),monthlyPlan:packageRaw,visits:positiveInteger,unit:packageUnit,distribution:list(object({quantity:packageRaw,visits:positiveInteger},['quantity','visits']),366),range:object({min:packageRaw,max:packageRaw},['min','max']),reference:planningReference,inputSignature:text(32768),source:oneOf(['derived']),reviewed:oneOf([true])},['version','monthlyPlan','visits','unit','distribution','reference','source','reviewed']);
+const deliveryPlan=(v,p)=>{const out=deliveryPlanShape(v,p);if(out.visits>366||!out.distribution.length)fail(p,'VISIT_COUNT');let visits=0,total=0n;for(const row of out.distribution){visits+=row.visits;total+=BigInt(row.quantity)*BigInt(row.visits);if(out.range&&(BigInt(row.quantity)<BigInt(out.range.min)||BigInt(row.quantity)>BigInt(out.range.max)))fail(p,'PLAN_OUTSIDE_RANGE');}if(visits!==out.visits||total!==BigInt(out.monthlyPlan))fail(p,'PLAN_TOTAL_MISMATCH');if(out.range&&BigInt(out.range.min)>BigInt(out.range.max))fail(p,'PLAN_RANGE');if(new Set(out.distribution.map(row=>row.quantity)).size>1&&!out.range)fail(p,'VARIABLE_RANGE_REQUIRED');return out;};
 const advanced=object({contactChannels:list(oneOf(['phone','sms','kakao','email']),4),orderProcess:short,fixedOrderProcess:short,flexOrderProcess:short,storeOffDays:days,storeOffNone:boolean,storeOffIrregular:boolean,storeOffPolicy:short,weekend:short,holiday:short,substituteHoliday:short,memo:text(4096)});
 const review=object({version:oneOf(['0460']),pack:short,profile:oneOf(['FLEX','FIXED','ONCE','MIXED']),activeHoliday:holiday,activeRepeat:repeat,deliveryDate,
  common:object({contact,process:short,quality:boolean,holiday,repeat}),
@@ -46,9 +55,12 @@ const locationSpec={id,name:text(1024),road:text(4096),postal:short,detail:text(
 const legacyLocation=object(locationSpec,['id','name']);
 const selectedLocation=object({...locationSpec,dropoff:text(4096),addressProvider:oneOf(['','JUSO'])},['id','name']);
 const location=(value,path)=>{const out=selectedLocation(value,path);if(out.addressProvider==='JUSO'&&!isVerifiedAddress(out))fail(path,'INVALID_PROVIDER_SELECTION');return out;};
-const allocation=object({id,lineId:id,locationId:id,qty:raw,mode,modeExplicit:boolean,freq:integer,days,intervalWeeks:integer,cycleCount:integer,scheduleDetail:short,weekPlans,qtySource:short,variableQty:boolean,qtyMin:raw,qtyMax:raw,qualityTest:boolean,oneTimeDeliveryQty:raw,deliveryQtyUnit:unit,monthlyDemandQty:raw,monthlyDemandUnit:unit,monthlyDemandSource:oneOf(['manual','derived']),monthlyDemandExact:monthlyExact,repeatSemantics:short,frequencyPerWeek:nullable(integer),monthDay:(v,p)=>typeof v==='number'?integer(v,p):short(v,p),advanced,q4Review:review,onceConfirmedFingerprint:text(32768),cycleAnchorDate:short,calendarPolicy:object({kind:short},['kind']),monthlyAllocationContract:short,
- suggestedQty:omit,monthlyAllocationComplete:omit,monthlyAllocationDraftRevision:omit},['id','lineId','locationId']);
-const payloadShape=(schemaVersion=STORAGE_SCHEMA_VERSION)=>object({lines:list(line),current:nullable(id),locations:list(schemaVersion<3?legacyLocation:location),allocations:list(allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
+const allocationSpec={id,lineId:id,locationId:id,qty:raw,mode,modeExplicit:boolean,freq:integer,days,intervalWeeks:integer,cycleCount:integer,scheduleDetail:short,weekPlans,qtySource:short,variableQty:boolean,qtyMin:raw,qtyMax:raw,qualityTest:boolean,oneTimeDeliveryQty:raw,deliveryQtyUnit:unit,monthlyDemandQty:raw,monthlyDemandUnit:unit,monthlyDemandSource:oneOf(['manual','derived']),monthlyDemandExact:monthlyExact,repeatSemantics:short,frequencyPerWeek:nullable(integer),monthDay:(v,p)=>typeof v==='number'?integer(v,p):short(v,p),advanced,q4Review:review,onceConfirmedFingerprint:text(32768),cycleAnchorDate:short,calendarPolicy:object({kind:short},['kind']),monthlyAllocationContract:short,
+ suggestedQty:omit,monthlyAllocationComplete:omit,monthlyAllocationDraftRevision:omit};
+const legacyAllocation=object(allocationSpec,['id','lineId','locationId']);
+const currentAllocationShape=object({...allocationSpec,monthlyPlanQty:optionalPackageRaw,monthlyPlanUnit:packageUnit,monthlyPlanSource:oneOf(['manual','derived']),monthlyDemandBasis:oneOf(['known','residual','single-total','package-plan','unknown']),planningReference,nominalVisitCount:nominalVisits,deliveryPlan},['id','lineId','locationId']);
+const allocation=(v,p)=>{const out=currentAllocationShape(v,p),planFields=['monthlyPlanQty','monthlyPlanUnit','monthlyPlanSource','monthlyDemandBasis'];if(planFields.some(key=>Object.hasOwn(out,key))){if(planFields.some(key=>!Object.hasOwn(out,key))||out.monthlyAllocationContract!=='2.0.0')fail(p,'PACKAGE_CONTRACT_INCOMPLETE');const known=['known','residual','single-total'].includes(out.monthlyDemandBasis);if(known&&(!out.monthlyDemandQty||out.monthlyDemandUnit!=='each'||!out.monthlyDemandSource))fail(p,'DEMAND_REQUIRED');if(!known&&out.monthlyDemandQty!=='')fail(p,'UNKNOWN_DEMAND_MUST_STAY_EMPTY');if(known){const value=out.monthlyDemandQty;if(!/^[1-9]\d*$/.test(value)&&!(out.monthlyDemandExact?.conversionReviewed===true&&out.monthlyDemandExact.raw===value&&out.monthlyDemandExact.unit==='each'&&/^\d+\/[1-9]\d*$/.test(value)))fail(p,'DEMAND_SYNTAX');}if(['residual','single-total'].includes(out.monthlyDemandBasis)&&out.monthlyDemandSource!=='derived')fail(p,'RESIDUAL_PROVENANCE');if(out.qtySource!==undefined&&!['user','auto'].includes(out.qtySource))fail(p,'QUANTITY_SOURCE');}return out;};
+const payloadShape=(schemaVersion=STORAGE_SCHEMA_VERSION)=>object({lines:list(line),current:nullable(id),locations:list(schemaVersion<3?legacyLocation:location),allocations:list(schemaVersion<4?legacyAllocation:allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
  stage:omit,errorExposure:omit,validation:omit,dnsCache:omit,pendingRequests:omit},['lines','locations','allocations']);
 export const emptyStoredPayload=()=>({lines:[],current:null,locations:[],allocations:[],open:'q1',allocationRevision:0});
 function canonical(value){return Array.isArray(value)?'['+value.map(canonical).join(',')+']':plain(value)?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);}
@@ -61,7 +73,7 @@ function projectPayload(input,schemaVersion){
  const result=payloadShape(schemaVersion)(input,'data');
  const unique=(rows,field)=>{const set=new Set(rows.map(row=>row.id));if(set.size!==rows.length)fail('data.'+field,'DUPLICATE_ID');return set;};
  const lines=unique(result.lines,'lines'),sites=unique(result.locations,'locations');unique(result.allocations,'allocations');
- const pairs=new Set();for(const row of result.allocations){if(!lines.has(row.lineId)||!sites.has(row.locationId))fail('data.allocations','ORPHAN_REFERENCE');const pair=JSON.stringify([row.lineId,row.locationId]);if(pairs.has(pair))fail('data.allocations','DUPLICATE_ASSIGNMENT');pairs.add(pair);}
+ const pairs=new Set();for(const row of result.allocations){if(!lines.has(row.lineId)||!sites.has(row.locationId))fail('data.allocations','ORPHAN_REFERENCE');const pair=JSON.stringify([row.lineId,row.locationId]);if(pairs.has(pair))fail('data.allocations','DUPLICATE_ASSIGNMENT');pairs.add(pair);if(row.monthlyAllocationContract==='2.0.0'){const sku=result.lines.find(line=>line.id===row.lineId),unit=String(sku.pack)==='30'?'tray':['10','20'].includes(String(sku.pack))?'pack':null;if(!unit||row.monthlyPlanUnit!==unit)fail('data.allocations','PACKAGE_UNIT');if(row.deliveryPlan&&(row.deliveryPlan.unit!==unit||row.deliveryPlan.monthlyPlan!==row.monthlyPlanQty||row.deliveryPlan.distribution.length>1&&!row.variableQty||row.deliveryPlan.range&&(!row.variableQty||row.deliveryPlan.range.min!==row.qtyMin||row.deliveryPlan.range.max!==row.qtyMax)||row.planningReference&&canonical(row.deliveryPlan.reference)!==canonical(row.planningReference)))fail('data.allocations','DELIVERY_PLAN_CONTRACT');}}
  result.current??=null;if(result.current!==null&&!lines.has(result.current))fail('data.current','ORPHAN_REFERENCE');result.open??='q1';result.allocationRevision??=0;
  if(new TextEncoder().encode(JSON.stringify(result)).length>MAX_BYTES)fail('data','SIZE_LIMIT');return result;
 }
@@ -85,15 +97,15 @@ function migrateLegacy(input,key){
  if(source.locations===undefined)source.locations=[];if(source.allocations===undefined)source.allocations=[];if(source.current===undefined)source.current=null;if(source.open===undefined)source.open='q1';if(source.allocationRevision===undefined)source.allocationRevision=0;
  // Historical sessions cannot introduce schema3 provider provenance or dropoff.
  // Missing new fields are read as empty by the address contract; no address is
- // silently upgraded. The first successful explicit commit writes schema3.
+ // silently upgraded. The first successful explicit commit writes schema4.
  return projectPayload(source,2);
 }
 const receiptShape=object({transactionId:id,fingerprint:text(64),revision:integer,operation:oneOf(['commit','reset'])},['transactionId','fingerprint','revision','operation']);
 const migrationShape=nullable(object({source:oneOf(['session-R2','session-R1']),legacyKey:oneOf(LEGACY_KEYS)},['source','legacyKey']));
-const envelopeShape=object({schemaVersion:oneOf([1,2,3]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
+const envelopeShape=object({schemaVersion:oneOf([1,2,3,4]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
 function decode(rawValue){
  if(typeof rawValue!=='string'||new TextEncoder().encode(rawValue).length>MAX_BYTES)fail('record','SIZE_LIMIT');
- const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
+ const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3,4].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
  const envelope=envelopeShape(value,'record');if(envelope.revision<1)fail('record.revision');
  if(envelope.state==='reset'){if(envelope.data!==null)fail('record.data');}else{
   if(envelope.schemaVersion===1&&envelope.data?.lines?.some(row=>Object.hasOwn(row,'qtyDisplayUnit')))fail('record.data.lines','UNKNOWN_FIELD');

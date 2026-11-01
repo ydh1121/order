@@ -126,18 +126,21 @@ function q4CommitHarness() {
     recordClose: () => { closes++; }
   });
   vm.runInContext(`
-    let committing = false, state = {dialogClosed: false};
+    let committing = false, commitEpoch = 0, commitAttempt = 0, numericValid = true, state = {dialogClosed: false};
+    const q4Numeric = {inspect: () => ({valid: numericValid})}, numericComposing = new Set();
     let regularContext = {id: 'original'};
     let patches = [{id: 'A', monthlyDemandQty: '50', qty: '3'}];
     const serializedAllocations = () => structuredClone(patches);
     const monthlyEditor = {confirm: ({allocations}) => ({ok: true, allocations})};
-    function closeProductModal() { state.dialogClosed = true; recordClose(); }
+    function disposeProductModal() { state.dialogClosed = true; recordClose(); }
     ${productionFunction(q4Source, q4Ast, 'saveRegularDraft')}
     globalThis.subject = {
       save: saveRegularDraft,
       edit(value) { patches[0].monthlyDemandQty = value; },
       cancel() { state.dialogClosed = true; },
-      reopen() { regularContext = {id: 'new'}; state.dialogClosed = false; },
+      exitIntent() { commitEpoch++; commitAttempt++; committing = false; },
+      numericInvalid() { numericValid = false; },
+      reopen() { commitEpoch++; regularContext = {id: 'new'}; state.dialogClosed = false; },
       get busy() { return committing; },
       get raw() { return patches[0].monthlyDemandQty; }
     };
@@ -207,6 +210,67 @@ test('Q4 failed durable save retains its draft, does not close, and accepts a su
   assert.equal(h.writes, 1);
 });
 
+test('R02 continuing after dirty exit can retry while the stale write settles without clearing newer busy state', async () => {
+  const h = q4CommitHarness(), first = h.subject.save();
+  h.subject.exitIntent();
+  assert.equal(h.pending[0].canCommit(), false);
+  assert.equal(h.subject.busy, false);
+  const retry = h.subject.save();
+  assert.equal(h.pending.length, 2);
+  assert.equal(h.pending[1].canCommit(), true);
+  h.pending[0].held.resolve({ok: true, status: 'COMMITTED'});
+  await first;
+  assert.equal(h.writes, 0);
+  assert.equal(h.closes, 0);
+  assert.equal(h.subject.raw, '50');
+  assert.equal(h.subject.busy, true, 'The old finally must not unlock a newer in-flight attempt');
+  assert.equal(h.errors.length, 0, 'The stale result cannot paint into the continuing editor');
+  await h.subject.save();
+  assert.equal(h.pending.length, 2, 'The newer pending attempt still blocks duplicates');
+  h.pending[1].held.resolve({ok: true, status: 'COMMITTED'});
+  await retry;
+  assert.equal(h.writes, 1);
+  assert.equal(h.closes, 1);
+  assert.equal(h.subject.busy, false);
+});
+
+test('R16 unresolved invalid numeric text cancels a held Q4 write without replacing the draft', async () => {
+  const h = q4CommitHarness(), first = h.subject.save();
+  h.subject.numericInvalid();
+  assert.equal(h.pending[0].canCommit(), false);
+  h.pending[0].held.resolve({ok: true, status: 'COMMITTED'});
+  await first;
+  assert.equal(h.writes, 0);
+  assert.equal(h.closes, 0);
+  assert.equal(h.subject.raw, '50');
+  assert.equal(h.subject.busy, false);
+});
+
+test('R05 current transaction email proof reaches site and final gates without promoting global UNKNOWN', () => {
+  const siteNode = commonAst.body.find(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && node.expression.left.property?.name === 'OrderSiteContract');
+  const proof = {state: 'VALID', ttl: 0}, email = 'local@example.test';
+  let active = true;
+  const context = vm.createContext({window: {}, addressStatus: () => ({valid: true}),
+    OrderPhone: {parse: () => ({valid: true})}, OrderEmail: {parse: () => ({valid: true})},
+    OrderEmailDomain: {status: () => ({state: 'UNKNOWN'}), isCurrent: (p, raw) => active && p === proof && raw === email,
+      isHard: () => false, isSuccess: p => p.state === 'VALID'}});
+  vm.runInContext(common.slice(siteNode.start, siteNode.end), context);
+  context.OrderSiteContract = context.window.OrderSiteContract;
+  const validate = vm.runInContext(common.slice(declaration.start, declaration.end) + '\nCODE1_ORDER_VALIDATION.validateOrderDraft', context);
+  const site = {id: 'A', name: 'A', email, contactPhone: '01012345678'};
+  assert.equal(context.OrderSiteContract.valid(site), false);
+  assert.equal(context.OrderSiteContract.valid(site, {emailProof: proof}), true);
+  const state = {lines: [], locations: [site], allocations: []};
+  const emailIssues = options => validate(state, options).issues.filter(issue => issue.field.endsWith(':email'));
+  assert.equal(emailIssues({emailProofs: new Map([['A', proof]])}).length, 0);
+  assert.equal(emailIssues({emailProofs: new Map([['B', proof]])}).length, 1, 'Site identity cannot be substituted');
+  site.email = 'edited@example.test';
+  assert.equal(emailIssues({emailProofs: new Map([['A', proof]])}).length, 1, 'Edited raw input invalidates proof');
+  site.email = email;active = false;
+  assert.equal(emailIssues({emailProofs: new Map([['A', proof]])}).length, 1, 'Cancelled/expired transaction invalidates proof');
+  assert.equal(context.OrderEmailDomain.status(email).state, 'UNKNOWN');
+});
+
 async function coordinatorHarness() {
   const records = new Map(), nodes = new Map();
   const local = {writes: 0, failWrite: false, loseReadback: false, throwRead: false,
@@ -234,7 +298,8 @@ async function coordinatorHarness() {
     storagePaint: () => {}, storageFeedback: () => {},
     window: {OrderEmailLifecycle: {reconcile() {}}},
     err: (id, message) => {$(id).textContent = message;},
-    orderVerdict: () => ({valid: true, confirmations: []}),
+    q4ReviewVerdict: () => ({valid: true, confirmations: []}),
+    q2Numeric: {inspect: () => ({valid: true})},
     skuDraftActive: () => false, siteFocusDirty: () => false, siteEditingDirty: () => false, q4DraftActive: () => false
   });
   vm.runInContext(`

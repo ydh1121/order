@@ -96,3 +96,53 @@ jobs:
           name: chromium-adapter-observations-${{ github.run_id }}
           path: browser-evidence/
           retention-days: 14
+  chromium-user-rework:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Select installed runner Chrome or install pinned Chromium
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            echo "CHROME_PATH=$(command -v google-chrome)" >> "$GITHUB_ENV"
+            google-chrome --version
+          else
+            npx playwright install --with-deps chromium
+          fi
+      - name: Install Korean glyphs for matched b9d baseline and current captures
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk
+          fc-match ':lang=ko'
+          dpkg-query -W fonts-noto-cjk
+      - run: npm run build
+      - name: MSG0521 dirty transactions, quantity and common UI on current source
+        run: node test/browser/rework.smoke.mjs
+      - name: Observe exact canonical address endpoint without assuming provider configuration
+        if: always()
+        run: node test/browser/canonical-address-observation.mjs
+      - name: Observe current email policy from the actual canonical HTTPS origin
+        if: always()
+        run: |
+          mkdir -p browser-evidence/rework
+          status=0
+          node scripts/engine/browser-email-smoke.mjs https://order-ooo.pages.dev --product-policy > browser-evidence/rework/email-product-policy.json 2> browser-evidence/rework/email-product-policy.stderr.log || status=$?
+          cat browser-evidence/rework/email-product-policy.json
+          if [ "$status" = 3 ]; then
+            echo 'Current source email policy on canonical HTTPS: ONLINE_INCONCLUSIVE. Provider evidence is retained; this is not product or user acceptance.' >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$status" != 0 ]; then
+            exit "$status"
+          fi
+      - name: Preserve current-source rework and separate provider observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-user-rework-observations-${{ github.run_id }}
+          path: browser-evidence/rework/
+          retention-days: 14

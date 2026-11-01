@@ -17,7 +17,7 @@ const response=(name,type,answers=[],status=0)=>new Response(JSON.stringify({Sta
 
 async function inspect(raw,handler,options={}){
  const calls=[];
- const service=createBrowserEmailService({referenceProvider:{get:async()=>snapshot},now:()=>now,...options,fetcher:async(url,request)=>{
+ const service=createBrowserEmailService({provider:'cloudflare',retries:0,referenceProvider:{get:async()=>snapshot},now:()=>now,...options,fetcher:async(url,request)=>{
   const parsed=new URL(url),name=parsed.searchParams.get('name'),type=parsed.searchParams.get('type');calls.push({name,type,url,credentials:request.credentials,referrerPolicy:request.referrerPolicy});return handler(name,type);
  }});
  try{return {packet:await service.validate('synthetic-field',raw),calls};}finally{service.close();}
