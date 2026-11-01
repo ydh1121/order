@@ -675,7 +675,7 @@ function q3MountEditor(trigger){
  for(const [key,id] of [['name','site-name'],['contactPhone','site-contact-phone'],['email','site-email'],['storePhone','site-store-phone']]){if(key.endsWith('Phone'))OrderPhone.set($(id),siteEditing[key]||'');else if(key==='email')OrderEmailUI.instance($(id)).reset(String(siteEditing[key]||''));else $(id).value=String(siteEditing[key]||'');}
  q3PaintAddress();
  q3SyncSaveAction();$('site-editor-error').textContent='';q3PaintErrors([]);
- OrderModalShell.open(dialog,{variant:'compact',returnFocus:()=>q3EditorReturn?.isConnected?q3EditorReturn:document.querySelector(q3EditorSelector),initialFocus:()=>$('site-name')});refreshCompletionBadges();
+ OrderModalShell.open(dialog,{variant:'compact',history:true,returnFocus:()=>q3EditorReturn?.isConnected?q3EditorReturn:document.querySelector(q3EditorSelector),initialFocus:()=>$('site-name')});refreshCompletionBadges();
 }
 function addSite(){if(!guardPendingEdits('site-add'))return;siteEditOriginal=null;siteEditing=blankSite();q3MountEditor(document.activeElement);}
 function editSite(id){if(!guardPendingEdits('site-edit'))return;const site=locationById(id);if(!site)return;siteEditOriginal=id;siteEditing=JSON.parse(JSON.stringify(site));q3MountEditor(document.activeElement);}

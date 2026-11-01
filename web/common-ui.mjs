@@ -149,6 +149,51 @@ window.OrderModalShell=Object.freeze((()=>{
  const capture=(el,names)=>Object.fromEntries(names.map(k=>[k,[el.style.getPropertyValue(k),el.style.getPropertyPriority(k)]]));
  const restore=(el,values)=>Object.entries(values).forEach(([k,[v,p]])=>v?el.style.setProperty(k,v,p):el.style.removeProperty(k));
  const top=()=>[...entries.keys()].filter(d=>d.open).at(-1)||null;
+ // Opt-in modal history owns only tokens created in this document. Serial
+ // unwinding prevents an asynchronous Back from consuming a rapid new open.
+ const historyEntries=new Map(),historyKey='__orderModal0519',historySession=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+ let historySerial=0,historyPending=null;
+ const historyToken=state=>state&&typeof state==='object'?state[historyKey]:null;
+ const historyURL=()=>window.location?.href;
+ function reconcileHistory(){
+  const nav=window.history;if(!nav||historyPending)return;
+  const current=historyEntries.get(historyToken(nav.state));
+  if(current?.registered&&!current.active&&current.url===historyURL()){
+   historyPending=current;
+   try{nav.back();}catch{historyPending=null;current.registered=false;nav.replaceState(current.previousState,'',current.url);reconcileHistory();}
+   return;
+  }
+  for(const [dialog,rec] of entries){const item=rec.historyEntry;if(!item?.active||!item.waiting||rec.closing||!dialog.open)continue;
+   item.previousState=nav.state;item.url=historyURL();
+   const state=item.previousState&&typeof item.previousState==='object'&&!Array.isArray(item.previousState)?{...item.previousState}:{};
+   try{nav.pushState({...state,[historyKey]:item.token},'',item.url);item.registered=true;item.waiting=false;}catch{item.active=false;item.waiting=false;}
+  }
+ }
+ function registerHistory(dialog,rec,old,enabled){
+  if(!enabled||!window.history?.pushState)return;
+  if(old?.historyEntry?.active){rec.historyEntry=old.historyEntry;rec.historyEntry.rec=rec;return;}
+  const item={token:historySession+'-'+(++historySerial),dialog,rec,active:true,registered:false,waiting:true,url:historyURL(),previousState:null};
+  historyEntries.set(item.token,item);rec.historyEntry=item;reconcileHistory();
+ }
+ function retireHistory(rec){const item=rec?.historyEntry;if(!item)return;item.active=false;item.waiting=false;reconcileHistory();}
+ window.addEventListener('popstate',event=>{
+  const url=historyURL(),pending=historyPending;historyPending=null;
+  if(pending)pending.registered=false;
+  const destination=historyEntries.get(historyToken(event.state));
+  const active=[...entries.values()].map(r=>r.historyEntry).filter(h=>h?.active&&h.registered);
+  const own=(pending?.url===url)||active.some(h=>h.url===url)||destination?.url===url;
+  if(!own){if(pending)reconcileHistory();return;}
+  event.stopImmediatePropagation();
+  // Forward into a retired, same-document entry is undone to its recorded
+  // predecessor. It cannot reopen an editor or strand a duplicate parent token.
+  if(destination&&!destination.active&&destination.url===url)destination.registered=true;
+  // A forward traversal to an already cancelled token only identifies its live
+  // ancestor; a discarded domain draft is never reconstructed from history.
+  let target=destination;const seen=new Set();while(target&&!target.active&&!seen.has(target.token)){seen.add(target.token);target=historyEntries.get(historyToken(target.previousState));}
+  const targetIndex=active.findIndex(h=>h===target);
+  for(let i=active.length-1;i>targetIndex;i--){const item=active[i];item.registered=false;item.active=false;item.waiting=false;bound.get(item.dialog)?.requestClose?.('back');}
+  reconcileHistory();
+ },{capture:true});
  function paintLock(){
   const open=[...entries.keys()].filter(d=>d.open);
   if(open.length){
@@ -167,6 +212,7 @@ window.OrderModalShell=Object.freeze((()=>{
  }
  function release(dialog,after){
   const rec=entries.get(dialog);if(!rec){after?.();return;}
+  retireHistory(rec);
   entries.delete(dialog);rec.animation?.cancel();rec.sizeAnimation?.cancel();dialog.classList.remove('is-open','is-closing');
   dialog.style.opacity='';dialog.style.transform='';
   restore(dialog,rec.geometry);delete dialog.dataset.modalContentSize;delete dialog.dataset.modalResizing;
@@ -195,6 +241,16 @@ window.OrderModalShell=Object.freeze((()=>{
   dialog.style.setProperty('--ui-modal-viewport-top',(view?.offsetTop||0)+'px');
   dialog.style.setProperty('--ui-modal-viewport-bottom',Math.max(0,innerHeight-(view?.offsetTop||0)-height)+'px');
  }
+ function revealFocusedControl(dialog){
+  if(top()!==dialog)return;
+  const scroll=dialog.querySelector(':scope > .q4-regular-panel .q4-regular-scroll'),active=document.activeElement;
+  if(!scroll?.contains(active)||!scroll.getBoundingClientRect||!active?.getBoundingClientRect)return;
+  const box=scroll.getBoundingClientRect(),field=active.getBoundingClientRect(),view=window.visualViewport;
+  const visibleTop=Math.max(box.top,view?.offsetTop||0),visibleBottom=Math.min(box.bottom,(view?.offsetTop||0)+(view?.height||innerHeight));
+  if(visibleBottom<=visibleTop)return;
+  const delta=field.top<visibleTop?field.top-visibleTop:field.bottom>visibleBottom?field.bottom-visibleBottom:0;
+  if(delta)scroll.scrollTop=Math.max(0,Math.min(scroll.scrollHeight-scroll.clientHeight,scroll.scrollTop+delta));
+ }
  // One explicit content-size owner. Callers patch DOM inside mutate; no observer
  // loop or page-specific height timer is needed. Existing editors remain fixed
  // for their session unless they request a resize.
@@ -208,28 +264,29 @@ window.OrderModalShell=Object.freeze((()=>{
   const to=Math.min(panel.getBoundingClientRect().height,(window.visualViewport?.height||innerHeight)*.92);
   if(to<=0)return false;
   panel.style.setProperty('--ui-modal-editor-session-block',to+'px');if(scroll)scroll.scrollTop=scrollTop;
-  if(!animate||less()||Math.abs(from-to)<1)return true;
+  if(!animate||less()||Math.abs(from-to)<1){revealFocusedControl(dialog);return true;}
   const a=panel.animate([{height:from+'px'},{height:to+'px'}],{duration:time('--ui-motion',250),easing:ease()});
   rec.sizeAnimation=a;dialog.dataset.modalResizing='true';
-  const finish=()=>{if(entries.get(dialog)===rec&&rec.sizeAnimation===a){a.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;}};
+  const finish=()=>{if(entries.get(dialog)===rec&&rec.sizeAnimation===a){a.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;revealFocusedControl(dialog);}};
   a.finished.then(finish,()=>{});return true;
  }
- function open(dialog,{variant='compact',returnFocus=document.activeElement,initialFocus=null,contentSize='session'}={}){
+ function open(dialog,{variant='compact',returnFocus=document.activeElement,initialFocus=null,contentSize='session',history=false}={}){
   const old=entries.get(dialog);if(old){old.epoch++;old.animation?.cancel();old.sizeAnimation?.cancel();}
   const rec={epoch:(old?.epoch||0)+1,animation:null,sizeAnimation:null,returnFocus,variant,closing:false,contentSize,geometry:old?.geometry||capture(dialog,['--ui-modal-max-block','--ui-modal-viewport-top','--ui-modal-viewport-bottom'])};entries.set(dialog,rec);version++;
   dialog.dataset.modalVariant=variant;dialog.classList.remove('is-closing');dialog.style.opacity='';dialog.style.transform='';
   dialog.dataset.modalContentSize=contentSize;delete dialog.dataset.modalResizing;
   if(!bound.has(dialog))bind(dialog,()=>close(dialog));
   viewport(dialog);if(!dialog.open)dialog.showModal();paintLock();if(variant==='editor')resize(dialog,null,{animate:false});
+  registerHistory(dialog,rec,old,history);
   dialog.classList.add('is-open');
   if(!less()){const a=dialog.animate([{opacity:0},{opacity:1}],{duration:time('--ui-modal-fade-open',200),easing:ease()});rec.animation=a;a.finished.then(()=>{if(entries.get(dialog)===rec&&rec.animation===a){a.cancel();rec.animation=null;}},()=>{});}
-  if(initialFocus){const t=typeof initialFocus==='function'?initialFocus():initialFocus;t?.focus({preventScroll:true});}
+  if(initialFocus){const t=typeof initialFocus==='function'?initialFocus():initialFocus;t?.focus({preventScroll:true});revealFocusedControl(dialog);}
   return rec.epoch;
  }
  function close(dialog,{after=null,immediate=false}={}){
   const rec=entries.get(dialog);if(!dialog.open){release(dialog,after);return;}
   if(!rec){dialog.close();after?.();return;}
-  if(rec.closing)return;rec.closing=true;version++;const epoch=++rec.epoch;
+  if(rec.closing)return;rec.closing=true;retireHistory(rec);version++;const epoch=++rec.epoch;
   const opacity=getComputedStyle(dialog).opacity;rec.animation?.cancel();rec.animation=null;rec.sizeAnimation?.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;
   dialog.classList.remove('is-open');dialog.classList.add('is-closing');
   const finish=()=>{if(entries.get(dialog)!==rec||rec.epoch!==epoch)return;if(dialog.open)dialog.close();release(dialog,after);};
@@ -238,7 +295,7 @@ window.OrderModalShell=Object.freeze((()=>{
   const a=dialog.animate([{opacity:Number(opacity)||1},{opacity:0}],{duration:time('--ui-modal-fade-close',150),easing:'ease-in',fill:'forwards'});rec.animation=a;
   a.finished.then(finish,()=>{});
  }
- let resizeFrame=0;const resizeViewport=()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{entries.forEach((r,d)=>{if(d.open&&!r.closing){viewport(d);if(r.variant==='editor')resize(d,null,{animate:false});}});});};
+ let resizeFrame=0;const resizeViewport=()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{entries.forEach((r,d)=>{if(d.open&&!r.closing){viewport(d);if(r.variant==='editor')resize(d,null,{animate:false});else revealFocusedControl(d);}});});};
  window.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('scroll',resizeViewport);
  return {open,close,bind,resize,sync:paintLock,get activeIds(){return [...entries.keys()].filter(d=>d.open).map(d=>d.id);}};
 })());

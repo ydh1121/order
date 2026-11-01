@@ -43,7 +43,7 @@
 
 ## 배포 파일 경계
 
-`functions/api/address/search.js`는 repo의 Functions 소스이며 `dist`에 정적 공개 파일로 복사하지 않는다. 빌드 출력 `_routes.json`은 `include:["/api/address/search","/api/address/search/"]`, `exclude:[]`로 주소 경로만 Functions에 보낸다. HTML/CSS/JS는 정적 제공을 유지한다. QA fixture, LAB, 증거·보고서, secret 파일은 공개 build allowlist에 넣지 않는다. Function은 다른 소스 import나 D1/Worker 프로젝트를 요구하지 않는다.
+`functions/api/address/search.js`는 repo의 Functions 소스이며 `dist`에 정적 공개 파일로 복사하지 않는다. 빌드 출력 `_routes.json`은 `include:["/api/address/search"]`, `exclude:[]`로 주소 경로만 Functions에 보낸다. HTML/CSS/JS는 정적 제공을 유지한다. QA fixture, LAB, 증거·보고서, secret 파일은 공개 build allowlist에 넣지 않는다. Function은 다른 소스 import나 D1/Worker 프로젝트를 요구하지 않는다.
 
 ## 실제 확인과 아직 확인하지 않은 항목
 

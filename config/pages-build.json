@@ -32,7 +32,7 @@
     {
       "source": "web/address-ui.mjs",
       "output": "address-ui.mjs",
-      "sha256": "3d71edf04c4f340884a298d70ca5f52ce4047e446c01710082878024dc13b948"
+      "sha256": "fa2fa9b72acaaf7278633785cd3a41efe545be7c8ecef8a67257d558f08de5ce"
     },
     {
       "source": "web/allocation-ui.mjs",
@@ -42,12 +42,12 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "7533cd4db190e93bb9f8368d04cc19eb00211295cc1d28f20273e1b25778773a"
+      "sha256": "8c50a9b243e16015d169ab97f13c98ae38ad5c414423ca287c2fc41d00c593f4"
     },
     {
       "source": "web/common-ui.mjs",
       "output": "common-ui.mjs",
-      "sha256": "180244f704568e4ed0f99a1ea57683b5d0849fad5caaafa5b02a7d44ee0fb303"
+      "sha256": "8f133b06d85357c6dcc6f5f3faa42a8d90552144cde31f9e71e64c06e353aadd"
     },
     {
       "source": "web/contact-ui.mjs",

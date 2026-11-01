@@ -183,11 +183,11 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     query.value = draft.road; setList(false); list.replaceChildren(); showStatus(); renderSelection(); setError();
     $('address-next-page').hidden = true;
     replaceIcon('address-search-icon', 'search'); $('address-close').innerHTML = icon('close');
-    shell.open(dialog, {variant: 'editor', contentSize: 'dynamic', returnFocus: trigger, initialFocus: draft.road ? detail : query});
+    shell.open(dialog, {variant: 'editor', contentSize: 'dynamic', history: true, returnFocus: trigger, initialFocus: draft.road ? detail : query});
     $('address-scroll').scrollTop = 0; shell.sync();
     return true;
   }
-  shell.bind(dialog, reason => { if (!composing) close(reason); });
+  shell.bind(dialog, reason => { if (reason !== 'escape' || !composing) close(reason); });
   query.addEventListener('input', queueSearch);
   query.addEventListener('compositionstart', () => { composing = true; abortSearch(); mutate(() => { setList(false); showStatus(); }); });
   query.addEventListener('compositionend', () => { composing = false; queueSearch(); });
