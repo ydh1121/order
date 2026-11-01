@@ -1,0 +1,34 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {frequencyText,repeatVisitPlan,deliverySuggestion,distributionText,nominalQuantity,sumNominalQuantities} from '../../web/q4-planning.mjs';
+const reference={year:2026,month:11,anchorDate:'',nominal:true};
+const repeat={period:'매주',frequency:'2회',weeklyCheck:true,weekdays:{'1:월':true,'1:목':true}};
+test('FLEX long-run average uses P/base or variable denominator range, no rounded delivery count',()=>{assert.equal(frequencyText({monthlyPlan:'167',quantity:'25'}),'월 약 6.7회');assert.equal(frequencyText({monthlyPlan:'167',quantity:'25',variable:true,min:'20',max:'30'}),'월 약 5.6~8.4회');for(const quantity of ['', '10가20','0','605/3'])assert.equal(frequencyText({monthlyPlan:'167',quantity}),'—');});
+test('November 2026 Mon/Thu yields 9 actual calendar nominal dates, never 4 weeks',()=>{const r=repeatVisitPlan(repeat,reference);assert.equal(r.visits,9);assert.deepEqual(r.dates,['2026-11-02','2026-11-05','2026-11-09','2026-11-12','2026-11-16','2026-11-19','2026-11-23','2026-11-26','2026-11-30']);assert.equal(r.result.evidence.holidayAdjustmentsApplied,false);});
+test('optional weekdays require explicit monthly count; cyclic plans require starting Monday',()=>{assert.equal(repeatVisitPlan({...repeat,weeklyCheck:false},reference).resolved,false);assert.equal(repeatVisitPlan({...repeat,weeklyCheck:false},reference,'8').visits,8);const cycle={...repeat,period:'2주',weekdays:{...repeat.weekdays,'2:월':true,'2:목':true}};assert.equal(repeatVisitPlan(cycle,reference).resolved,false);assert.equal(repeatVisitPlan(cycle,{...reference,anchorDate:'2026-10-26'}).visits,9);assert.equal(repeatVisitPlan(cycle,{...reference,anchorDate:'2026-10-27'}).resolved,false);});
+test('167/8 is 21×7+20×1 only after variable permission and feasible range',()=>{const input={monthlyPlan:'167',repeat:{...repeat,weeklyCheck:false},reference,count:'8'};assert.equal(deliverySuggestion(input).feasible,false);assert.equal(deliverySuggestion({...input,variable:true,min:'21',max:'25'}).feasible,false);const plan=deliverySuggestion({...input,variable:true,min:'20',max:'21'});assert.equal(plan.feasible,true);assert.equal(distributionText(plan,'판'),'21판 7회 + 20판 1회');assert.equal(deliverySuggestion({...input,monthlyPlan:'168'}).constantQuantity,'21');});
+test('per-site partial nominal totals retain exact quantities and reject invalid ranges',()=>{const a=nominalQuantity({quantity:'10',visits:9}),b=nominalQuantity({quantity:'20',visits:8,variable:true,min:'18',max:'22'});const total=sumNominalQuantities([a,b]);assert.equal(total.low.n,234n);assert.equal(total.high.n,266n);assert.equal(nominalQuantity({quantity:'10',visits:8,variable:true,min:'20',max:'30'}),null);});
+test('restored accepted plan requires original M/links/cadence evidence and matching P/reference/visits/range',async()=>{
+ const {planningInputSignature,deliveryPlanIsCurrent}=await import('../../web/q4-planning.mjs');
+ const signature=planningInputSignature({M:'5000',P:'167',targets:['A'],repeat,reference,range:{min:'20',max:'21'}});
+ const plan={version:'1.0.0',monthlyPlan:'167',visits:8,unit:'tray',distribution:[{quantity:'21',visits:7},{quantity:'20',visits:1}],range:{min:'20',max:'21'},reference,source:'derived',reviewed:true,inputSignature:signature};
+ const input={signature,monthlyPlan:'167',unit:'tray',reference,visits:8,variable:true,range:{min:'20',max:'21'},quantity:'21'};
+ assert.equal(deliveryPlanIsCurrent(plan,input),true);
+ for(const patch of [{signature:planningInputSignature({M:'5001',P:'167',targets:['A'],repeat,reference,range:{min:'20',max:'21'}})},{signature:planningInputSignature({M:'5000',P:'167',targets:['A','B'],repeat,reference,range:{min:'20',max:'21'}})},{monthlyPlan:'168'},{visits:9},{reference:{...reference,month:12}},{range:{min:'19',max:'21'}},{quantity:'22'}])assert.equal(deliveryPlanIsCurrent(plan,{...input,...patch}),false);
+ assert.equal(deliveryPlanIsCurrent({...plan,inputSignature:undefined},input),false);
+ assert.equal(deliveryPlanIsCurrent({...plan,distribution:[{quantity:'20',visits:8}]},input),false);
+ assert.equal(planningInputSignature({a:1,b:2}),planningInputSignature({b:2,a:1}));
+});
+test('different reference months never create a whole total; same-month unresolved sites stay partial',async()=>{
+ const {sumNominalByReference}=await import('../../web/q4-planning.mjs');
+ const a={reference:{year:2026,month:11},value:nominalQuantity({quantity:'10',visits:9})};
+ const b={reference:{year:2026,month:12},value:nominalQuantity({quantity:'20',visits:8})};
+ const mixed=sumNominalByReference([a,b]);
+ assert.equal(mixed.sameReference,false);assert.equal(mixed.complete,false);assert.equal(mixed.total,null);
+ assert.deepEqual(mixed.groups.map(group=>[group.month,group.total.low.n]),[[11,90n],[12,160n]]);
+ const sameMonth=sumNominalByReference([a,{...b,reference:a.reference}]);
+ assert.equal(sameMonth.complete,true);assert.equal(sameMonth.total.low.n,250n);
+ const partial=sumNominalByReference([a,{reference:a.reference,value:null}]);
+ assert.equal(partial.sameReference,true);assert.equal(partial.complete,false);assert.equal(partial.total.low.n,90n);
+ assert.equal(sumNominalByReference([a,{...b,reference:{year:2027,month:11}}]).total,null);
+ assert.equal(sumNominalByReference([a,{reference:{year:2026,month:''},value:b.value}]).total,null);
+});

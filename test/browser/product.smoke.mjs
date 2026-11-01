@@ -3,6 +3,7 @@
  * No public QA host, provider success, mailbox ownership, OS or order acceptance.
  */
 import assert from 'node:assert/strict';
+import {closedAfterExplicitDiscard,discardPromptIfOpen} from './modal-test-helpers.mjs';
 import {createServer} from 'node:http';
 import {readFile,mkdir,writeFile,realpath} from 'node:fs/promises';
 import {dirname,resolve,join,extname,sep} from 'node:path';
@@ -23,7 +24,7 @@ const persisted=async()=>{await storageSettled();return page.evaluate(storageKey
 async function seedDurable(fixture){await storageSettled();const result=await page.evaluate(async fixture=>{const {createBrowserStorage}=await import('/storage.mjs');const adapter=createBrowserStorage(),loaded=await adapter.load();if(!loaded.ok)return loaded;return adapter.commit(fixture,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'product-fixture-'+crypto.randomUUID()});},fixture);assert.equal(result.ok,true,JSON.stringify(result));}
 async function formReady(){await storageSettled();await page.locator('#page-form.active').waitFor({state:'visible'});assert.equal(new URL(page.url()).hash,'#/form');assert.equal(await page.locator('#page-form').evaluate(el=>el.inert||el.getAttribute('aria-hidden')==='true'),false);}
 async function stage(name){await formReady();const trigger=page.locator(`.accordion-trigger[data-open="${name}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await page.waitForFunction(name=>document.querySelector(`#section-${name}`)?.dataset.open==='true'&&!document.querySelector(`#body-${name}>div`)?.inert,name);}
-async function closed(id){await page.waitForFunction(id=>document.getElementById(id)?.open===false,id);await page.locator('#'+id).waitFor({state:'hidden'});}
+async function closed(id){await closedAfterExplicitDiscard(page,id);}
 async function editSite(id){await stage('q3');const trigger=page.locator(`[id="q3-site-${id}"] > .accordion-trigger`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await page.locator(`[data-site-edit="${id}"]`).click();await page.locator('#site-editor-dialog[open]').waitFor({state:'visible'});}
 async function phoneState(){return page.evaluate(()=>{const c=OrderPhone.instance(document.getElementById('site-contact-phone'));return {value:c.get(),valid:c.parse().valid,contract:typeof c.contract==='function'?c.contract():null,parts:c.parts.filter(p=>!p.hidden).map(p=>p.value)};});}
 async function phonePaste(text){await page.locator('#site-contact-phone').focus();await page.locator('#site-contact-phone').evaluate((el,text)=>{const data=new DataTransfer();data.setData('text/plain',text);el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));},text);}
@@ -42,10 +43,10 @@ function q4Fixture(){
  q4Review:{version:'0460',pack:'30',profile:'FLEX',activeHoliday:holiday,activeRepeat:repeat,common:{contact:{phone:true,sms:false,kakao:false,email:false},process:'shop',quality:false,holiday,repeat}}}]};
 }
 function multiSiteFixture(){
- const fixture=q4Fixture();fixture.lines[0].qty='200';fixture.lines[0].qtyUnit='each';
+ const fixture=q4Fixture();fixture.lines[0].qty='200';fixture.lines[0].qtyUnit='tray';
  fixture.locations.push({...structuredClone(fixture.locations[0]),id:'qa-site-b',name:'합성 QA 사업장 B'});
- fixture.allocations[0].monthlyDemandQty='50';fixture.allocations[0].monthlyDemandUnit='each';fixture.allocations[0].monthlyDemandSource='manual';
- fixture.allocations.push({...structuredClone(fixture.allocations[0]),id:'qa-allocation-b',locationId:'qa-site-b',monthlyDemandQty:''});
+ Object.assign(fixture.allocations[0],{monthlyDemandQty:'',monthlyDemandUnit:'each',monthlyDemandSource:'manual',monthlyDemandBasis:'package-plan',monthlyPlanQty:'50',monthlyPlanUnit:'tray',monthlyPlanSource:'manual',monthlyAllocationContract:'2.0.0'});
+ fixture.allocations.push({...structuredClone(fixture.allocations[0]),id:'qa-allocation-b',locationId:'qa-site-b',monthlyDemandQty:'',monthlyDemandBasis:'unknown',monthlyDemandSource:'derived',monthlyPlanQty:'',monthlyPlanSource:'derived'});
  return fixture;
 }
 
@@ -146,16 +147,16 @@ try{
   const prior=(await persisted()).allocations;await editAllocation();
   assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'50');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'150');
   assert.equal(await page.locator('[data-field-group="1-monthly"]').getAttribute('data-quantity-source'),'derived');
-  assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/남은 배분량 150개/);assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/현재 입력 상한 200개/);
+  assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/남은 수량:.*150판/);assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/전체 수량:.*총200판/);
   await allocationSite(0);await page.locator('[data-qty="0:monthly"]').fill('60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');assert.deepEqual((await persisted()).allocations,prior);
   await allocationSite(1);await page.locator('[data-qty="1:monthly"]').fill('150');await page.locator('#q4-regular-save').click();
-  assert.equal(await page.locator('#q4-regular-dialog').evaluate(el=>el.open),true,'210 eggs cannot overwrite a 200-egg monthly allocation');assert.deepEqual((await persisted()).allocations,prior);
+  assert.equal(await page.locator('#q4-regular-dialog').evaluate(el=>el.open),true,'210 package plans cannot overwrite a 200-package plan when both demands are unknown');assert.deepEqual((await persisted()).allocations,prior);
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
  });
  await check('P09_Q4_MULTISITE_CONFIRM_DERIVED_SAVE_RELOAD',async()=>{
   await editAllocation();await allocationSite(0);await page.locator('[data-qty="0:monthly"]').fill('60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');
   await page.locator('#q4-regular-save').click();await closed('q4-regular-dialog');
-  const saved=(await persisted()).allocations;assert.deepEqual(saved.map(a=>a.monthlyDemandQty),['60','140']);assert.deepEqual(saved.map(a=>a.monthlyDemandUnit),['each','each']);assert.deepEqual(saved.map(a=>a.qty),['10','10'],'monthly distribution never overwrites per-delivery quantity');
+  const saved=(await persisted()).allocations;assert.deepEqual(saved.map(a=>a.monthlyPlanQty),['60','140']);assert.deepEqual(saved.map(a=>a.monthlyPlanUnit),['tray','tray']);assert.deepEqual(saved.map(a=>a.qty),['10','10'],'monthly distribution never overwrites per-delivery quantity');
   await page.reload();await emailReady();assert.deepEqual((await persisted()).allocations,saved);await editAllocation();assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');
  });
@@ -168,8 +169,8 @@ try{
   const openCopy=async()=>{await page.locator('[data-contact-copy="qa-site"]').click();const dialog=page.locator('#q3-contact-copy');await dialog.waitFor({state:'visible'});assert.equal(await dialog.getAttribute('data-copy-stage'),'select');return dialog;};
   const selectCopy=async dialog=>{for(const field of ['contactPhone','email']){await dialog.locator(`label:has([data-contact-copy-field="${field}"])`).click();assert.equal(await dialog.locator(`[data-contact-copy-field="${field}"]`).isChecked(),true);}await dialog.locator('label:has([data-contact-copy-target="qa-site-b"])').click();assert.equal(await dialog.locator('[data-contact-copy-target="qa-site-b"]').isChecked(),true);assert.deepEqual(await persisted(),prior,'selecting copy fields and targets cannot write committed state');};
   const reviewCopy=async dialog=>{await selectCopy(dialog);await dialog.locator('[data-copy-apply]').click();assert.equal(await dialog.getAttribute('data-copy-stage'),'review');assert.deepEqual(await dialog.locator('[data-copy-value="before"] dd').allTextContents(),['070-2345-6789','qa-target@example.com']);assert.deepEqual(await dialog.locator('[data-copy-value="after"] dd').allTextContents(),['010-2345-6789','qa@example.com']);assert.deepEqual(await persisted(),prior,'reviewing contact changes cannot write committed state');};
-  let dialog=await openCopy();await selectCopy(dialog);await dialog.locator('[data-copy-cancel]').click();await dialog.waitFor({state:'detached'});assert.deepEqual(await persisted(),prior,'cancel in selection leaves all committed fields unchanged');
-  dialog=await openCopy();await reviewCopy(dialog);await dialog.locator('[data-copy-cancel]').click();await dialog.waitFor({state:'detached'});assert.deepEqual(await persisted(),prior,'cancel in review leaves all committed fields unchanged');
+  let dialog=await openCopy();await selectCopy(dialog);await dialog.locator('[data-copy-cancel]').click();await closed('q3-contact-copy');await dialog.waitFor({state:'detached'});assert.deepEqual(await persisted(),prior,'cancel in selection leaves all committed fields unchanged');
+  dialog=await openCopy();await reviewCopy(dialog);await dialog.locator('[data-copy-cancel]').click();await closed('q3-contact-copy');await dialog.waitFor({state:'detached'});assert.deepEqual(await persisted(),prior,'cancel in review leaves all committed fields unchanged');
   dialog=await openCopy();await reviewCopy(dialog);await dialog.locator('[data-copy-apply]').click();await dialog.waitFor({state:'detached'});
   const confirmed=await persisted(),expected=structuredClone(prior);expected.locations[1].contactPhone='010-2345-6789';expected.locations[1].email='qa@example.com';expected.allocationRevision=prior.allocationRevision+1;
   assert.deepEqual(confirmed,expected,'one confirmation updates only the selected target fields in a single save');

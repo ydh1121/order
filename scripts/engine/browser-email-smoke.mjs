@@ -12,7 +12,8 @@ const require=createRequire(import.meta.url);
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const sourceRoot=fileURLToPath(new URL('../../src/engine/',import.meta.url));
 const requestedOrigin=process.argv[2];
-const expanded=process.argv[3]==='--expanded';
+const productPolicy=process.argv.includes('--product-policy');
+const expanded=process.argv.includes('--expanded')||productPolicy;
 // Observation candidates, never a production allow-list or guaranteed mailboxes.
 const cases=expanded?[
  {domain:'naver.com',category:'KR_GENERAL'}, {domain:'gmail.com',category:'GENERAL'},
@@ -27,7 +28,7 @@ const cases=expanded?[
  {domain:'naver.co.in',category:'USER_NXDOMAIN_EXAMPLE'}, {domain:'example.com',category:'NULL_MX_REFERENCE'},
 ]:[{domain:'example.com',category:'NULL_MX_REFERENCE'},{domain:'iana.org',category:'GENERAL'}];
 const playwrightModule=process.env.PLAYWRIGHT_MODULE||'playwright';
-const report={schemaVersion:1,mode:'ACTUAL_HTTPS_BROWSER_ADAPTER_PROBE',startedAt:new Date().toISOString(),requestedOrigin,
+const report={schemaVersion:1,mode:productPolicy?'ACTUAL_HTTPS_BROWSER_PRODUCT_SERVICE_PROBE':'ACTUAL_HTTPS_BROWSER_ADAPTER_PROBE',startedAt:new Date().toISOString(),requestedOrigin,
   scope:{moduleDelivery:'LOCAL_CHECKOUT_MODULE_BYTES_AS_DATA_URLS',networkMocked:false,cspBypassed:false,
     deployedBuildVerified:false,deployedIanaVerified:false,productAcceptance:false,publicQaHosted:false},
   runtime:{node:process.version,platform:process.platform,arch:process.arch,osRelease:release(),headless:true},
@@ -39,6 +40,7 @@ let browser;
 
 try{
   if(!['https://example.com','https://order-ooo.pages.dev'].includes(requestedOrigin))throw Error('Explicit permitted HTTPS origin required: https://example.com or https://order-ooo.pages.dev');
+  if(productPolicy&&requestedOrigin!=='https://order-ooo.pages.dev')throw Error('Product service probe requires canonical origin');
   report.source.commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   report.source.dirtyPaths=execFileSync('git',['status','--porcelain','--','src/engine','scripts/engine/browser-email-smoke.mjs'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean);
   // Resolve a normally pinned repository dependency, or an explicitly supplied path.
@@ -64,8 +66,9 @@ try{
   const core=await moduleUrl(new URL('../../src/engine/validation/email-dns.mjs',import.meta.url));
   const syntaxModule=await moduleUrl(new URL('../../src/engine/validation/email.mjs',import.meta.url));
   const referenceModule=await moduleUrl(new URL('../../src/engine/adapters/iana-browser.mjs',import.meta.url));
-  const envelope=await buildBrowserReference({now:Date.now()});
-  report.reference={...envelope.manifest,delivery:'CHECKOUT_VERIFIED_ENVELOPE_NOT_DEPLOYED_REFERENCE'};
+  const serviceModule=productPolicy?await moduleUrl(new URL('../../src/engine/adapters/email-browser.mjs',import.meta.url)):null;
+  const envelope=productPolicy?null:await buildBrowserReference({now:Date.now()});
+  report.reference=envelope?{...envelope.manifest,delivery:'CHECKOUT_VERIFIED_ENVELOPE_NOT_DEPLOYED_REFERENCE'}:{delivery:'ACTUAL_CANONICAL_SAME_ORIGIN_ASSET'};
   report.source.modules.sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
   report.source.graphSha256=createHash('sha256').update(JSON.stringify(report.source.modules)).digest('hex');
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined});report.runtime.browserVersion=await browser.version();
@@ -85,12 +88,13 @@ try{
   check('ACTUAL_ORIGIN_MATCHES_REQUEST',baseline.origin,requestedOrigin);check('HTTPS_SECURE_CONTEXT',baseline.isSecureContext,true);
   if(report.assertions.some(row=>!row.passed)){report.outcome={status:'FAIL_STRUCTURAL',structural:'FAIL',online:'NOT_RUN'};report.exitCode=1;}
   else{
-    const observed=await page.evaluate(async({adapter,core,syntaxModule,referenceModule,envelope,cases,expanded})=>{
+    const observed=await page.evaluate(async({adapter,core,syntaxModule,referenceModule,serviceModule,envelope,cases,expanded,productPolicy})=>{
       const {browserDomainToASCII,createBrowserDnsResolver,readBoundedJson}=await import(adapter);
       const {validateEmailDomain}=await import(core);
       const {validateEmailSyntax,emailCompletionGate}=await import(syntaxModule);
-      const {verifyBrowserIana,browserIanaFreshness}=await import(referenceModule);
-      const reference=await verifyBrowserIana(envelope);
+      const {verifyBrowserIana,browserIanaFreshness,createBrowserIanaProvider}=await import(referenceModule);
+      const referenceProvider=productPolicy?createBrowserIanaProvider({origin:location.origin}):null;
+      let reference=productPolicy?await referenceProvider.get():await verifyBrowserIana(envelope);
       const browserFetches=[],audits=[];
       const fetcher=async(url,options)=>{
         const parsed=new URL(url),entry={id:browserFetches.length+1,startedAt:new Date().toISOString(),url:parsed.href,
@@ -111,7 +115,20 @@ try{
         }catch(error){Object.assign(entry,{failedAt:new Date().toISOString(),fetchResolved:false,corsReadable:false,errorName:error?.name??'Error',error:String(error?.message??error).slice(0,300)});throw error;}
       };
       const online=[];
-      for(const item of cases)for(const provider of expanded?['cloudflare','google']:['cloudflare']){
+      if(productPolicy){
+        const {createBrowserEmailService}=await import(serviceModule);
+        const service=createBrowserEmailService({referenceProvider,fetcher});
+        try{for(const [index,item] of cases.entries()){
+          const domain=browserDomainToASCII(item.domain),fieldId='online-observation-'+index,before=browserFetches.length;
+          // This synthetic local-part remains in memory and is never reported or queried.
+          const packet=await service.validate(fieldId,'observation-only@'+item.domain);
+          online.push({...item,inputDomain:item.domain,domain,provider:'bounded-independent',
+            syntax:{status:packet.syntax.status,reasonCodes:packet.syntax.reasonCodes,tld:packet.syntax.evidence.tld,dataVersion:packet.syntax.versions.data},
+            httpRequests:packet.dns?.evidence.httpRequests??0,transportRequestsThisCase:browserFetches.length-before,
+            result:packet.dns,diagnostic:packet.diagnostic,gate:packet.gate});
+          service.cancel(fieldId);
+        }}finally{service.close();}
+      }else for(const item of cases)for(const provider of expanded?['cloudflare','google']:['cloudflare']){
         const domain=browserDomainToASCII(item.domain);
         // This synthetic local-part remains entirely inside this JS context.
         const syntax=validateEmailSyntax({raw:'observation-only@'+item.domain},{domainToASCII:browserDomainToASCII,tldData:reference,nowMs:Date.now()});
@@ -120,21 +137,24 @@ try{
         online.push({...item,inputDomain:item.domain,domain,provider,syntax:{status:syntax.status,reasonCodes:syntax.reasonCodes,tld:syntax.evidence.tld,dataVersion:syntax.versions.data},httpRequests:resolver.requests,result,gate:emailCompletionGate(syntax,result)});
       }
       await Promise.allSettled(audits);
+      if(referenceProvider)reference=await referenceProvider.get({refreshIfStale:false});
       return {checkedAt:new Date().toISOString(),idna:{russian:browserDomainToASCII('пример.рф'),korean:browserDomainToASCII('예시.한국'),
-        malformed:browserDomainToASCII('xn--a.com'),urlInjection:browserDomainToASCII('example.com:443')},reference:{version:reference.version,sourceSha256:reference.sourceSha256,collectedAt:reference.collectedAt,sourceUpdatedAt:reference.sourceUpdatedAt,freshness:browserIanaFreshness(reference,Date.now())},online,browserFetches};
-    },{adapter,core,syntaxModule,referenceModule,envelope,cases,expanded});
+        malformed:browserDomainToASCII('xn--a.com'),urlInjection:browserDomainToASCII('example.com:443')},reference:{version:reference?.version??null,sourceSha256:reference?.sourceSha256??null,collectedAt:reference?.collectedAt??null,sourceUpdatedAt:reference?.sourceUpdatedAt??null,freshness:browserIanaFreshness(reference,Date.now()),runtime:referenceProvider?await referenceProvider.inspect():null},online,browserFetches};
+    },{adapter,core,syntaxModule,referenceModule,serviceModule,envelope,cases,expanded,productPolicy});
     report.checkedAt=observed.checkedAt;report.idna=observed.idna;report.online=observed.online;report.browserFetches=observed.browserFetches;
-    report.referenceVerified=observed.reference;report.expanded=expanded;
+    report.referenceVerified=observed.reference;report.expanded=expanded;report.productPolicy=productPolicy;
+    report.scope.deployedIanaVerified=productPolicy&&observed.reference.freshness.state==='FRESH';
     check('IDNA_RUSSIAN',observed.idna.russian,'xn--e1afmkfd.xn--p1ai');check('IDNA_KOREAN',observed.idna.korean,'xn--vv4b11d.xn--3e0b707e');
     check('IDNA_MALFORMED_ALABEL_REJECTED',observed.idna.malformed,'');check('IDNA_URL_INJECTION_REJECTED',observed.idna.urlInjection,'');
     check('NO_UNCAUGHT_PAGE_ERRORS',report.page.errors.length,0);
     check('NO_LOCAL_PART_IN_DNS_REQUESTS',observed.browserFetches.every(row=>!row.domain.includes('@')&&!decodeURIComponent(row.url).includes('observation-only')));
     for(const row of observed.online){
-      check(`${row.domain}:${row.provider}:SYNTAX_IANA`,row.syntax.status,'VALID');
+      if(!productPolicy)check(`${row.domain}:${row.provider}:SYNTAX_IANA`,row.syntax.status,'VALID');
+      else check(`${row.domain}:REFERENCE_UNCERTAINTY_IS_NEUTRAL`,row.syntax.status==='VALID'||row.syntax.status==='UNKNOWN'&&!row.gate.finalCompletionAllowed&&row.gate.preserveDraft&&row.gate.tone==='neutral');
       if(!row.result){row.classification='REFERENCE_INCONCLUSIVE';continue;}
       check(`${row.domain}:NORMALIZED_DOMAIN`,row.result.normalized?.domain,row.domain);
-      check(`${row.domain}:QUERY_BUDGET`,Number.isInteger(row.result.evidence?.queries)&&row.result.evidence.queries>0&&row.result.evidence.queries<=16);
-      check(`${row.domain}:HTTP_BUDGET`,Number.isInteger(row.httpRequests)&&row.httpRequests>0&&row.httpRequests<=16);
+      check(`${row.domain}:QUERY_BUDGET`,Number.isInteger(row.result.evidence?.queries)&&row.result.evidence.queries>0&&row.result.evidence.queries<=(productPolicy?32:16));
+      check(`${row.domain}:HTTP_BUDGET`,Number.isInteger(row.httpRequests)&&row.httpRequests>0&&row.httpRequests<=(productPolicy?32:16));
       check(`${row.domain}:REAL_OBSERVATIONS`,Array.isArray(row.result.evidence?.observations)&&row.result.evidence.observations.length>0);
       check(`${row.domain}:SUPPORTED_VERDICT`,['VALID','INVALID','UNKNOWN'].includes(row.result.status));
       check(`${row.domain}:NOT_INPUT_CONTRACT_FAILURE`,!row.result.reasonCodes?.includes('DNS_INPUT_CONTRACT'));
@@ -145,7 +165,13 @@ try{
         check(`${row.domain}:${row.provider}:UNKNOWN_PRESERVES_DRAFT`,row.gate.preserveDraft,true);
       }
       const definitive=['VALID','INVALID'].includes(row.result.status);
-      const readable=observed.browserFetches.some(fetch=>fetch.domain===row.domain&&new URL(fetch.url).hostname===(row.provider==='google'?'dns.google':'cloudflare-dns.com')&&fetch.httpStatus===200&&fetch.corsReadable&&Number.isInteger(fetch.dnsStatus));
+      const readable=observed.browserFetches.some(fetch=>fetch.domain===row.domain&&(row.provider==='bounded-independent'||new URL(fetch.url).hostname===(row.provider==='google'?'dns.google':'cloudflare-dns.com'))&&fetch.httpStatus===200&&fetch.corsReadable&&Number.isInteger(fetch.dnsStatus));
+      if(productPolicy){
+        check(`${row.domain}:TWO_PROVIDER_OBSERVATIONS`,row.result.evidence.providers?.map(p=>p.provider),['cloudflare','google']);
+        check(`${row.domain}:CONFLICT_BLOCKS_COMPLETION`,!row.result.reasonCodes.includes('DNS_PROVIDER_CONFLICT')||row.result.status==='UNKNOWN'&&!row.gate.finalCompletionAllowed);
+        check(`${row.domain}:ZERO_TTL_HAS_NO_CACHE_EXPIRY`,row.result.evidence.decisionScope!=='CURRENT_VALIDATION_ONLY'||row.result.evidence.validUntil===null);
+        check(`${row.domain}:DOMAIN_ONLY_DIAGNOSTIC`,!JSON.stringify(row.diagnostic).includes('observation-only'));
+      }
       row.classification=definitive&&readable?'DEFINITIVE_DNS_OBSERVATION':'ONLINE_INCONCLUSIVE';
     }
     report.categoryObservations=Object.fromEntries([...new Set(report.online.map(row=>row.category))].map(category=>[category,

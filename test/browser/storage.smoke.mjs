@@ -4,6 +4,7 @@
  * Run after npm run build: node test/browser/storage.smoke.mjs
  */
 import assert from 'node:assert/strict';
+import {closedAfterExplicitDiscard,discardPromptIfOpen} from './modal-test-helpers.mjs';
 import {createServer} from 'node:http';
 import {readFile,writeFile,mkdir,mkdtemp,realpath,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -22,12 +23,13 @@ const mime={'.html':'text/html; charset=utf-8','.mjs':'text/javascript; charset=
 function fixture(){
  const holiday={days:[],none:true,irregular:false,conflict:'협의 후 조정',weekend:'협의 후 조정',holiday:'협의 후 조정',subholiday:'협의 후 조정',request:''};
  const repeat={period:'매주',frequency:'1회',date:'',dateMode:'custom',weeklyCheck:false,weekdays:{},weekOpen:0,semantics:'per-week-v1',legacyReviewRequired:false};
- return {allocationRevision:0,current:'storage-sku',open:'q4',lines:[{id:'storage-sku',housing:'4',size:'특란',pack:'30',qty:'200',qtyUnit:'each',price:'8000'}],
+ return {allocationRevision:0,current:'storage-sku',open:'q4',lines:[{id:'storage-sku',housing:'4',size:'특란',pack:'30',qty:'200',qtyUnit:'tray',price:'8000'}],
  locations:['A','B'].map(id=>({id:'storage-'+id,name:'합성 저장 검사 '+id,road:'합성 주소 — 실제 공급자 조회 아님',detail:'합성 상세',postal:'00000',contactPhone:'010-2345-6789',storePhone:'',email:'qa@example.com',addressState:'PRESENT_REQUIRES_PROVIDER_POLICY',basicInfoDraft:false,mailboxVerified:false})),
- allocations:['A','B'].map((id,index)=>({id:'storage-allocation-'+id,lineId:'storage-sku',locationId:'storage-'+id,mode:'FLEX',modeExplicit:true,qty:'10',monthlyDemandQty:index?'150':'50',monthlyDemandUnit:'each',monthlyDemandSource:index?'derived':'manual',variableQty:false,qtyMin:'',qtyMax:'',qualityTest:false,
+ allocations:['A','B'].map((id,index)=>({id:'storage-allocation-'+id,lineId:'storage-sku',locationId:'storage-'+id,mode:'FLEX',modeExplicit:true,qty:'10',monthlyDemandQty:index?'4500':'',monthlyDemandUnit:'each',monthlyDemandSource:index?'derived':'manual',monthlyDemandBasis:index?'residual':'package-plan',monthlyPlanQty:index?'150':'50',monthlyPlanUnit:'tray',monthlyPlanSource:index?'derived':'manual',monthlyAllocationContract:'2.0.0',variableQty:false,qtyMin:'',qtyMax:'',qualityTest:false,
  advanced:{contactChannels:['phone'],fixedOrderProcess:'seller',flexOrderProcess:'store',storeOffDays:[],storeOffNone:true,storeOffPolicy:'ask',weekend:'ask',holiday:'ask',substituteHoliday:'ask'},
  q4Review:{version:'0460',pack:'30',profile:'FLEX',activeHoliday:structuredClone(holiday),activeRepeat:structuredClone(repeat),common:{contact:{phone:true,sms:false,kakao:false,email:false},process:'shop',quality:false,holiday:structuredClone(holiday),repeat:structuredClone(repeat)}}}))};
 }
+function legacyFixture(){const data=fixture();for(const [i,a]of data.allocations.entries()){a.monthlyDemandQty=i?'150':'50';a.monthlyDemandUnit='tray';for(const key of ['monthlyPlanQty','monthlyPlanUnit','monthlyPlanSource','monthlyDemandBasis','monthlyAllocationContract'])delete a[key];}return data;}
 async function check(id,fn){const item={id,status:'RUNNING'};checks.push(item);try{await fn(item);item.status='PASS';}catch(error){item.status='FAIL';item.error=String(error.stack||error);throw error;}}
 async function adapter(tab,action,args=[],options={}){return tab.evaluate(async({action,args,options})=>{
  const {createBrowserStorage}=await import('/storage.mjs');const dependencies={};
@@ -44,7 +46,7 @@ async function seed(data=fixture()){const loaded=await adapter(harness,'load');a
 async function product(tab=page){await tab.goto(base+'/#/form');await settled(tab);await tab.locator('#page-form.active').waitFor({state:'visible'});}
 async function stage(tab,name){await settled(tab);const trigger=tab.locator(`.accordion-trigger[data-open="${name}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();await settled(tab);}
 async function openQ4(){await stage(page,'q4');const toggle=page.locator('[data-q4-body-toggle="storage-sku"]');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('[data-edit-allocation="storage-allocation-A"]').click();await page.locator('#q4-regular-dialog[open]').waitFor({state:'visible'});}
-async function closeQ4(){await page.waitForFunction(()=>!document.getElementById('q4-regular-dialog').open);await settled();}
+async function closeQ4(){await closedAfterExplicitDiscard(page,'q4-regular-dialog');await settled();}
 async function revealSite(index){const trigger=page.locator(`[data-acc="site-${index}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();}
 async function dnsReady(tab=page){try{await tab.waitForFunction(()=>window.OrderEmailDomain&&OrderEmailDomain.isSuccess(OrderEmailDomain.status('qa@example.com')));}
  catch(error){const snapshot=await tab.evaluate(storageDiagnostics,{key:KEY}).catch(()=>({status:'SNAPSHOT_UNAVAILABLE'}));diagnostics.push({phase:'DNS_READY_TIMEOUT',launch:profileLaunches.length,at:new Date().toISOString(),...snapshot,syntheticDnsRequestsThisLaunch:requests.filter(r=>r.launch===profileLaunches.length).length,ianaRequestsThisLaunch:ianaRequests.filter(r=>r.launch===profileLaunches.length)});throw error;}}
@@ -86,8 +88,8 @@ try{
  profile=await mkdtemp(join(tmpdir(),'order-storage-profile-'));await launchProfile();
  await check('S01_COMMITTED_Q1_Q4_ID_UNIT_SOURCE_AND_PRODUCT_RELOAD',async()=>{
   await clean();await seed();await product();await dnsReady();const stored=await envelope(page);
-  assert.equal(stored.schemaVersion,3);assert.equal(stored.state,'data');assert.equal(stored.data.lines[0].qty,'200');assert.equal(stored.data.lines[0].qtyUnit,'each');
-  assert.deepEqual(stored.data.allocations.map(a=>[a.locationId,a.monthlyDemandQty,a.monthlyDemandSource,a.qty]),[['storage-A','50','manual','10'],['storage-B','150','derived','10']]);
+  assert.equal(stored.schemaVersion,4);assert.equal(stored.state,'data');assert.equal(stored.data.lines[0].qty,'200');assert.equal(stored.data.lines[0].qtyUnit,'tray');
+  assert.deepEqual(stored.data.allocations.map(a=>[a.locationId,a.monthlyPlanQty,a.monthlyPlanSource,a.qty]),[['storage-A','50','manual','10'],['storage-B','150','derived','10']]);
   assert.equal(stored.data.locations[0].contactPhone,'010-2345-6789');await page.reload();await settled();assert.deepEqual((await envelope(page)).data,stored.data);
  });
  await check('S04_NEW_TAB_SAME_ORIGIN_ASSET_REFRESH_AND_DNS_RECHECK',async()=>{
@@ -102,15 +104,15 @@ try{
   await openQ4();const before=await envelope(page);await revealSite(0);await page.locator('[data-qty="0:monthly"]').fill('60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');assert.deepEqual(await envelope(page),before);
   await page.keyboard.press('Escape');await closeQ4();assert.deepEqual(await envelope(page),before);
   await openQ4();await revealSite(0);await page.locator('[data-qty="0:monthly"]').fill('60');await page.locator('#q4-regular-save').evaluate(button=>{button.click();button.click();});await closeQ4();
-  const after=await envelope(page);assert.equal(after.revision,before.revision+1);assert.deepEqual(after.data.allocations.map(a=>a.monthlyDemandQty),['60','140']);assert.deepEqual(after.data.allocations.map(a=>a.qty),['10','10']);
+  const after=await envelope(page);assert.equal(after.revision,before.revision+1);assert.deepEqual(after.data.allocations.map(a=>a.monthlyPlanQty),['60','140']);assert.deepEqual(after.data.allocations.map(a=>a.qty),['10','10']);
  });
- await check('S02_BROWSER_BACK_DROPS_UNCONFIRMED_DOCUMENT_DRAFT',async()=>{
-  await page.goto(base+'/__storage_test_harness');await product();await dnsReady();const before=await envelope(page);await openQ4();await page.locator('[data-qty="0:base"]').fill('13');await page.goBack();assert.equal(new URL(page.url()).pathname,'/__storage_test_harness');assert.deepEqual(await envelope(page),before);await product();await dnsReady();await openQ4();assert.equal(await page.locator('[data-qty="0:base"]').inputValue(),before.data.allocations[0].qty);await page.locator('#q4-regular-cancel').click();await closeQ4();
+ await check('S02_BROWSER_BACK_EXPLICITLY_DISCARDS_UNCONFIRMED_DRAFT',async()=>{
+  await product();await dnsReady();await page.locator('#form-back').click();await page.locator('#page-home.active').waitFor();await page.locator('#start').click();const before=await envelope(page);await openQ4();await page.locator('[data-qty="0:base"]').fill('13');await page.goBack();await page.locator('#order-discard-dialog[open]').waitFor();assert.equal(new URL(page.url()).hash,'#/form');await closeQ4();assert.deepEqual(await envelope(page),before);await openQ4();assert.equal(await page.locator('[data-qty="0:base"]').inputValue(),before.data.allocations[0].qty);await page.locator('#q4-regular-cancel').click();await closeQ4();
  });
  await check('S02_CANCEL_WHILE_REAL_WEB_LOCK_QUEUES_COMMIT',async()=>{
   await openQ4();await page.locator('[data-qty="0:base"]').fill('11');const before=await envelope(page);
   await harness.evaluate(async name=>{let entered;const acquired=new Promise(resolve=>entered=resolve);window.__storageTestHeld=navigator.locks.request(name,async()=>{entered();await new Promise(resolve=>window.__storageTestRelease=resolve);});await acquired;},LOCK);
-  try{await page.locator('#q4-regular-save').click();await page.waitForFunction(()=>document.documentElement.dataset.storagePending==='true');await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.getElementById('q4-regular-dialog').open);}
+  try{await page.locator('#q4-regular-save').click();await page.waitForFunction(()=>document.documentElement.dataset.storagePending==='true');await page.keyboard.press('Escape');await closedAfterExplicitDiscard(page,'q4-regular-dialog');}
   finally{await harness.evaluate(()=>window.__storageTestRelease());}
   await settled();assert.deepEqual(await envelope(page),before,'cancelled queued draft cannot later commit');assert.equal(await page.locator('#q4-commit-error').count(),0,'late cancelled response cannot paint an error into a closed editor');
  });
@@ -130,13 +132,13 @@ try{
  });
  await check('S02_R2_AND_R1_MIGRATE_ONCE_KEEP_UNRELATED_SESSION',async()=>{
   await page.close();page=harness;
-  for(const legacyKey of [R2,R1]){await clean();const source=fixture();await harness.evaluate(({legacyKey,source})=>{sessionStorage.setItem(legacyKey,JSON.stringify(source));sessionStorage.setItem('unrelated-test-value','keep');},{legacyKey,source});
+  for(const legacyKey of [R2,R1]){await clean();const source=legacyFixture();await harness.evaluate(({legacyKey,source})=>{sessionStorage.setItem(legacyKey,JSON.stringify(source));sessionStorage.setItem('unrelated-test-value','keep');},{legacyKey,source});
    const loaded=await adapter(harness,'load');assert.equal(loaded.ok,true,JSON.stringify(loaded));assert.equal(loaded.status,'MIGRATED');assert.equal(loaded.data.lines[0].qty,'200');const durable=await rawRecord(harness);
    await harness.evaluate(({legacyKey,source})=>{source.lines[0].qty='999';sessionStorage.setItem(legacyKey,JSON.stringify(source));},{legacyKey,source});assert.equal((await adapter(harness,'load')).status,'LOADED');assert.equal(await rawRecord(harness),durable);assert.equal(await harness.evaluate(()=>sessionStorage.getItem('unrelated-test-value')),'keep');
   }
  });
  await check('S03_FAILED_MIGRATION_PRESERVES_ORIGINAL_SESSION',async()=>{
-  await clean();const original=JSON.stringify(fixture());await harness.evaluate(({R2,original})=>sessionStorage.setItem(R2,original),{R2,original});const result=await adapter(harness,'load',[],{failWrites:true});assert.equal(result.ok,false);assert.equal(result.status,'WRITE_FAILED');assert.equal(await rawRecord(harness),null);assert.equal(await harness.evaluate(key=>sessionStorage.getItem(key),R2),original);
+  await clean();const original=JSON.stringify(legacyFixture());await harness.evaluate(({R2,original})=>sessionStorage.setItem(R2,original),{R2,original});const result=await adapter(harness,'load',[],{failWrites:true});assert.equal(result.ok,false);assert.equal(result.status,'WRITE_FAILED');assert.equal(await rawRecord(harness),null);assert.equal(await harness.evaluate(key=>sessionStorage.getItem(key),R2),original);
  });
  await check('S03_CORRUPT_UNKNOWN_VERSION_NEVER_FALLBACK_OR_OVERWRITE',async()=>{
   for(const [raw,status]of [['{broken-json','CORRUPT'],[JSON.stringify({schemaVersion:999,revision:1,state:'data',data:fixture()}),'UNSUPPORTED']]){

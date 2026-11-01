@@ -4,10 +4,10 @@ export function allocationFixture(){
  const holiday={days:[],none:true,irregular:false,conflict:'협의 후 조정',weekend:'협의 후 조정',holiday:'협의 후 조정',subholiday:'협의 후 조정',request:''};
  const repeat={period:'매주',frequency:'1회',date:'',dateMode:'custom',weeklyCheck:false,weekdays:{},weekOpen:0,semantics:'per-week-v1',legacyReviewRequired:false};
  const site=id=>({id,name:'합성 QA 사업장 '+id.slice(-1).toUpperCase(),road:'합성 QA 주소 — 실제 주소 아님',detail:'합성 상세 — 실제 주소 아님',postal:'00000',contactPhone:'010-0000-0000',email:'qa@example.com',storePhone:'',status:'QA_SYNTHETIC',providerId:'QA_SYNTHETIC_NOT_PROVIDER',addressState:'PRESENT_REQUIRES_PROVIDER_POLICY',basicInfoDraft:false,mailboxVerified:false});
- const allocation=(id,locationId,monthlyDemandQty,source)=>({id,lineId:'qa-line',locationId,mode:'FLEX',modeExplicit:true,qty:'10',monthlyDemandQty,monthlyDemandUnit:'each',monthlyDemandSource:source,variableQty:false,qtyMin:'',qtyMax:'',qualityTest:false,
+ const allocation=(id,locationId,monthlyPlanQty,source)=>({id,lineId:'qa-line',locationId,mode:'FLEX',modeExplicit:true,qty:'10',monthlyDemandQty:'',monthlyDemandUnit:'each',monthlyDemandSource:source,monthlyDemandBasis:monthlyPlanQty?'package-plan':'unknown',monthlyPlanQty,monthlyPlanUnit:'tray',monthlyPlanSource:source,monthlyAllocationContract:'2.0.0',variableQty:false,qtyMin:'',qtyMax:'',qualityTest:false,
   advanced:{contactChannels:['phone'],fixedOrderProcess:'seller',flexOrderProcess:'store',storeOffDays:[],storeOffNone:true,storeOffPolicy:'ask',weekend:'ask',holiday:'ask',substituteHoliday:'ask'},
   q4Review:{version:'0460',pack:'30',profile:'FLEX',activeHoliday:holiday,activeRepeat:repeat,common:{contact:{phone:true,sms:false,kakao:false,email:false},process:'shop',quality:false,holiday,repeat}}});
- return {lines:[{id:'qa-line',housing:'4',size:'특란',pack:'30',qty:'200',qtyUnit:'each',price:''}],current:'qa-line',open:'q4',allocationRevision:0,
+ return {lines:[{id:'qa-line',housing:'4',size:'특란',pack:'30',qty:'200',qtyUnit:'tray',price:''}],current:'qa-line',open:'q4',allocationRevision:0,
   locations:[site('qa-site-a'),site('qa-site-b')],allocations:[allocation('qa-allocation-a','qa-site-a','50','manual'),allocation('qa-allocation-b','qa-site-b','','derived')]};
 }
 

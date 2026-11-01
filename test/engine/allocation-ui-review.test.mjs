@@ -1,161 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { allocationStateFromContext, inspectMonthlyAllocations, createMonthlyAllocationDraft, inspectOnceAllocations } from '../../web/allocation-ui.mjs';
-
-// UI adapter fixtures use synthetic IDs and quantities only.
-function context() {
-  return { revision: 1, line: { id: 'sku-review', qty: '200', qtyUnit: 'each', pack: '30' },
-    locations: [{ id: 'A', name: 'TEST-A' }, { id: 'B', name: 'TEST-B' }],
-    allocations: [
-      { id: 'allocation-A', lineId: 'sku-review', locationId: 'A', mode: 'FLEX', monthlyDemandQty: '50', monthlyDemandUnit: 'each', monthlyDemandSource: 'manual', qty: '7', advanced: { memo: 'TEST-KEEP' } },
-      { id: 'allocation-B', lineId: 'sku-review', locationId: 'B', mode: 'FIXED', monthlyDemandQty: '', monthlyDemandUnit: 'each', qty: '9' }
-    ] };
-}
-const ratio = n => ({ numerator: String(n), denominator: '1' });
-
-test('UI allocation review: proposals stay private, IDs survive permutation, delivery fields unchanged', () => {
-  const original = context(), before = structuredClone(original);
-  const controller = createMonthlyAllocationDraft(original, { transactionId: 'review-private' });
-  assert.deepEqual(controller.rows.map(r => [r.locationId, r.quantity.raw]), [['A', '50'], ['B', '150']]);
-  assert.deepEqual(original, before);
-  controller.set('A', '60');
-  assert.equal(controller.rows.find(r => r.locationId === 'B').quantity.raw, '140');
-  const saved = controller.confirm({ allocations: [...original.allocations].reverse() });
-  assert.equal(saved.ok, true);
-  assert.deepEqual(saved.allocations.map(a => [a.locationId, a.monthlyDemandQty, a.qty]), [['B', '140', '9'], ['A', '60', '7']]);
-  assert.equal(saved.allocations.find(a => a.locationId === 'A').advanced.memo, 'TEST-KEEP');
-  assert.deepEqual(original, before);
-});
-
-test('UI allocation review: equal user-entered derived value becomes manual and cannot be auto-rewritten', () => {
-  const controller = createMonthlyAllocationDraft(context(), { transactionId: 'review-manual' });
-  controller.set('B', '150'); controller.set('A', '60');
-  assert.equal(controller.rows.find(r => r.locationId === 'B').quantity.raw, '150');
-  assert.equal(controller.rows.find(r => r.locationId === 'B').source, 'manual');
-  assert.deepEqual(controller.evaluate().normalized.excess, ratio(10));
-  assert.equal(controller.confirm().ok, false);
-});
-
-test('UI allocation review: returned rows/session cannot mutate private draft and IME stays incomplete', () => {
-  const controller = createMonthlyAllocationDraft(context(), { transactionId: 'review-isolation' });
-  const rows = controller.rows, session = controller.session;
-  rows[0].quantity.raw = '999'; session.entries[0].quantity.raw = '888';
-  assert.equal(controller.rows[0].quantity.raw, '50');
-  controller.set('A', '', { composing: true });
-  assert.equal(controller.evaluate().status, 'INCOMPLETE');
-  assert.equal(controller.evaluate().normalized.residualBeforeSuggestions, null);
-  assert.equal(controller.confirm().ok, false);
-});
-
-test('UI allocation review: explicit each is distinct from legacy packaging unit', () => {
-  const explicit = context(), legacy = context();
-  delete legacy.line.qtyUnit;
-  for (const row of legacy.allocations) delete row.monthlyDemandUnit;
-  assert.equal(allocationStateFromContext(explicit).lines[0].total.unit, 'each');
-  assert.equal(allocationStateFromContext(legacy).lines[0].total.unit, 'tray');
-  assert.deepEqual(createMonthlyAllocationDraft(explicit).evaluate().normalized.totalBase, ratio(200));
-  assert.deepEqual(createMonthlyAllocationDraft(legacy).evaluate().normalized.totalBase, ratio(6000));
-  const mixed = context(); mixed.allocations[0].mode = 'ONCE';
-  assert.equal(inspectMonthlyAllocations(mixed).status, 'POLICY_UNRESOLVED');
-  assert.equal(createMonthlyAllocationDraft(mixed).confirm().ok, false);
-});
-
-test('UI allocation review: external same-revision changes block confirmation even after cached success', () => {
-  let current = context();
-  const controller = createMonthlyAllocationDraft(current, { readCurrentContext: () => current, transactionId: 'review-cached-stale' });
-  assert.equal(controller.confirm().ok, true);
-  current = structuredClone(current); current.line.qty = '240';
-  const stale = controller.confirm();
-  assert.equal(stale.ok, false);
-  assert.equal(stale.result.writes ?? 0, 0);
-});
-
-test('UI allocation review: cancel closes even a previously confirmed controller', () => {
-  const controller = createMonthlyAllocationDraft(context(), { transactionId: 'review-closed' });
-  assert.equal(controller.confirm().ok, true);
-  controller.cancel();
-  assert.equal(controller.closed, true);
-  assert.equal(controller.confirm().ok, false);
-});
-
-test('UI allocation review: caller cannot remove or replace stable allocation identities at confirm', () => {
-  for (const mutate of [
-    allocations => allocations.slice(0, 1),
-    allocations => [{ ...allocations[0], id: 'different' }, allocations[1]],
-    allocations => [{ ...allocations[0], lineId: 'different-sku' }, allocations[1]],
-    allocations => [allocations[0], { ...allocations[1], locationId: 'A' }]
-  ]) {
-    const c = context(), controller = createMonthlyAllocationDraft(c, { transactionId: 'review-invalid-target' });
-    const result = controller.confirm({ allocations: mutate(structuredClone(c.allocations)) });
-    assert.equal(result.ok, false);
-  }
-});
-
-test('UI allocation review: confirmed ONCE fingerprint removes both blocking status and confirmation', () => {
-  const c = context();
-  c.allocations = c.allocations.map((a, i) => ({ ...a, mode: 'ONCE', oneTimeDeliveryQty: i ? '150' : '50', deliveryQtyUnit: 'each' }));
-  const pending = inspectOnceAllocations(c);
-  assert.equal(pending.status, 'INCOMPLETE');
-  assert.ok(pending.confirmation);
-  for (const a of c.allocations) a.onceConfirmedFingerprint = pending.normalized.fingerprint;
-  const confirmed = inspectOnceAllocations(c);
-  assert.equal(confirmed.status, 'VALID');
-  assert.equal(confirmed.confirmation, null);
-});
-
-test('UI allocation review: reviewed rational Q2 total is preserved across single-site each units', () => {
-  for (const savedMonthly of ['', '50']) {
-    const c = context();
-    c.line.qty = '5/3'; c.line.qtyUnit = 'tray';
-    c.line.qtyExact = { representation: 'rational', conversionReviewed: true, numerator: '5', denominator: '3' };
-    c.allocations = [c.allocations[0]];
-    c.allocations[0].monthlyDemandQty = savedMonthly;
-    c.allocations[0].monthlyDemandUnit = 'each';
-    const before = structuredClone(c);
-    const controller = createMonthlyAllocationDraft(c, { transactionId: 'review-rational-single' });
-    assert.deepEqual(controller.evaluate().normalized.totalBase, ratio(50));
-    assert.deepEqual(controller.rows.map(r => [r.quantity.raw, r.quantity.unit, r.source]), [['50', 'each', 'derived']]);
-    assert.deepEqual(c, before);
-    const confirmed = controller.confirm();
-    assert.equal(confirmed.ok, true);
-    assert.equal(confirmed.allocations[0].monthlyDemandQty, '50');
-    assert.equal(confirmed.allocations[0].monthlyDemandUnit, 'each');
-    assert.equal(c.line.qty, '5/3');
-  }
-});
-
-test('UI allocation review: two remaining blanks retain whole residual without hidden equal splitting', () => {
-  const c = context();
-  c.locations.push({ id: 'C', name: 'TEST-C' });
-  c.allocations.push({ id: 'allocation-C', lineId: c.line.id, locationId: 'C', mode: 'FLEX', monthlyDemandQty: '', monthlyDemandUnit: 'each', qty: '3' });
-  const controller = createMonthlyAllocationDraft(c, { transactionId: 'review-multiple-blanks' });
-  const result = controller.evaluate();
-  assert.deepEqual(result.normalized.residualBeforeSuggestions, ratio(150));
-  assert.deepEqual(result.normalized.proposals, []);
-  assert.deepEqual(controller.rows.filter(r => r.locationId !== 'A').map(r => r.quantity.raw), ['', '']);
-  assert.deepEqual(result.normalized.sites.filter(r => r.locationId !== 'A').map(r => r.currentMaximum), [ratio(150), ratio(150)]);
-  assert.equal(controller.confirm().ok, false);
-});
-
-test('UI allocation review: explicit empty raw remains empty until a distinct refresh operation', () => {
-  const c = context(), controller = createMonthlyAllocationDraft(c, { transactionId: 'review-empty-raw' });
-  controller.set('B', '');
-  assert.equal(controller.rows.find(r => r.locationId === 'B').quantity.raw, '');
-  assert.equal(controller.rows.find(r => r.locationId === 'B').source, 'manual');
-  assert.equal(c.allocations[1].monthlyDemandQty, '');
-  assert.equal(controller.evaluate().normalized.proposals[0].quantity.raw, '150');
-  controller.refresh();
-  assert.equal(controller.rows.find(r => r.locationId === 'B').quantity.raw, '150');
-  assert.equal(controller.rows.find(r => r.locationId === 'B').source, 'derived');
-  assert.equal(c.allocations[1].monthlyDemandQty, '');
-});
-
-test('UI allocation review: unknown ONCE delivery unit yields explicit issues and no confirmation bypass', () => {
-  const c = context();
-  c.allocations = c.allocations.map(a => ({ ...a, mode: 'ONCE', oneTimeDeliveryQty: '10', deliveryQtyUnit: 'unknown-unit' }));
-  const result = inspectOnceAllocations(c);
-  assert.equal(result.status, 'INVALID');
-  assert.equal(result.confirmation, null);
-  assert.deepEqual(result.issues.map(i => [i.locationId, i.fieldKey]), [['A', 'once'], ['B', 'once']]);
-  assert.ok(result.issues.every(i => i.code === 'UNIT_CONVERSION_UNAVAILABLE'));
-});
+import {allocationStateFromContext,inspectMonthlyAllocations,createMonthlyAllocationDraft,inspectOnceAllocations,monthlyAllocationDisplay} from '../../web/allocation-ui.mjs';
+const ratio=n=>({numerator:String(n),denominator:'1'});
+function context(){return {revision:1,line:{id:'sku',qty:'200',qtyUnit:'tray',pack:'30'},locations:[{id:'A',name:'TEST-A'},{id:'B',name:'TEST-B'}],allocations:[{id:'a',lineId:'sku',locationId:'A',mode:'FLEX',monthlyDemandQty:'50',monthlyDemandUnit:'tray',monthlyDemandSource:'manual',qty:'7',advanced:{memo:'TEST-KEEP'}},{id:'b',lineId:'sku',locationId:'B',mode:'FIXED',monthlyDemandQty:'',monthlyDemandUnit:'tray',qty:'9'}]};}
+test('package UI: private M200/A50/B150 draft, stable identity, actual delivery quantities unchanged',()=>{const c=context(),before=structuredClone(c),d=createMonthlyAllocationDraft(c);assert.deepEqual(d.rows.map(r=>r.quantity.raw),['50','150']);d.set('A','60');assert.equal(d.rows[1].quantity.raw,'140');const result=d.confirm({allocations:[...c.allocations].reverse()});assert.equal(result.ok,true);assert.deepEqual(result.allocations.map(a=>[a.locationId,a.monthlyPlanQty,a.qty]),[['B','140','9'],['A','60','7']]);assert.equal(result.allocations[1].advanced.memo,'TEST-KEEP');assert.deepEqual(c,before);});
+test('package UI: explicit manual 150 is preserved and A60 exposes exact excess 300 each',()=>{const d=createMonthlyAllocationDraft(context());d.set('B','150');d.set('A','60');assert.equal(d.rows[1].quantity.raw,'150');assert.equal(d.rows[1].source,'manual');assert.deepEqual(d.evaluate().normalized.excess,ratio(300));assert.equal(d.confirm().ok,false);});
+test('package UI: M5000 A50 leaves D3500/P117; confirmation does not invent D3510',()=>{const c=context();c.line.qty='5000';c.line.qtyUnit='each';const d=createMonthlyAllocationDraft(c);assert.equal(d.rows[1].quantity.raw,'117');assert.equal(d.rows[1].demand.raw,'3500');const result=d.confirm();assert.equal(result.ok,true);assert.equal(result.allocations[1].monthlyDemandQty,'3500');assert.equal(result.allocations[1].monthlyPlanQty,'117');assert.equal(result.allocations[0].monthlyDemandQty,'');assert.equal(result.allocations[0].monthlyDemandBasis,'package-plan');assert.equal(c.line.qty,'5000');const display=monthlyAllocationDisplay(d.evaluate(),'B');assert.equal(display.remaining,'117');assert.equal(display.total,'167');assert.equal(display.slack,'10');});
+test('package UI: known D2500 twice gives P84+84, manual plan85 preserves D2500',()=>{const c=context();c.line.qty='5000';c.line.qtyUnit='each';for(const a of c.allocations){a.monthlyDemandQty='2500';a.monthlyDemandUnit='each';}const d=createMonthlyAllocationDraft(c);assert.deepEqual(d.rows.map(r=>r.quantity.raw),['84','84']);assert.equal(d.evaluate().normalized.canConfirm,true);assert.equal(monthlyAllocationDisplay(d.evaluate(),'A').total,'168');d.set('A','85');const result=d.confirm();assert.equal(result.ok,true);assert.equal(result.allocations[0].monthlyDemandQty,'2500');assert.equal(result.allocations[0].monthlyPlanQty,'85');assert.equal(result.allocations[0].monthlyDemandBasis,'known');});
+test('package UI: multiple blanks have no hidden split and residual is labelled packages',()=>{const c=context();c.locations.push({id:'C'});c.allocations.push({id:'c',lineId:'sku',locationId:'C',mode:'FLEX',monthlyDemandQty:''});const d=createMonthlyAllocationDraft(c);assert.deepEqual(d.rows.map(r=>r.quantity.raw),['50','','']);assert.deepEqual(d.evaluate().normalized.proposals,[]);assert.equal(monthlyAllocationDisplay(d.evaluate(),'B').remaining,'150');assert.equal(d.confirm().ok,false);});
+test('package UI: ONCE excluded from recurrence; all ONCE is N/A without changing Q2',()=>{const c=context();c.allocations[0].mode='ONCE';const d=createMonthlyAllocationDraft(c);assert.equal(d.rows[1].quantity.raw,'200');assert.equal(d.confirm().ok,true);assert.equal(inspectMonthlyAllocations({...c,allocations:d.confirm().allocations}).normalized.canConfirm,true);d.setMode('B','ONCE');const all=c.allocations.map(a=>({...a,mode:'ONCE'}));assert.equal(d.evaluate().normalized.notApplicable,true);assert.equal(d.confirm({allocations:all}).ok,true);assert.equal(c.line.qty,'200');d.setMode('B','FIXED');assert.equal(d.rows[1].quantity.raw,'200');});
+test('package UI: session clones isolated, composing incomplete, cancelling closes cached result',()=>{const c=context(),d=createMonthlyAllocationDraft(c);d.rows[0].quantity.raw='999';d.session.entries[0].quantity.raw='888';assert.equal(d.rows[0].quantity.raw,'50');d.set('A','',{composing:true});assert.equal(d.evaluate().status,'INCOMPLETE');assert.equal(d.confirm().ok,false);const other=createMonthlyAllocationDraft(c);assert.equal(other.confirm().ok,true);other.cancel();assert.equal(other.confirm().ok,false);});
+test('package UI: same revision external change and target identity changes never commit',()=>{let current=context();const d=createMonthlyAllocationDraft(current,{readCurrentContext:()=>current});assert.equal(d.confirm().ok,true);current=structuredClone(current);current.line.qty='240';assert.equal(d.confirm().ok,false);for(const mutate of [a=>a.slice(0,1),a=>[{...a[0],id:'changed'},a[1]],a=>[a[0],{...a[1],locationId:'A'}]]){const c=context(),draft=createMonthlyAllocationDraft(c);assert.equal(draft.confirm({allocations:mutate(c.allocations)}).ok,false);}});
+test('package UI: blank remains empty until separate refresh and does not erase saved bytes',()=>{const c=context(),d=createMonthlyAllocationDraft(c);d.set('B','');assert.equal(d.rows[1].quantity.raw,'');assert.equal(d.rows[1].source,'manual');d.refresh();assert.equal(d.rows[1].quantity.raw,'150');assert.equal(c.allocations[1].monthlyDemandQty,'');});
+test('package UI: each total stays each while Q4 always uses SKU package',()=>{for(const pack of ['10','20','30']){const c=context();c.line.pack=pack;c.line.qty='5000';c.line.qtyUnit='each';c.allocations=[{...c.allocations[0],monthlyDemandQty:'',monthlyDemandUnit:'each'}];const d=createMonthlyAllocationDraft(c);assert.equal(allocationStateFromContext(c).lines[0].total.unit,'each');assert.equal(d.rows[0].quantity.unit,pack==='30'?'tray':'pack');assert.equal(d.rows[0].quantity.raw,String(Math.ceil(5000/Number(pack))));assert.equal(c.line.qty,'5000');}});
+test('package UI: ONCE independent overflow fingerprint and unknown delivery units remain checked',()=>{const c=context();c.allocations=c.allocations.map((a,i)=>({...a,mode:'ONCE',oneTimeDeliveryQty:i?'150':'50',deliveryQtyUnit:'tray'}));const r=inspectOnceAllocations(c);assert.ok(r.confirmation);for(const a of c.allocations)a.onceConfirmedFingerprint=r.normalized.fingerprint;assert.equal(inspectOnceAllocations(c).confirmation,null);c.allocations[0].deliveryQtyUnit='unknown';assert.equal(inspectOnceAllocations(c).status,'INVALID');});
+test('package UI: exact duplicate confirmation is idempotent and stale revision/source stays blocked',()=>{const c=context(),d=createMonthlyAllocationDraft(c);const first=d.confirm(),again=d.confirm();assert.equal(first.ok,true);assert.equal(again.ok,true);assert.equal(again.idempotent,true);assert.deepEqual(again.allocations,first.allocations);const before=structuredClone(c);d.cancel();assert.equal(d.confirm().ok,false);assert.deepEqual(c,before);});
+test('package UI: reviewed single 5/3 tray Q2 retains exact 50 each in blank or known demand restoration',()=>{for(const saved of ['', '50']){const c=context();c.line.qty='5/3';c.line.qtyExact={representation:'rational',conversionReviewed:true,numerator:'5',denominator:'3'};c.allocations=[{...c.allocations[0],monthlyDemandQty:saved,monthlyDemandUnit:'each'}];const before=structuredClone(c),d=createMonthlyAllocationDraft(c);assert.equal(d.rows[0].quantity.raw,'2');assert.equal(d.rows[0].demand.raw,'50');assert.equal(d.confirm().ok,true);assert.equal(d.confirm().allocations[0].monthlyDemandQty,'50');assert.deepEqual(c,before);}});
+test('package UI: explicit plan at only recurring site is linked to Q2 demand, preserving manual source and slack',()=>{const c=context();c.line.qty='5000';c.line.qtyUnit='each';c.allocations=[{...c.allocations[0],monthlyDemandQty:'',monthlyDemandUnit:'each'}];const d=createMonthlyAllocationDraft(c);d.set('A','167');assert.equal(d.rows[0].source,'manual');assert.equal(d.rows[0].demand.raw,'5000');assert.equal(d.evaluate().normalized.canConfirm,true);assert.equal(d.evaluate().normalized.packSlackBase.numerator,'10');assert.equal(d.confirm().allocations[0].monthlyPlanSource,'manual');});

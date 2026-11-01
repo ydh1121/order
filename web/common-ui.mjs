@@ -62,10 +62,10 @@ window.OrderInputFocus=Object.freeze((()=>{
 
 window.OrderSiteContract=Object.freeze((()=>{
  const phone=v=>OrderPhone.parse(v).valid,email=v=>OrderEmail.parse(v).valid;
- function issues(s,{address=true,allowUnverified=false}={}){const out=[];if(!String(s?.name||'').trim())out.push({key:'name',message:'사업장 명칭을 입력해 주세요.'});const location=addressStatus(s);if(address&&!location.valid)out.push(location.issue);if(!phone(s?.contactPhone))out.push({key:'contactPhone',message:'담당자 전화번호를 확인해 주세요.'});
-  if(!email(s?.email)){const syntax=OrderEmail.parse(s?.email);out.push({key:'email',code:syntax.unsupported?'UNSUPPORTED_LOCAL':'INVALID_SYNTAX',message:syntax.unsupported?'현재 지원하지 않는 이메일 형식입니다.':'이메일 형식을 확인해 주세요.'});}else{const proof=OrderEmailDomain.status(s.email);if(OrderEmailDomain.isHard(proof))out.push({key:'email',code:proof.state,message:'이메일 주소를 확인해 주세요.'});else if(!allowUnverified&&!OrderEmailDomain.isSuccess(proof))out.push({key:'email',code:'DOMAIN_UNCONFIRMED',message:'현재 이메일 주소를 확인할 수 없습니다.'});}
+ function issues(s,{address=true,allowUnverified=false,emailProof=null}={}){const out=[];if(!String(s?.name||'').trim())out.push({key:'name',message:'사업장 명칭을 입력해 주세요.'});const location=addressStatus(s);if(address&&!location.valid)out.push(location.issue);if(!phone(s?.contactPhone))out.push({key:'contactPhone',message:'담당자 전화번호를 확인해 주세요.'});
+  if(!email(s?.email)){const syntax=OrderEmail.parse(s?.email);out.push({key:'email',code:syntax.unsupported?'UNSUPPORTED_LOCAL':'INVALID_SYNTAX',message:syntax.unsupported?'현재 지원하지 않는 이메일 형식입니다.':'이메일 형식을 확인해 주세요.'});}else{const proof=OrderEmailDomain.isCurrent?.(emailProof,s.email)?emailProof:OrderEmailDomain.status(s.email);if(OrderEmailDomain.isHard(proof))out.push({key:'email',code:proof.state,message:'이메일 주소를 확인해 주세요.'});else if(!allowUnverified&&!OrderEmailDomain.isSuccess(proof))out.push({key:'email',code:'DOMAIN_UNCONFIRMED',message:'현재 이메일 주소를 확인할 수 없습니다.'});}
   if(String(s?.storePhone||'').trim()&&!phone(s.storePhone))out.push({key:'storePhone',message:'매장 대표번호를 확인해 주세요.'});return out;}
- return {phone,email,issues,isAwaiting:issue=>issue?.code==='DOMAIN_UNCONFIRMED',basicIssues:s=>issues(s,{allowUnverified:true}),valid:s=>issues(s).length===0};
+ return {phone,email,issues,isAwaiting:issue=>issue?.code==='DOMAIN_UNCONFIRMED',basicIssues:s=>issues(s,{allowUnverified:true}),valid:(s,options)=>issues(s,options).length===0};
 })());
 /* New clone glyph is constructed locally from rectangles, not a library path.
  * Legacy check/chevron/egg/calendar provenance remains NOT_VERIFIED, shape unchanged. */
@@ -96,7 +96,7 @@ window.OrderAccordionView=Object.freeze((()=>{
 })());
 
 window.OrderIcons=Object.freeze({
- definitions:Object.freeze({search:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SEARCH_CIRCLE_LINE_0519',body:'<circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m12.5 12.5 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'},close:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_CLOSE_LINES_0519',body:'<path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'},forward:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_DIRECTION_LINES_0505',body:'<path d="M3 10h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},unlink:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_UNLINK_LINES_0491',body:'<path d="m7 6 2-2a3 3 0 0 1 4.2 4.2l-1 1M13 14l-2 2a3 3 0 0 1-4.2-4.2l1-1M3 3l14 14M3 8H1M8 3V1M17 12h2M12 17v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},swap:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SWAP_LINES_0487',body:'<path d="M3 6h13m-3-3 3 3-3 3M17 14H4m3-3-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},clone:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_RECTANGLES_0481',body:'<path d="M3 2h9a1 1 0 0 1 1 1v2H6a2 2 0 0 0-2 2v7H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/><rect x="6" y="7" width="12" height="11" rx="1.5"/>'}}),
+ definitions:Object.freeze({refresh:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_REFRESH_LINES_0521',body:'<path d="M16 6.5A6.5 6.5 0 1 0 16.5 12M16 2v4.5h-4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},selectSite:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SELECTION_CHECK_LINES_0521',body:'<rect x="2.5" y="2.5" width="15" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m6 10 2.6 2.7L14 7.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},search:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SEARCH_CIRCLE_LINE_0519',body:'<circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m12.5 12.5 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'},close:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_CLOSE_LINES_0519',body:'<path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'},forward:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_DIRECTION_LINES_0505',body:'<path d="M3 10h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},unlink:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_UNLINK_LINES_0491',body:'<path d="m7 6 2-2a3 3 0 0 1 4.2 4.2l-1 1M13 14l-2 2a3 3 0 0 1-4.2-4.2l1-1M3 3l14 14M3 8H1M8 3V1M17 12h2M12 17v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},swap:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_SWAP_LINES_0487',body:'<path d="M3 6h13m-3-3 3 3-3 3M17 14H4m3-3-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'},clone:{viewBox:'0 0 20 20',source:'PROJECT_ORIGINAL_RECTANGLES_0481',body:'<path d="M3 2h9a1 1 0 0 1 1 1v2H6a2 2 0 0 0-2 2v7H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/><rect x="6" y="7" width="12" height="11" rx="1.5"/>'}}),
  svg(name){const d=this.definitions[name];if(!d)return '';return `<svg viewBox="${d.viewBox}" width="17" height="17" data-project-icon="${name}" fill="currentColor" aria-hidden="true" focusable="false">${d.body}</svg>`;}
 });
 
@@ -140,7 +140,9 @@ window.OrderCopyDialog=Object.freeze((()=>{
 /* MSG0470: one native-dialog presentation owner. Domain drafts/commits remain in their adapters.
    No prototype patching, scroll compensation padding, scale animation or fixed body offsets. */
 window.OrderModalShell=Object.freeze((()=>{
- const entries=new Map(),bound=new WeakMap();let saved=null,version=0;
+ const entries=new Map(),bound=new WeakMap();let saved=null,version=0,sessionSerial=0;
+ const events=[];let discardDialog=null,discardSession=null,pointerGesture=null;
+ const record=(dialog,action,reason='',dirty=false)=>{events.push({sequence:events.length?events.at(-1).sequence+1:1,dialog:dialog.id,session:entries.get(dialog)?.session||null,action,reason:['back','escape','cancel','close','backdrop','navigate'].includes(reason)?reason:reason?'other':'',dirty:!!dirty});if(events.length>80)events.shift();};
  const root=document.documentElement,body=document.body;
  const less=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
  const time=(name,fallback)=>{const value=getComputedStyle(root).getPropertyValue(name).trim(),n=parseFloat(value);return Number.isFinite(n)?n*(value.endsWith('ms')?1:1000):fallback;};
@@ -190,8 +192,17 @@ window.OrderModalShell=Object.freeze((()=>{
   // A forward traversal to an already cancelled token only identifies its live
   // ancestor; a discarded domain draft is never reconstructed from history.
   let target=destination;const seen=new Set();while(target&&!target.active&&!seen.has(target.token)){seen.add(target.token);target=historyEntries.get(historyToken(target.previousState));}
-  const targetIndex=active.findIndex(h=>h===target);
-  for(let i=active.length-1;i>targetIndex;i--){const item=active[i];item.registered=false;item.active=false;item.waiting=false;bound.get(item.dialog)?.requestClose?.('back');}
+  const targetIndex=active.findIndex(h=>h===target),departed=active.slice(targetIndex+1);
+  // A browser traversal can cross several entries, but one exit gesture may
+  // discard only the visible child. Restore live editor history before asking
+  // whether its changed input should be discarded. A declined exit therefore
+  // cannot strand the parent or let the next Back escape the form.
+  if(departed.length){
+   const item=departed.at(-1),cfg=bound.get(item.dialog);
+   const guarded=!!cfg?.editable;
+   for(const h of departed){h.registered=false;h.waiting=h!==item||guarded;h.active=h!==item||guarded;}
+   reconcileHistory();requestClose(item.dialog,'back');
+  }
   reconcileHistory();
  },{capture:true});
  function paintLock(){
@@ -220,10 +231,50 @@ window.OrderModalShell=Object.freeze((()=>{
   paintLock();after?.();const current=version;
   requestAnimationFrame(()=>{if(current===version)restoreFocus(rec);});
  }
- function bind(dialog,requestClose){
-  const current=bound.get(dialog);if(current){current.requestClose=requestClose;return;}
-  const cfg={requestClose};bound.set(dialog,cfg);
-  dialog.addEventListener('cancel',event=>{event.preventDefault();event.stopPropagation();if(top()===dialog)cfg.requestClose?.('escape');});
+ function isDirty(cfg){try{return !!cfg.isDirty?.();}catch{return true;}}
+ function ensureDiscardDialog(){
+  if(discardDialog?.isConnected)return discardDialog;
+  const dialog=document.createElement('dialog');dialog.id='order-discard-dialog';dialog.className='q4-regular-dialog ui-compact-confirm';
+  dialog.setAttribute('aria-labelledby','order-discard-title');dialog.setAttribute('aria-describedby','order-discard-description');
+  dialog.innerHTML='<div class="q4-regular-panel"><header class="q4-regular-head"><strong id="order-discard-title">변경 내용을 취소할까요?</strong></header><div class="q4-regular-scroll"><p id="order-discard-description">확인하지 않은 변경 내용이 취소됩니다.</p></div><footer class="q4-regular-actions ui-transaction-group"><button type="button" class="ui-transaction-action ui-transaction-action--primary" data-discard-continue>계속 입력</button><button type="button" class="ui-transaction-action" data-discard-confirm>변경 취소</button></footer></div>';
+  document.body.append(dialog);discardDialog=dialog;
+  dialog.querySelector('[data-discard-continue]').addEventListener('click',()=>resolveDiscard(false));
+  dialog.querySelector('[data-discard-confirm]').addEventListener('click',()=>resolveDiscard(true));
+  bind(dialog,()=>resolveDiscard(false),{editable:true,isDirty:()=>false});return dialog;
+ }
+ function resolveDiscard(discard){
+  const pending=discardSession;if(!pending||pending.resolving)return false;pending.resolving=true;
+  const dialog=discardDialog;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);
+  close(dialog,{after:()=>{
+   if(discardSession!==pending)return;discardSession=null;
+   const valid=entries.get(pending.owner)===pending.rec&&pending.owner.open&&!pending.rec.closing;
+   record(pending.owner,discard?'discard-confirm':'discard-continue',pending.reason,true);
+   if(discard&&valid)pending.cfg.requestClose?.(pending.reason);
+  }});return true;
+ }
+ function cancelDiscardFor(dialog){
+  if(discardSession?.owner!==dialog)return;
+  discardSession=null;if(discardDialog?.open)close(discardDialog,{immediate:true});
+ }
+ function requestClose(dialog,reason='cancel'){
+  const cfg=bound.get(dialog),rec=entries.get(dialog);
+  if(!cfg||!rec||!dialog.open||rec.closing||top()!==dialog)return false;
+  if(reason==='backdrop'&&cfg.editable){record(dialog,'backdrop-blocked',reason);return false;}
+  try{if(cfg.beforeClose?.(reason)===false){record(dialog,'inner-dismiss',reason);return false;}}catch{record(dialog,'exit-blocked',reason);return false;}
+  const dirty=!!cfg.editable&&isDirty(cfg);
+  if(!dirty){record(dialog,'exit',reason);cfg.requestClose?.(reason);return true;}
+  if(discardSession)return false;
+  // Cancel a pending save attempt, never its editable draft, before waiting for
+  // a discard decision. Consumers keep their own revision/canCommit contract.
+  try{cfg.onExitIntent?.(reason);}catch{record(dialog,'exit-blocked',reason,true);return false;}
+  const prompt=ensureDiscardDialog(),pending={owner:dialog,rec,cfg,reason,focus:document.activeElement,resolving:false};discardSession=pending;
+  prompt.querySelectorAll('button').forEach(b=>b.disabled=false);record(dialog,'discard-request',reason,true);
+  open(prompt,{variant:'compact',history:true,returnFocus:()=>pending.focus?.isConnected&&dialog.contains(pending.focus)?pending.focus:dialog,initialFocus:()=>prompt.querySelector('[data-discard-continue]')});return false;
+ }
+ function bind(dialog,dispose,options={}){
+  const current=bound.get(dialog);if(current){current.requestClose=dispose;Object.assign(current,options);return;}
+  const cfg={requestClose:dispose,editable:false,...options};bound.set(dialog,cfg);
+  dialog.addEventListener('cancel',event=>{event.preventDefault();event.stopPropagation();if(top()===dialog)requestClose(dialog,'escape');});
   dialog.addEventListener('keydown',event=>{
    if(event.key!=='Tab'||event.defaultPrevented||top()!==dialog)return;
    const candidates=[...dialog.querySelectorAll('button,input,select,textarea,a[href],summary,[tabindex],[contenteditable="true"]')].filter(el=>el.tabIndex>=0&&!el.matches(':disabled')&&!el.closest('[hidden],[inert]')&&el.getClientRects().length&&getComputedStyle(el).visibility==='visible');
@@ -231,10 +282,20 @@ window.OrderModalShell=Object.freeze((()=>{
    if(!candidates.length){event.preventDefault();if(!dialog.hasAttribute('tabindex'))dialog.tabIndex=-1;dialog.focus({preventScroll:true});return;}
    if(event.shiftKey&&(index<=0)||!event.shiftKey&&(index<0||index===candidates.length-1)){event.preventDefault();candidates[event.shiftKey?candidates.length-1:0].focus({preventScroll:true});}
   });
-  dialog.addEventListener('click',event=>{if(event.target!==dialog||top()!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)cfg.requestClose?.('backdrop');});
+  dialog.addEventListener('click',event=>{if(event.target!==dialog||top()!==dialog)return;const r=dialog.getBoundingClientRect(),outside=event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom;if(!outside)return;
+   event.preventDefault?.();event.stopPropagation?.();
+   if(cfg.editable){record(dialog,'backdrop-blocked','backdrop');return;}
+   // Non-editing confirmations retain outside-dismiss only for a gesture that
+   // started and ended outside this same top dialog, never a text drag.
+   if(pointerGesture?.dialog===dialog&&pointerGesture.outside&&pointerGesture.upOutside)requestClose(dialog,'backdrop');
+  });
   // Supports existing native .close() callers, including the nested ONCE confirmation.
   dialog.addEventListener('close',()=>{if(!dialog.open)release(dialog);});
  }
+ const outsideDialog=(dialog,event)=>{const r=dialog.getBoundingClientRect();return event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom;};
+ document.addEventListener?.('pointerdown',event=>{const dialog=top();pointerGesture=dialog?{dialog,pointerId:event.pointerId,outside:outsideDialog(dialog,event),upOutside:false}:null;},{capture:true});
+ document.addEventListener?.('pointerup',event=>{if(!pointerGesture)return;pointerGesture.upOutside=outsideDialog(pointerGesture.dialog,event);if(top()!==pointerGesture.dialog){event.preventDefault();event.stopImmediatePropagation();pointerGesture.blocked=true;}},{capture:true});
+ document.addEventListener?.('click',event=>{if(pointerGesture&&event.detail!==0&&(pointerGesture.blocked||top()!==pointerGesture.dialog)){event.preventDefault();event.stopImmediatePropagation();record(pointerGesture.dialog,'clickthrough-blocked');pointerGesture=null;}},{capture:true});
  function viewport(dialog){
   const view=window.visualViewport,height=view?.height||innerHeight;
   dialog.style.setProperty('--ui-modal-max-block',(height*.92)+'px');
@@ -272,7 +333,8 @@ window.OrderModalShell=Object.freeze((()=>{
  }
  function open(dialog,{variant='compact',returnFocus=document.activeElement,initialFocus=null,contentSize='session',history=false}={}){
   const old=entries.get(dialog);if(old){old.epoch++;old.animation?.cancel();old.sizeAnimation?.cancel();}
-  const rec={epoch:(old?.epoch||0)+1,animation:null,sizeAnimation:null,returnFocus,variant,closing:false,contentSize,geometry:old?.geometry||capture(dialog,['--ui-modal-max-block','--ui-modal-viewport-top','--ui-modal-viewport-bottom'])};entries.set(dialog,rec);version++;
+  cancelDiscardFor(dialog);
+  const rec={session:++sessionSerial,epoch:(old?.epoch||0)+1,animation:null,sizeAnimation:null,returnFocus,variant,closing:false,contentSize,geometry:old?.geometry||capture(dialog,['--ui-modal-max-block','--ui-modal-viewport-top','--ui-modal-viewport-bottom'])};entries.set(dialog,rec);version++;
   dialog.dataset.modalVariant=variant;dialog.classList.remove('is-closing');dialog.style.opacity='';dialog.style.transform='';
   dialog.dataset.modalContentSize=contentSize;delete dialog.dataset.modalResizing;
   if(!bound.has(dialog))bind(dialog,()=>close(dialog));
@@ -284,6 +346,7 @@ window.OrderModalShell=Object.freeze((()=>{
   return rec.epoch;
  }
  function close(dialog,{after=null,immediate=false}={}){
+  cancelDiscardFor(dialog);
   const rec=entries.get(dialog);if(!dialog.open){release(dialog,after);return;}
   if(!rec){dialog.close();after?.();return;}
   if(rec.closing)return;rec.closing=true;retireHistory(rec);version++;const epoch=++rec.epoch;
@@ -297,7 +360,7 @@ window.OrderModalShell=Object.freeze((()=>{
  }
  let resizeFrame=0;const resizeViewport=()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{entries.forEach((r,d)=>{if(d.open&&!r.closing){viewport(d);if(r.variant==='editor')resize(d,null,{animate:false});else revealFocusedControl(d);}});});};
  window.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('scroll',resizeViewport);
- return {open,close,bind,resize,sync:paintLock,get activeIds(){return [...entries.keys()].filter(d=>d.open).map(d=>d.id);}};
+ return {open,close,bind,requestClose,resize,sync:paintLock,inspect:()=>({activeIds:[...entries.keys()].filter(d=>d.open).map(d=>d.id),pendingDiscard:discardSession?{dialog:discardSession.owner.id,reason:discardSession.reason,session:discardSession.rec.session}:null,events:events.map(e=>({...e}))}),get activeIds(){return [...entries.keys()].filter(d=>d.open).map(d=>d.id);}};
 })());
 /* MSG0465: one optional desired-date policy for renderer, keyboard, draft and committed state.
    This is a user preference, NOT a delivery reservation or supplier-calendar engine. */
@@ -350,7 +413,7 @@ const CODE1_ORDER_VALIDATION=(()=>{
  const week=['월','화','수','목','금','토','일'];
  const copy=o=>JSON.parse(JSON.stringify(o));
  const record=(stage,field,message,code)=>({stage,field,message,code});
- function validateOrderDraft(S,{scope='full',target=null,siteDraft=null,onceDraft=null,confirmedFingerprint=null}={}){
+ function validateOrderDraft(S,{scope='full',target=null,siteDraft=null,onceDraft=null,confirmedFingerprint=null,emailProofs=null}={}){
   const issues=[], warnings=[], confirmations=[];
   const put=(stage,field,message,code='BLOCK_REQUIRED',siteId=null,lineId=null)=>{const u=lines.find(l=>l.id===lineId)?.pack==='30'?'판':'팩';const human=siteId||lineId?message.replaceAll('판',u):message;issues.push({issueId:[stage,lineId||'',siteId||'',field,code].join(':'),stage,field,fieldKey:field.split(':').pop(),siteId,lineId,code,errorCode:code,severity:'error',blocking:true,message:human,humanMessage:human});};
   const lines=Array.isArray(S?.lines)?S.lines:[],sites=Array.isArray(S?.locations)?S.locations:[],allocations=Array.isArray(S?.allocations)?S.allocations:[];
@@ -367,7 +430,7 @@ const CODE1_ORDER_VALIDATION=(()=>{
    if(!within(l).length)put('q4',k+':site','이 계란의 납품 사업장을 선택해 주세요.','BLOCK_ASSIGNMENT',null,l.id);
   }
    if(!sites.length)put('q3','sites','사업장 기본정보를 입력해 주세요.');
-   for(const site of sites)for(const issue of OrderSiteContract.issues(site))put('q3',`site:${site.id}:${issue.key}`,issue.message,issue.code||'BLOCK_REQUIRED',site.id,null);
+   for(const site of sites)for(const issue of OrderSiteContract.issues(site,{emailProof:emailProofs?.get?.(site.id)}))put('q3',`site:${site.id}:${issue.key}`,issue.message,issue.code||'BLOCK_REQUIRED',site.id,null);
    for(const a of allocations){const pair=a.lineId+'|'+a.locationId;if(pairs.has(pair))put('q4',a.id+':duplicate','같은 품목과 사업장을 중복 연결할 수 없습니다.','BLOCK_ASSIGNMENT',a.locationId,a.lineId);pairs.add(pair);if(!lines.some(l=>l.id===a.lineId)||!locById[a.locationId])put('q4',a.id+':site','존재하지 않는 품목 또는 사업장 연결입니다.','BLOCK_ASSIGNMENT',a.locationId,a.lineId);}
   // The draft is mapped to exactly one allocation and one SKU. Other SKUs always read saved data.
   const active=allocations.map(a=>target&&a.id===target.id?target:a);

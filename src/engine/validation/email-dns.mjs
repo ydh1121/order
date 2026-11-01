@@ -1,6 +1,6 @@
 import { engineResult } from '../contracts/result.mjs';
 
-export const DNS_RULE_VERSION = 'mail-route-1.0.0';
+export const DNS_RULE_VERSION = 'mail-route-1.1.0';
 const hostname = s => typeof s === 'string' && s.length <= 253 && s.split('.').every(l => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(l));
 const normalizeHost = s => typeof s === 'string' ? s.toLowerCase().replace(/\.$/, '') : s;
 const isV4 = s => typeof s === 'string' && s.split('.').length === 4 && s.split('.').every(p => /^(0|[1-9][0-9]{0,2})$/.test(p) && Number(p) <= 255);
@@ -96,7 +96,8 @@ export async function validateEmailDomain(domain, {resolver, now, maxQueries = 3
       if (records.length === 1 && nulls[0].priority === 0) return result('INVALID', 'DNS_NULL_MX', {}, [observations[0]]);
       return result('UNKNOWN', 'DNS_NULL_MX_CONFLICT');
     }
-    const targets = records.length ? [...new Set([...records].sort((a,b) => a.priority - b.priority || (a.exchange < b.exchange ? -1 : a.exchange > b.exchange ? 1 : 0)).map(r => normalizeHost(r.exchange)))] : [domain];
+    const implicitHost=mx.canonicalName??domain;
+    const targets = records.length ? [...new Set([...records].sort((a,b) => a.priority - b.priority || (a.exchange < b.exchange ? -1 : a.exchange > b.exchange ? 1 : 0)).map(r => normalizeHost(r.exchange)))] : [implicitHost];
     if (!targets.every(hostname)) return result('UNKNOWN', 'DNS_MALFORMED_MX_HOST');
     let uncertain = false;
     for (let i = 0; i < targets.length; i++) {

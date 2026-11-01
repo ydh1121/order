@@ -4,6 +4,7 @@
  * This suite does not claim durable storage, online DNS or canonical acceptance.
  */
 import assert from 'node:assert/strict';
+import {closedAfterExplicitDiscard,discardPromptIfOpen} from './modal-test-helpers.mjs';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {dirname,resolve,join} from 'node:path';
@@ -23,7 +24,7 @@ async function form(){await ready();if(await page.locator('#page-home.active').i
 async function stage(name){const toggle=page.locator(`.accordion-trigger[data-open="${name}"]`);if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await settled();}
 async function openQ4(){await stage('q4');const toggle=page.locator('[data-q4-body-toggle="qa-line"]');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('[data-edit-allocation="qa-allocation-a"]').click();await page.locator('#q4-regular-dialog[open]').waitFor({state:'visible'});}
 async function site(i){const toggle=page.locator(`[data-acc="site-${i}"]`);if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();}
-async function closed(){await page.waitForFunction(()=>!document.getElementById('q4-regular-dialog').open);await settled();}
+async function closed(){await closedAfterExplicitDiscard(page,'q4-regular-dialog');await settled();}
 async function committed(){await settled();return page.evaluate(()=>OrderRegularQ4Bridge.committed);}
 async function prepareFixture(){
  await page.locator('#qa-lab-fixture').click();await ready();assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabFixture),'allocation-200');
@@ -54,7 +55,7 @@ try{
  await check('L03_CONTROLLED_STORAGE_FAILURE_RETAINS_UNCONFIRMED_DRAFT',async()=>{
   const before=await committed();await page.locator('#qa-lab-fail-next').click();await openQ4();await site(0);await page.locator('[data-qty="0:monthly"]').fill('60');await page.locator('#q4-regular-save').click();await settled();
   assert.equal(await page.evaluate(()=>document.documentElement.dataset.storageStatus),'WRITE_FAILED');assert.equal(await page.locator('#q4-regular-dialog').evaluate(el=>el.open),true);assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'60');assert.deepEqual(await committed(),before);
-  await page.locator('#q4-regular-save').click();await closed();assert.deepEqual((await committed()).allocations.map(a=>a.monthlyDemandQty),['60','140']);
+  await page.locator('#q4-regular-save').click();await closed();assert.deepEqual((await committed()).allocations.map(a=>a.monthlyPlanQty),['60','140']);
  });
  await check('L04_SECOND_WRITER_CONFLICT_BLOCKS_PRODUCT_CONFIRM',async()=>{
   const before=await committed();await page.locator('#qa-lab-conflict').click();await page.waitForFunction(()=>document.getElementById('qa-lab-status').textContent.match(/다른 작성자.*revision/));
@@ -77,7 +78,7 @@ try{
   await page.locator('#address-query').press('ArrowDown');await page.locator('#address-query').press('Enter');
   await page.locator('#address-detail').fill('합성 2층');await page.locator('#address-dropoff').fill('합성 출입구');await page.locator('#address-confirm').click();
   await page.waitForFunction(()=>!document.getElementById('address-editor-dialog').open);assert.deepEqual(await committed(),before,'child confirm is parent draft only');
-  assert.match(await page.locator('#q3-address-slot').textContent(),/08843/);await page.locator('#cancel-site').click();await page.waitForFunction(()=>!document.getElementById('site-editor-dialog').open);assert.deepEqual(await committed(),before,'parent cancel discards synthetic address');
+  assert.match(await page.locator('#q3-address-slot').textContent(),/08843/);await page.locator('#cancel-site').click();await closedAfterExplicitDiscard(page,'site-editor-dialog');assert.deepEqual(await committed(),before,'parent cancel discards synthetic address');
   assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);assert.equal(await page.evaluate(()=>window.__qaLabReadNative('local','order_q1_q4_v1')),'TEST_PRODUCT_SENTINEL_NOT_LAB_DATA');
  });
  await check('L08_NO_EXTERNAL_NETWORK_OR_UNCAUGHT_PRODUCT_ERRORS',async()=>{assert.deepEqual(network,[]);assert.deepEqual(pageErrors,[]);});report.status='PASS';

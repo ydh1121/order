@@ -75,7 +75,7 @@ test('I04 IANA browser validates exact bytes/hash; stale build fails and stale r
   await assert.rejects(()=>verifyBrowserIana({...envelope,rawText:envelope.rawText.replace('COM\n','COMM\n')},{crypto:webcrypto}));
   await assert.rejects(()=>buildBrowserReference({now:time+8*86400000}),/STALE/);
   const provider=createBrowserIanaProvider({pinnedEnvelope:envelope,now:()=>time+8*86400000,origin:'https://order-ooo.pages.dev',crypto:webcrypto,fetcher:async()=>{throw TypeError('offline');}});
-  const service=createBrowserEmailService({referenceProvider:provider,now:()=>time+8*86400000,fetcher:async()=>{throw Error('must not query DNS');}});
+  const service=createBrowserEmailService({provider:'cloudflare',retries:0,referenceProvider:provider,now:()=>time+8*86400000,fetcher:async()=>{throw Error('must not query DNS');}});
   const result=await service.validate('site-email','Case@example.com');
   assert.equal(result.result.status,'UNKNOWN');assert.equal(result.raw,'Case@example.com');assert.equal(result.result.normalized.address,'Case@example.com');assert.equal(result.gate.finalCompletionAllowed,false);
   assert.equal((await provider.inspect()).version,envelope.manifest.version);service.close();provider.close();
@@ -91,7 +91,7 @@ test('I04 IANA refresh is same-origin/single-flight/cooldown; timed-out late sna
 });
 test('I04 same-domain parallel fields share DNS; cancelling one cannot cancel the other',async()=>{
   let release,calls=0;const fetcher=async(url)=>{calls++;const u=new URL(url),name=u.searchParams.get('name'),type=u.searchParams.get('type');if(type==='MX')await new Promise(resolve=>{release=resolve;});return response(name,type,type==='A'?[record(name,'A','192.0.2.1')]:[]);};
-  const service=createBrowserEmailService({referenceProvider:{get:async()=>snapshot},fetcher,now:()=>time});
+  const service=createBrowserEmailService({provider:'cloudflare',retries:0,referenceProvider:{get:async()=>snapshot},fetcher,now:()=>time});
   const a=service.validate('a','A@example.com'),b=service.validate('b','B@example.com');
   await new Promise(resolve=>setTimeout(resolve,0));service.cancel('a');release();
   assert.equal((await a).apply,false);assert.equal((await b).result.status,'VALID');assert.equal(calls,2);service.close();
@@ -99,7 +99,7 @@ test('I04 same-domain parallel fields share DNS; cancelling one cannot cancel th
 test('I04 same-field local-part edits deduplicate pending domain and apply only newest input',async()=>{
   let release,calls=0;const applied=[];
   const fetcher=async(url)=>{calls++;const u=new URL(url),name=u.searchParams.get('name'),type=u.searchParams.get('type');if(type==='MX')await new Promise(resolve=>{release=resolve;});return response(name,type,type==='A'?[record(name,'A','192.0.2.1')]:[]);};
-  const service=createBrowserEmailService({referenceProvider:{get:async()=>snapshot},fetcher,now:()=>time,onResult:r=>applied.push(r.raw)});
+  const service=createBrowserEmailService({provider:'cloudflare',retries:0,referenceProvider:{get:async()=>snapshot},fetcher,now:()=>time,onResult:r=>applied.push(r.raw)});
   const first=service.validate('email','First@example.com');await new Promise(resolve=>setTimeout(resolve,0));
   const second=service.validate('email','Second@example.com');await new Promise(resolve=>setTimeout(resolve,0));release();
   assert.equal((await first).apply,false);assert.equal((await second).apply,true);assert.deepEqual(applied,['Second@example.com']);assert.equal(calls,2);service.close();
@@ -107,7 +107,7 @@ test('I04 same-field local-part edits deduplicate pending domain and apply only 
 test('I04 fresh TTL reuse and explicit cancel prevent late writes',async()=>{
   let clock=time,calls=0;
   const fetcher=async(url)=>{calls++;const u=new URL(url),name=u.searchParams.get('name'),type=u.searchParams.get('type');return response(name,type,type==='MX'?[record(name,'MX','1 mail.example.com.',10)]:[record(name,'A','192.0.2.1',60)]);};
-  const service=createBrowserEmailService({referenceProvider:{get:async()=>snapshot},fetcher,now:()=>clock});
+  const service=createBrowserEmailService({provider:'cloudflare',retries:0,referenceProvider:{get:async()=>snapshot},fetcher,now:()=>clock});
   await service.validate('a','A@example.com');await service.validate('b','B@example.com');assert.equal(calls,2);
   clock+=10000;await service.validate('b','B@example.com');assert.equal(calls,4);service.close();
 });

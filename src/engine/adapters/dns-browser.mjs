@@ -48,7 +48,7 @@ function normalizeDoh(data,name,type,observedAt,ageSeconds) {
   if(!data||!Number.isInteger(data.Status)||data.TC===true||!Array.isArray(data.Question)||data.Question.length!==1||clean(data.Question[0].name)!==name||data.Question[0].type!==TYPES[type])return fail('DOH_RESPONSE_CONTRACT');
   const answers=data.Answer??[],authority=data.Authority??[];
   if(!Array.isArray(answers)||!Array.isArray(authority)||answers.length>1024||authority.length>128)return fail('DOH_RECORD_LIMIT');
-  if(data.Status!==0&&data.Status!==3)return fail(`DOH_RCODE_${data.Status}`);
+  if(data.Status!==0&&data.Status!==3)return {...fail(`DOH_RCODE_${data.Status}`),retryable:data.Status===2};
   if(answers.some(r=>!r||typeof r.data!=='string'||!Number.isInteger(r.type)||!Number.isInteger(r.TTL)||r.TTL<0||r.TTL>2147483647||typeof r.name!=='string'))return fail('DOH_RECORD_CONTRACT');
   let target=name; const chain=[],seen=new Set([name]);
   for(let depth=0;depth<9;depth++){
@@ -58,18 +58,30 @@ function normalizeDoh(data,name,type,observedAt,ageSeconds) {
     const next=clean(cnames[0].data);if(!host(next)||seen.has(next))return fail('DOH_CNAME_INVALID');
     seen.add(next);chain.push(cnames[0]);target=next;
   }
+  if(chain.some(alias=>answers.some(r=>clean(r.name)===clean(alias.name)&&Object.values(TYPES).includes(r.type))))return fail('DOH_CNAME_DATA_CONFLICT');
+  const soa=authority.filter(r=>{
+    if(r?.type!==6||typeof r.name!=='string'||!Number.isInteger(r.TTL)||r.TTL<0||r.TTL>2147483647||typeof r.data!=='string')return false;
+    const zone=clean(r.name),fields=r.data.trim().split(/\s+/);
+    return (zone===''||target===zone||target.endsWith('.'+zone))&&fields.length===7&&
+      host(clean(fields[0]))&&host(clean(fields[1]))&&fields.slice(2).every(v=>/^\d+$/.test(v)&&Number(v)<=4294967295);
+  });
+  const canonical={canonicalName:target,cnameChain:chain.map(r=>({name:clean(r.name),target:clean(r.data),ttl:r.TTL}))};
   const negative=(status)=>{
-    const values=authority.filter(r=>{
-      if(r?.type!==6||typeof r.name!=='string'||!Number.isInteger(r.TTL)||r.TTL<0||typeof r.data!=='string')return false;
-      const zone=clean(r.name);return zone===''||target===zone||target.endsWith('.'+zone);
-    }).map(r=>{const fields=r.data.trim().split(/\s+/),minimum=Number(fields.at(-1));return fields.length===7&&Number.isSafeInteger(minimum)&&minimum>=0?Math.min(r.TTL,minimum):null;}).filter(v=>v!=null);
+    const values=soa.map(r=>Math.min(r.TTL,Number(r.data.trim().split(/\s+/).at(-1))));
     const ttl=values.length?Math.min(...values,...chain.map(r=>r.TTL)):null;
     if(ageSeconds>0&&(ttl==null||ageSeconds>=ttl))return fail('DOH_HTTP_AGE_EXPIRED');
-    return {status,records:[],ttl:ttl==null?null:ttl-ageSeconds,observedAt};
+    return {status,records:[],ttl:ttl==null?null:ttl-ageSeconds,observedAt,...canonical};
   };
   if(data.Status===3){if(answers.some(r=>r.type===TYPES[type]))return fail('DOH_NEGATIVE_CONTRADICTION');return negative('NXDOMAIN');}
   const selected=answers.filter(r=>r.type===TYPES[type]&&clean(r.name)===target);
-  if(!selected.length){if(chain.length||answers.some(r=>r.type===TYPES[type]))return fail('DOH_INCOMPLETE_ANSWER');return negative('NODATA');}
+  if(!selected.length){
+    if(answers.some(r=>r.type===TYPES[type]))return fail('DOH_INCOMPLETE_ANSWER');
+    // RFC2308 §2.2 permits CNAME + NODATA. A relevant final-name SOA is
+    // required here; a bare alias or referral is not proof of absent mail data.
+    if(chain.length&&!soa.length)return fail('DOH_CNAME_INCOMPLETE');
+    if(!soa.length&&authority.some(r=>r?.type===2))return fail('DOH_REFERRAL');
+    return negative('NODATA');
+  }
   let records;
   if(type==='MX'){
     records=selected.map(r=>{const match=/^(\d{1,5})\s+(\S+)$/.exec(r.data.trim());return match?{priority:Number(match[1]),exchange:match[2]==='.'?'.':clean(match[2])}:null;});
@@ -77,19 +89,19 @@ function normalizeDoh(data,name,type,observedAt,ageSeconds) {
   }else records=selected.map(r=>r.data.trim());
   const ttl=Math.min(...selected.concat(chain).map(r=>r.TTL));
   if(ageSeconds>0&&ageSeconds>=ttl)return fail('DOH_HTTP_AGE_EXPIRED');
-  return {status:'NOERROR',records,ttl:ttl-ageSeconds,observedAt};
+  return {status:'NOERROR',records,ttl:ttl-ageSeconds,observedAt,...canonical};
 }
 
 /** One resolver is one bounded validation session. Retries count against HTTP budget. */
-export function createBrowserDnsResolver({fetcher=globalThis.fetch,now=Date.now,provider='cloudflare',maxRequests=32,timeoutMs=1200,retries=0}={}) {
-  if(!Object.hasOwn(DOH_PROVIDERS,provider)||typeof fetcher!=='function'||typeof now!=='function'||!Number.isInteger(maxRequests)||maxRequests<1||maxRequests>256||!Number.isInteger(retries)||retries<0||retries>1||!Number.isFinite(timeoutMs)||timeoutMs<1||timeoutMs>10000)throw TypeError('DOH_CONFIG');
+export function createBrowserDnsResolver({fetcher=globalThis.fetch,now=Date.now,provider='cloudflare',maxRequests=32,timeoutMs=1200,retries=0,reserveRequest=null}={}) {
+  if(!Object.hasOwn(DOH_PROVIDERS,provider)||typeof fetcher!=='function'||typeof now!=='function'||!Number.isInteger(maxRequests)||maxRequests<1||maxRequests>256||!Number.isInteger(retries)||retries<0||retries>1||!Number.isFinite(timeoutMs)||timeoutMs<1||timeoutMs>10000||reserveRequest!==null&&typeof reserveRequest!=='function')throw TypeError('DOH_CONFIG');
   let requests=0;
   async function resolver(name,type,{signal}={}){
     if(!host(name)||name!==name.toLowerCase()||!Object.hasOwn(TYPES,type))return {status:'TEMPFAIL',resolverCode:'DOH_INPUT',observedAt:now()};
     let response;
     for(let attempt=0;attempt<=retries;attempt++){
       if(signal?.aborted)return {status:'ABORTED',observedAt:now()};
-      if(requests>=maxRequests)return {status:'TEMPFAIL',resolverCode:'DOH_REQUEST_BUDGET',observedAt:now(),requests};
+      if(requests>=maxRequests||reserveRequest&&!reserveRequest())return {status:'TEMPFAIL',resolverCode:'DOH_REQUEST_BUDGET',observedAt:now(),requests};
       requests++;const controller=new AbortController();let timer,onAbort;
       const bounded=new Promise(resolve=>{onAbort=()=>{controller.abort();resolve({status:'ABORTED',observedAt:now()});};signal?.addEventListener('abort',onAbort,{once:true});timer=setTimeout(()=>{controller.abort();resolve({status:'TIMEOUT',observedAt:now()});},timeoutMs);});
       const request=(async()=>{

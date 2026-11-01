@@ -11,10 +11,13 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
   const detail = $('address-detail'), dropoff = $('address-dropoff');
   let session = null, draft = addressFields({}), options = [], active = -1;
   let timer = null, controller = null, searchGeneration = 0, editingGeneration = 0;
-  let composing = false, listOpen = false, explicitClear = false, confirming = false;
+  let composing = false, listOpen = false, explicitClear = false, confirming = false, baseline = '';
   let page = 1, hasMore = false, requestQuery = '', status = 'IDLE';
   const counts = {opened: 0, canceled: 0, confirmed: 0, stale: 0, searches: 0, discarded: 0};
   const normalize = value => String(value ?? '').normalize('NFC').trim().replace(/\s+/gu, ' ');
+  const snapshot = () => JSON.stringify({query: query.value, address: addressFields({...draft, detail: detail.value, dropoff: dropoff.value})});
+  const selectionMatchesQuery = () => normalize(query.value) === normalize(draft.road);
+  const isDirty = () => !!session && snapshot() !== baseline;
   const current = () => {
     const parent = getParent?.();
     return !!session && !!parent && parent.siteId === session.siteId && parent.generation === session.generation;
@@ -57,6 +60,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     $('address-selected').hidden = !hasAddress;
     $('address-detail-fields').hidden = !hasAddress;
     $('address-clear').hidden = !hasAddress;
+    $('address-selected-title').textContent = selectionMatchesQuery() ? '선택한 주소' : '기존 선택 주소';
     const target = $('address-selected-lines'); target.replaceChildren();
     for (const value of addressLines({...draft, detail: '', dropoff: ''})) {
       const line = doc.createElement('span'); line.textContent = value; target.append(line);
@@ -141,7 +145,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     if (normalize(query.value)) explicitClear = false;
     abortSearch(); options = []; hasMore = false; page = 1; requestQuery = '';
     setError();
-    mutate(() => { setList(false); $('address-next-page').hidden = true; showStatus(); });
+    mutate(() => { setList(false); $('address-next-page').hidden = true; showStatus(); renderSelection(); });
     status = 'EDITING';
     if (!composing && normalize(query.value).length >= 2) timer = setTimeout(() => { timer = null; search(); }, 300);
   }
@@ -157,7 +161,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     if (!session || confirming || !dialog.open) return false;
     if (!current()) { counts.stale++; close('stale'); return false; }
     draft = {...draft, detail: detail.value, dropoff: dropoff.value};
-    if (!explicitClear && !isVerifiedAddress(draft)) {
+    if (!explicitClear && (!isVerifiedAddress(draft) || !selectionMatchesQuery())) {
       setError('검색 결과에서 주소를 선택해 주세요.', {focus: true}); return false;
     }
     confirming = true;
@@ -181,13 +185,27 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     draft = addressFields(parent.site); options = []; active = -1; page = 1; hasMore = false; requestQuery = '';
     explicitClear = false; confirming = false; composing = false; status = 'IDLE';
     query.value = draft.road; setList(false); list.replaceChildren(); showStatus(); renderSelection(); setError();
+    baseline = snapshot();
     $('address-next-page').hidden = true;
     replaceIcon('address-search-icon', 'search'); $('address-close').innerHTML = icon('close');
+    $('address-retry').innerHTML = icon('refresh') + '<span>다시 검색</span>';
     shell.open(dialog, {variant: 'editor', contentSize: 'dynamic', history: true, returnFocus: trigger, initialFocus: draft.road ? detail : query});
     $('address-scroll').scrollTop = 0; shell.sync();
     return true;
   }
-  shell.bind(dialog, reason => { if (reason !== 'escape' || !composing) close(reason); });
+  const requestClose = (reason = 'cancel') => shell.requestClose(dialog, reason);
+  shell.bind(dialog, reason => close(reason), {
+    editable: true, isDirty, beforeClose: reason => reason !== 'escape' || !composing,
+    onExitIntent() {
+      // A discard prompt can outlive the debounce or an in-flight response.
+      // Pause transport while retaining the text and previous selected address.
+      abortSearch();
+      if (status === 'EDITING' || status === 'LOADING') {
+        status = 'EDITING';
+        mutate(() => showStatus('', {retry: normalize(query.value).length >= 2 && !selectionMatchesQuery()}));
+      }
+    }
+  });
   query.addEventListener('input', queueSearch);
   query.addEventListener('compositionstart', () => { composing = true; abortSearch(); mutate(() => { setList(false); showStatus(); }); });
   query.addEventListener('compositionend', () => { composing = false; queueSearch(); });
@@ -203,7 +221,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     if (event.key !== 'Escape' || event.isComposing || composing) return;
     event.preventDefault(); event.stopImmediatePropagation();
     if (listOpen) { abortSearch(); mutate(() => { setList(false); $('address-next-page').hidden = true; showStatus(); }); }
-    else close('escape');
+    else requestClose('escape');
   }, {capture: true});
   list.addEventListener('pointerdown', event => { if (event.target.closest('[data-address-option]')) event.preventDefault(); });
   list.addEventListener('click', event => { const item = event.target.closest('[data-address-option]'); if (item) choose(Number(item.dataset.addressOption)); });
@@ -218,7 +236,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     setError(); query.focus({preventScroll: true});
   });
   $('address-confirm').addEventListener('click', confirm);
-  $('address-cancel').addEventListener('click', () => close('cancel'));
-  $('address-close').addEventListener('click', () => close('close'));
-  return Object.freeze({open, cancel: close, invalidate: () => close('parent-invalidated', {immediate: true}), get isOpen() {return !!session && dialog.open;}, inspect: () => ({status, isOpen: !!session && dialog.open, listOpen, active, page, options: options.length, searchGeneration, editingGeneration, counts: {...counts}, transport: service.inspect?.()})});
+  $('address-cancel').addEventListener('click', () => requestClose('cancel'));
+  $('address-close').addEventListener('click', () => requestClose('close'));
+  return Object.freeze({open, cancel: requestClose, invalidate: () => close('parent-invalidated', {immediate: true}), get isOpen() {return !!session && dialog.open;}, inspect: () => ({status, isOpen: !!session && dialog.open, dirty: isDirty(), selectionMatchesQuery: selectionMatchesQuery(), listOpen, active, page, options: options.length, searchGeneration, editingGeneration, counts: {...counts}, transport: service.inspect?.()})});
 }

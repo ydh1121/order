@@ -118,3 +118,12 @@ test('A09/A10 full browser-to-function pipeline uses real modules with synthetic
  const service=createAddressSearchService({origin,fetcher:(url,options)=>handle({request:new Request(url,options),env:{JUSO_SEARCH_KEY:'synthetic'}})});
  assert.deepEqual(await service.search('합성검사로'),answer());assert.equal(providerCalls,1);service.close();
 });
+
+// MSG0521: disclose only a bounded provider code, never provider text/key/query.
+test('provider rejection retains safe error code without exposing supplied data',async()=>{
+ const {value}=await invoke(async()=>json({results:{common:{errorCode:'E0001',errorMessage:'synthetic-test-secret private raw query'},juso:null}}));
+ assert.equal(value.reason,'PROVIDER_ERROR');assert.equal(value.providerCode,'E0001');
+ assert.equal(JSON.stringify(value).includes('synthetic-test-secret'),false);assert.equal(JSON.stringify(value).includes('private raw query'),false);
+ const malformed=await invoke(async()=>json({results:{common:{errorCode:'private raw query',errorMessage:'synthetic-test-secret'},juso:null}}));
+ assert.equal(malformed.value.providerCode,undefined);
+});

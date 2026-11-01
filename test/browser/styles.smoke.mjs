@@ -29,7 +29,7 @@ function inputDOM(owner,invalid){
  const attr=`aria-invalid="${invalid}" data-probe="input" value="200"`;
  if(owner==='q2')return `<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><div class="numeric-field"><label>합성 월 구매량</label><div class="input-unit" data-probe="input-parent"><input type="text" ${attr}><span>판</span></div></div></div></div></main>`;
  if(owner==='q3')return `<div class="main"><div id="site-editor"><label>합성 사업장</label><div data-probe="input-parent"><input class="text-input" type="text" ${attr}></div></div></div>`;
- return q4Shell(`<div class="qa-number" data-probe="input-parent"><input type="number" ${attr}><span class="qa-unit">판</span></div>`);
+ return q4Shell(`<div class="qa-number" data-probe="input-parent"><input type="text" inputmode="numeric" ${attr}><span class="qa-unit">판</span></div>`);
 }
 function buttonDOM(owner){
  const cancel='<button type="button" class="ui-transaction-action" data-probe="cancel">취소</button>';
@@ -56,6 +56,30 @@ const numericContract=values=>{
  i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&p.style.alignItems==='center'&&p.style.minHeight==='45px'&&
  Math.abs(parseFloat(i.style.lineHeight)-parseFloat(i.style.fontSize)*1.5)<.1;
 };
+// MSG0521 authorizes common header inset, a borderless editor footer and an
+// 18px compact-confirm gap. Check the resulting geometry algebra explicitly;
+// do not allow unrelated style, width, focus, colour or control-size changes.
+const near=(a,b)=>Math.abs(a-b)<=.06;
+function msg0521ShellDelta(before,after,options,delta){
+ const editor=options.kind==='button'&&options.owner==='q4editor';
+ const q4=options.kind==='month'||options.kind==='input'&&options.owner==='q4'||editor;
+ const compact=options.kind==='button'&&['q1','q3','q4'].includes(options.owner);
+ if(!q4&&!compact)return false;
+ const header=q4?1.6:0,footer=editor?-1:0,gap=compact?18-parseFloat(before.actions.style.marginTop):0;
+ const height=header+footer+gap,dy=-height/2;
+ const allowed=new Set(['shell.rect.height','shell.rect.y']);
+ for(const name of Object.keys(after))if(name!=='shell')allowed.add(name+'.rect.y');
+ if(editor)for(const path of ['actions.rect.height','actions.style.borderTopColor','actions.style.borderTopWidth','actions.style.borderTopStyle'])allowed.add(path);
+ if(compact)allowed.add('actions.style.marginTop');
+ if(!delta.every(d=>allowed.has(d.path))||!near(after.shell.rect.height-before.shell.rect.height,height)||!near(after.shell.rect.y-before.shell.rect.y,dy))return false;
+ for(const name of Object.keys(after))if(name!=='shell'){
+  const expected=compact?dy+gap:editor&&['cancel','confirm'].includes(name)?dy+header+footer:dy+header;
+  if(!near(after[name].rect.y-before[name].rect.y,expected))return false;
+ }
+ if(editor&&(!near(after.actions.rect.height-before.actions.rect.height,-1)||after.actions.style.borderTopWidth!=='0px'||after.actions.style.borderTopStyle!=='none'||after.actions.style.borderTopColor!==after.actions.style.color))return false;
+ if(compact&&after.actions.style.marginTop!=='18px')return false;
+ return true;
+}
 const numericPairDOM=({qty,price,unit,invalid})=>`<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair"><div class="numeric-field"><label data-probe="qty-label">월 구매량</label><div class="input-unit" data-probe="qty-row" data-order-invalid="${invalid}"><input data-probe="qty-input" value="${qty}" aria-invalid="${invalid}" placeholder="0"><select class="ui-quantity-unit" data-probe="qty-unit"><option>${unit}</option></select></div></div><div class="numeric-field"><label data-probe="price-label">현재 구매가격</label><div class="input-unit" data-probe="price-row" data-order-invalid="${invalid}"><input data-probe="price-input" value="${price}" aria-invalid="${invalid}" placeholder="0"><span data-probe="price-unit">원/판</span></div></div></div></fieldset></div></div></main>`;
 let browser;
 async function observe(page,css,html,{width,state='default',target=null,kind,id}){
@@ -122,9 +146,11 @@ try{
 
   }
   if(numeric)accepted=delta.every(d=>numericAllow.has(d.path))&&numericContract(after);
-  const expectedClass=numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT':null;
+  const msg0521=delta.length>0&&msg0521ShellDelta(before,after,options,delta);
+  if(msg0521)accepted=true;
+  const expectedClass=msg0521?'EXPECTED_MSG0521_COMMON_MODAL_INSET_GAP_FOOTER':numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT':null;
   observations.push({id,...options,before,after,delta,classification:delta.length?(accepted?expectedClass:'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE'):'UNCHANGED'});
-  check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known,msg0517Numeric:numeric});
+  check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known,msg0517Numeric:numeric,msg0521CommonShell:msg0521});
   if(numeric)check(id+':NUMERIC_ROW_CONTRACT',numericContract(after));
   if(options.target&&['hover','active','focus-visible','disabled'].includes(options.state)){
    const key={'focus-visible':'focusVisible',hover:'hover',active:'active',disabled:'disabled'}[options.state];
@@ -168,7 +194,7 @@ try{
 finally{
  await browser?.close();await mkdir(evidence,{recursive:true});
  report.summary={comparisons:observations.length,checks:checks.length,failures:checks.filter(c=>c.status==='FAIL').length,
-  unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,knownPairDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT').length,msg0517NumericDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY').length,msg0517CurrentNumericCases:observations.filter(o=>o.classification==='MSG0517_CURRENT_NUMERIC_EQUALITY').length};
+  unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,knownPairDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT').length,msg0517NumericDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY').length,msg0517CurrentNumericCases:observations.filter(o=>o.classification==='MSG0517_CURRENT_NUMERIC_EQUALITY').length,msg0521CommonShellDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0521_COMMON_MODAL_INSET_GAP_FOOTER').length};
  await writeFile(join(evidence,'styles.json'),JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify({status:report.status,source:report.source,runtime:report.runtime,summary:report.summary,error:report.error,failedChecks:checks.filter(c=>c.status==='FAIL'),evidence:join(evidence,'styles.json')},null,2));
 }
