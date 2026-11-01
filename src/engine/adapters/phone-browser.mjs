@@ -51,7 +51,7 @@ export function createOrderPhoneAdapter() {
   function prefixShape(value){const p=parse(value);return p.kind!=='unknown'&&p.prefix===value?{kind:p.kind,prefixLength:p.prefix.length,count:p.kind==='national'?2:3}:null;}
   function get(){return rawMode?rawValue:shape&&values.slice(1,shape.count).some(Boolean)?values.slice(0,shape.count).join('-'):values[0];}
   function verdict(){return parse(get(),rawMode||!shape?{}:{segments:values.slice(0,shape.count),
-   intent:explicitMiddle&&shape.kind==='area'?{kind:'explicit',...([3,4].includes(values[1].length)?{middleWidth:values[1].length}:{})}:{kind:'automatic'},phase:'editing'});} 
+   intent:explicitMiddle&&shape.kind==='area'?{kind:'explicit',...([3,4].includes(values[1].length)?{middleWidth:values[1].length}:{})}:{kind:'automatic'},phase:'editing'});}
   function capture(el=document.activeElement){const index=parts.indexOf(el);if(index>=0&&!painting&&!composing)selection={index,start:el.selectionStart||0,end:el.selectionEnd||0,direction:el.selectionDirection||'none',all:selectAll};return {...selection};}
   function clearSelection(){selectAll=false;delete shell.dataset.selectAll;}
   function focusSegment(index,at){const el=parts[index]&&!parts[index].hidden?parts[index]:parts[0];el.focus({preventScroll:true});const pos=Math.max(0,Math.min(at,el.value.length));el.setSelectionRange(pos,pos);capture(el);}
