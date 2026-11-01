@@ -67,12 +67,20 @@ function msg0521ShellDelta(before,after,options,delta){
  if(!q4&&!compact)return false;
  const header=q4?1.6:0,footer=editor?-1:0,gap=compact?18-parseFloat(before.actions.style.marginTop):0;
  const height=header+footer+gap,dy=-height/2;
- const allowed=new Set(['shell.rect.height','shell.rect.y']);
+ // Native showModal() resolves auto block margins to used pixel values. A
+ // centered height change must move both computed margins by the same dy;
+ // their one-layout-unit rounding may differ from the rect by < 0.06px.
+ const allowed=new Set(['shell.rect.height','shell.rect.y','shell.style.marginTop','shell.style.marginBottom']);
  for(const name of Object.keys(after))if(name!=='shell')allowed.add(name+'.rect.y');
  if(editor)for(const path of ['actions.rect.height','actions.style.borderTopColor','actions.style.borderTopWidth','actions.style.borderTopStyle'])allowed.add(path);
  if(compact)allowed.add('actions.style.marginTop');
  if(!delta.every(d=>allowed.has(d.path))||!near(after.shell.rect.height-before.shell.rect.height,height)||!near(after.shell.rect.y-before.shell.rect.y,dy))return false;
+ for(const margin of ['marginTop','marginBottom'])if(!near(parseFloat(after.shell.style[margin])-parseFloat(before.shell.style[margin]),dy))return false;
  for(const name of Object.keys(after))if(name!=='shell'){
+  if(before[name].style.display==='none'&&after[name].style.display==='none'){
+   if(!Object.values(before[name].rect).every(value=>value===0)||!Object.values(after[name].rect).every(value=>value===0))return false;
+   continue;
+  }
   const expected=compact?dy+gap:editor&&['cancel','confirm'].includes(name)?dy+header+footer:dy+header;
   if(!near(after[name].rect.y-before[name].rect.y,expected))return false;
  }

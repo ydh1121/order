@@ -17,6 +17,8 @@ const expanded=process.argv.includes('--expanded')||productPolicy;
 // Observation candidates, never a production allow-list or guaranteed mailboxes.
 const cases=expanded?[
  {domain:'naver.com',category:'KR_GENERAL'}, {domain:'gmail.com',category:'GENERAL'},
+ ...(productPolicy?[{domain:'daum.net',category:'KR_GENERAL'},{domain:'kakao.com',category:'KR_GENERAL'},
+   {domain:'outlook.com',category:'GENERAL'},{domain:'icloud.com',category:'GENERAL'}]:[]),
  {domain:'abc.xyz',category:'XYZ'}, {domain:'art.art',category:'ART'},
  {domain:'nic.technology',category:'LONG_TLD'},
  {domain:'30.technology',category:'LONG_TLD_PUBLISHED_CONTACT',source:'https://30.technology/contact/'},
@@ -29,7 +31,7 @@ const cases=expanded?[
 ]:[{domain:'example.com',category:'NULL_MX_REFERENCE'},{domain:'iana.org',category:'GENERAL'}];
 const playwrightModule=process.env.PLAYWRIGHT_MODULE||'playwright';
 const report={schemaVersion:1,mode:productPolicy?'ACTUAL_HTTPS_BROWSER_PRODUCT_SERVICE_PROBE':'ACTUAL_HTTPS_BROWSER_ADAPTER_PROBE',startedAt:new Date().toISOString(),requestedOrigin,
-  scope:{moduleDelivery:'LOCAL_CHECKOUT_MODULE_BYTES_AS_DATA_URLS',networkMocked:false,cspBypassed:false,
+  inputSampleCount:cases.length,scope:{moduleDelivery:'LOCAL_CHECKOUT_MODULE_BYTES_AS_DATA_URLS',networkMocked:false,cspBypassed:false,
     deployedBuildVerified:false,deployedIanaVerified:false,productAcceptance:false,publicQaHosted:false},
   runtime:{node:process.version,platform:process.platform,arch:process.arch,osRelease:release(),headless:true},
   source:{commit:null,dirtyPaths:[],modules:[]},page:{errors:[],console:[]},network:[],assertions:[],online:[],browserFetches:[],
@@ -144,6 +146,8 @@ try{
     report.checkedAt=observed.checkedAt;report.idna=observed.idna;report.online=observed.online;report.browserFetches=observed.browserFetches;
     report.referenceVerified=observed.reference;report.expanded=expanded;report.productPolicy=productPolicy;
     report.scope.deployedIanaVerified=productPolicy&&observed.reference.freshness.state==='FRESH';
+    report.observedInputSampleCount=observed.online.length;
+    report.normalizedDomainCount=new Set(observed.online.map(row=>row.domain)).size;
     check('IDNA_RUSSIAN',observed.idna.russian,'xn--e1afmkfd.xn--p1ai');check('IDNA_KOREAN',observed.idna.korean,'xn--vv4b11d.xn--3e0b707e');
     check('IDNA_MALFORMED_ALABEL_REJECTED',observed.idna.malformed,'');check('IDNA_URL_INJECTION_REJECTED',observed.idna.urlInjection,'');
     check('NO_UNCAUGHT_PAGE_ERRORS',report.page.errors.length,0);

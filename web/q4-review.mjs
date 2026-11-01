@@ -1,7 +1,7 @@
 import {createMonthlyAllocationDraft,monthlyAllocationDisplay,monthlyQuantityInputText,allocationUnitLabel} from './allocation-ui.mjs';
 import {validMonthlyQuantity,monthlyQuantityText,quantityLabel,exactDisplay} from './quantity-contract.mjs';
 import {bindNumericInputs} from './numeric-input.mjs';
-import {frequencyText,deliverySuggestion,distributionText,repeatVisitPlan,nominalQuantity,sumNominalByReference,planningInputSignature,deliveryPlanIsCurrent} from './q4-planning.mjs';
+import {frequencyText,deliverySuggestion,distributionText,repeatVisitPlan,nominalQuantity,sumNominalByReference,planningInputSignature,deliveryPlanIsCurrent,restoredDeliverySettings} from './q4-planning.mjs';
 import {fromRatio,toJSON,compare,exact} from '../src/engine/calculation/exact.mjs';
 (()=>{'use strict';
 // Preserved UX shell and interactions; monthly quantities use the shared engine.
@@ -580,7 +580,7 @@ function selectedOption(id,val){
   closeQ4Dropdown();renderRepeatOnly(site);
   (key==='date'?document.querySelector(`[data-month-date="${id}"]`):document.querySelector(`[data-combo="${id}"]`))?.focus({preventScroll:true});return;
  }
- if(id==='bulk'){state.mode=Object.keys(mName).find(k=>mName[k]===val)||'MIXED';state.process=state.mode==='FIXED'?'contact':'shop';closeQ4Dropdown();render();return;}
+ if(id==='bulk'){state.mode=Object.keys(mName).find(k=>mName[k]===val)||'MIXED';if(state.mode==='FIXED'&&!['contact','auto'].includes(state.process))state.process='contact';closeQ4Dropdown();render();return;}
  if(id.startsWith('site-holiday-')){const m=id.match(/^site-holiday-(\d+)-(conflict|weekend|holiday|subholiday)$/);if(m)state.siteHolidays[+m[1]][m[2]]=val;}
  else if(id.startsWith('holiday-'))state.holiday[id.split('-')[1]]=val;
  else if(id.startsWith('site-mode-')){const n=Number(id.replace('site-mode-',''));state.siteModes[n]=Object.keys(mName).find(k=>mName[k]===val)||'FLEX';}
@@ -640,7 +640,7 @@ $('q4-regular-dialog').addEventListener('click',e=>{
  const day=e.target.closest('[data-weekday]');if(day){const [n,d]=day.dataset.weekday.split(':');toggleRepeatDay(null,Number(n),d,day);return;}
  const accB=e.target.closest('[data-acc]');if(accB){const id=accB.dataset.acc;if(id==='qa-copy-fields'){const open=accB.getAttribute('aria-expanded')!=='true';const card=document.querySelector('#qa-copy-confirm .qa-copy-card'),body=$('qa-copy-fields-body');const from=card?.getBoundingClientRect().height||0;const prior=body?.getBoundingClientRect().height||0;setOpen(id,open);const targetBody=open?(body?.scrollHeight||0):0;animateCopyCardHeight(from,from+targetBody-prior);return;}if(id==='business-parent'){state.parentOpen=!state.parentOpen;setOpen(id,state.parentOpen);}else if(id==='qa-holiday'){state.advancedOpen=!state.advancedOpen;setOpen(id,state.advancedOpen);}else if(id.startsWith('site-holiday-')){const i=Number(id.split('-').at(-1));state.siteHolidayOpen[i]=!state.siteHolidayOpen[i];setOpen(id,state.siteHolidayOpen[i]);}else if(id.startsWith('site-week-')){const m=id.match(/^site-week-(\d+)-(\d+)$/);if(m){const r=state.siteRepeat[+m[1]],n=+m[2];r.weekOpen=r.weekOpen===n?0:n;setOpen(id,r.weekOpen===n);}}else if(id.startsWith('week-')){state.weekOpen=state.weekOpen===Number(id.slice(5))?0:Number(id.slice(5));setOpen(id,state.weekOpen===Number(id.slice(5)));}else if(id.startsWith('site-')){const i=Number(id.slice(5));if(state.siteOpen===i){state.siteOpen=-1;setOpen(id,false);}else travel(i);}else if(id==='q1-ref'){setOpen(id,accB.getAttribute('aria-expanded')!=='true');}return;}
  if(e.target.closest('[data-individual]')){state.mode='MIXED';render();return;}
- const siteChoice=e.target.closest('[data-site-choice]');if(siteChoice){const i=Number(siteChoice.dataset.siteChoice);state.siteModes[i]=siteChoice.dataset.value;state.siteProcess[i]=state.siteModes[i]==='FIXED'?'contact':'shop';/* preserve existing per-site values and variable state */renderSite(i);refreshResultsOnly();travel(i);return;}
+ const siteChoice=e.target.closest('[data-site-choice]');if(siteChoice){const i=Number(siteChoice.dataset.siteChoice);state.siteModes[i]=siteChoice.dataset.value;if(state.siteModes[i]==='FIXED'&&!['contact','auto'].includes(state.siteProcess[i]))state.siteProcess[i]='contact';/* preserve existing per-site values and variable state */renderSite(i);refreshResultsOnly();travel(i);return;}
  const siteProcess=e.target.closest('[data-site-process]');if(siteProcess){const i=Number(siteProcess.dataset.siteProcess);state.siteProcess[i]=siteProcess.dataset.value;document.querySelectorAll(`[data-site-process="${i}"]`).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.value===state.siteProcess[i])));return;}
  const scday=e.target.closest('[data-site-closed-day]');if(scday){const [a,d]=scday.dataset.siteClosedDay.split(':');const i=Number(a),h=state.siteHolidays[i];h.none=false;h.irregular=false;h.days=h.days.includes(d)?h.days.filter(x=>x!==d):[...h.days,d];document.querySelectorAll(`[data-site-closed-day^="${i}:"]`).forEach(el=>el.setAttribute('aria-pressed',String(h.days.includes(el.dataset.siteClosedDay.split(':')[1]))));const none=$(`qa-holiday-none-site-${i}`),irr=$(`qa-holiday-irregular-site-${i}`);if(none)none.checked=false;if(irr)irr.checked=false;q4ValidationEpoch++;siteHolidayMark(i);return;}
  if(e.target.id==='qa-copy-confirm')return;
@@ -651,7 +651,7 @@ $('q4-regular-dialog').addEventListener('click',e=>{
  if(e.target.closest('[data-global-holiday-done]')){if(!holidayComplete()){exposeHolidayInvalid();return;}state.advancedOpen=false;navigateAfterAccordionLayout([setOpen('qa-holiday',false)],()=>document.querySelector('[data-section="results"]'),{result:true});return;}
  const holidayDone=e.target.closest('[data-site-holiday-done]');if(holidayDone){completeSiteHoliday(Number(holidayDone.dataset.siteHolidayDone));return;}
  const next=e.target.closest('[data-next]');if(next){nextSite(Number(next.dataset.next));return;}
- const choice=e.target.closest('[data-choice]');if(choice){const k=choice.dataset.choice,v=choice.dataset.value;if(k==='delivery'){state.mode=v;state.process=v==='FIXED'?'contact':'shop';state.drop=null;render();}if(k==='process'){state.process=v;document.querySelectorAll('[data-choice="process"]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===v)));}return;}
+ const choice=e.target.closest('[data-choice]');if(choice){const k=choice.dataset.choice,v=choice.dataset.value;if(k==='delivery'){state.mode=v;if(v==='FIXED'&&!['contact','auto'].includes(state.process))state.process='contact';state.drop=null;render();}if(k==='process'){state.process=v;document.querySelectorAll('[data-choice="process"]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.value===v)));}return;}
  if(e.target.id==='q4-regular-save'){saveRegularDraft();return;}
  if(e.target.closest('#q4-regular-cancel,#q4-regular-close')){closeProductModal();return;}
 
@@ -705,20 +705,20 @@ function initializeFromRegular(context){
  commitEpoch++;monthEditing.clear();numericComposing.clear();context=clone(context);for(const a of context.allocations){if(a.q4Review?.pack&&String(a.q4Review.pack)!==String(context.line.pack)){a.qty='';a.oneTimeDeliveryQty='';a.monthlyPlanQty='';a.qtyMin='';a.qtyMax='';if(a.q4Review.draft)a.q4Review.draft.values={};}}
  regularContext=clone(context);names.splice(0,names.length,...context.locations.map(x=>x.name));holidayValidationAttempt.clear();q4ValidationEpoch++;q4CancelNavigation();
  const first=context.allocations[0],count=context.allocations.length;
- const profile=count===1?(first.mode||'FLEX'):(first.q4Review?.profile||'MIXED');
+ const {profile,modes:restoredModes,sites:restoredSites,common}=restoredDeliverySettings(context.allocations,{holidayFromAllocation:allocationHoliday,repeatFromAllocation:allocationRepeat});
  const baseDate=datePolicy.today();
  Object.assign(state,{count,mode:profile,pack:String(context.line.pack),stage:'INPUT',attempted:false,parentOpen:true,siteOpen:Math.max(0,context.selectedIndex),advancedOpen:false,weekOpen:1,copySource:null,copyTargets:[],copyFields:null,drop:null,dialogClosed:true,calendarOpen:false,estimate:null,
   datesByAllocation:Object.fromEntries(context.allocations.map(a=>[JSON.stringify([context.line.id,a.id]),clone(a.q4Review?.deliveryDate||datePolicy.blank())])),dateTouched:new Set(),calendarSite:null,calendarView:{year:baseDate.year,month:baseDate.month},
   values:context.allocations.map(a=>{const saved=a.q4Review?.draft?.values||{};const active=a.mode==='ONCE'?{once:String(a.oneTimeDeliveryQty??a.qty??'')}:{base:String(a.qty??''),monthly:String(a.monthlyPlanQty??''),min:String(a.qtyMin??''),max:String(a.qtyMax??'')};return {...saved,...active};}),
   planningReferences:context.allocations.map(a=>clone(a.planningReference||{year:baseDate.year,month:baseDate.month,anchorDate:'',nominal:true})),nominalVisitCounts:context.allocations.map(a=>a.nominalVisitCount||''),deliveryPlans:context.allocations.map(a=>clone(a.deliveryPlan||null)),deliveryPlanFingerprints:Array(count).fill(''),qtySources:context.allocations.map(a=>a.qtySource||'user'),
   variable:context.allocations.map(a=>a.mode==='ONCE'?!!a.q4Review?.draft?.variable:!!a.variableQty),
-  siteModes:context.allocations.map(a=>a.q4Review?.draft?.mode||a.mode||'FLEX'),
-  siteProcess:context.allocations.map(a=>a.q4Review?.draft?.process||(a.advanced?.fixedOrderProcess==='auto'?'auto':'contact')),
-  siteContacts:context.allocations.map(a=>clone(a.q4Review?.draft?.contact||allocationContacts(a))),
-  siteHolidays:context.allocations.map(a=>clone(a.q4Review?.draft?.holiday||allocationHoliday(a))),
-  siteHolidayOpen:Array(count).fill(false),siteRepeat:context.allocations.map(a=>normalizeSavedRepeat(a.q4Review?.draft?.repeat, a)),siteQuality:context.allocations.map(a=>!!(a.q4Review?.draft?.quality??a.qualityTest))});
- const common=clone(first.q4Review?.common||{}),h=common.holiday||allocationHoliday(first),r=normalizeSavedRepeat(common.repeat,first);
- Object.assign(state,{contact:common.contact||allocationContacts(first),process:common.process||(first.advanced?.fixedOrderProcess==='auto'?'auto':'contact'),quality:!!(common.quality??first.qualityTest),period:r.period,frequency:r.frequency,date:r.date,dateMode:r.dateMode,semantics:r.semantics,legacyReviewRequired:!!r.legacyReviewRequired,legacyOriginal:r.legacyOriginal,weeklyCheck:r.weeklyCheck,weekdays:r.weekdays,weekOpen:r.weekOpen||0,
+  siteModes:restoredModes,
+  siteProcess:restoredSites.map(site=>site.process),
+  siteContacts:restoredSites.map(site=>clone(site.contact)),
+  siteHolidays:restoredSites.map(site=>clone(site.holiday)),
+  siteHolidayOpen:Array(count).fill(false),siteRepeat:restoredSites.map((site,i)=>normalizeSavedRepeat(site.repeat,context.allocations[i])),siteQuality:restoredSites.map(site=>site.quality)});
+ const h=common.holiday,r=normalizeSavedRepeat(common.repeat,first);
+ Object.assign(state,{contact:common.contact,process:common.process,quality:common.quality,period:r.period,frequency:r.frequency,date:r.date,dateMode:r.dateMode,semantics:r.semantics,legacyReviewRequired:!!r.legacyReviewRequired,legacyOriginal:r.legacyOriginal,weeklyCheck:r.weeklyCheck,weekdays:r.weekdays,weekOpen:r.weekOpen||0,
   holidayDays:[...h.days],holidayNone:h.none,holidayIrregular:h.irregular,holiday:{closed:'',conflict:h.conflict,weekend:h.weekend,holiday:h.holiday,subholiday:h.subholiday},request:h.request});
  monthlyEditor=createMonthlyAllocationDraft(context,{readCurrentContext:()=>window.OrderRegularQ4Bridge.allocationContext?.(context.line.id)||context});restoreAcceptedPlans();syncMonthlyFields();
  returnFocus=document.activeElement;render();dirtyBaseline=dirtyFingerprint();openProductModal();fitAllResultNumbers();
@@ -732,8 +732,8 @@ function serializedAllocations(forReview=false){const patches=regularContext.all
  Object.assign(a,{mode:m,modeExplicit:true,qty:String(m==='ONCE'?v.once??'':v.base??''),qtySource:state.qtySources[i],deliveryQtyUnit:state.pack==='30'?'tray':'pack',variableQty:m!=='ONCE'&&!!state.variable[i],qtyMin:m!=='ONCE'&&state.variable[i]?v.min??'':'',qtyMax:m!=='ONCE'&&state.variable[i]?v.max??'':'',qualityTest:!!state.siteQuality[i]});
  if(m==='ONCE')a.oneTimeDeliveryQty=String(v.once??'');a.planningReference=clone(state.planningReferences[i]);a.nominalVisitCount=String(state.nominalVisitCounts[i]||'');delete a.deliveryPlan;if(state.deliveryPlans[i]&&state.deliveryPlanFingerprints[i]===proposalFingerprint(i))a.deliveryPlan=clone(state.deliveryPlans[i]);
  if(m==='FIXED'){const packed=OrderRepeatContract.serialize(r);if(!packed.ok&&!forReview)throw new Error(packed.issue.message);if(packed.ok)Object.assign(a,packed.value);}
- a.advanced={...(a.advanced||{}),contactChannels:Object.keys(c).filter(k=>c[k]),fixedOrderProcess:process==='auto'?'auto':'seller',flexOrderProcess:'store',orderProcess:process==='auto'?'auto':'seller',storeOffDays:[...h.days],storeOffNone:!!h.none,storeOffIrregular:!!h.irregular,storeOffPolicy:legacyPolicy(h.conflict,'conflict'),weekend:legacyPolicy(h.weekend,'weekend'),holiday:legacyPolicy(h.holiday,'holiday'),substituteHoliday:legacyPolicy(h.subholiday,'subholiday'),memo:h.request||''};
- a.q4Review={version:'0460',pack:String(regularContext.line.pack),profile:state.mode,activeHoliday:clone(h),activeRepeat:OrderRepeatContract.snapshot(r),deliveryDate:clone(dateData(i)),
+ a.advanced={...(a.advanced||{}),contactChannels:Object.keys(c).filter(k=>c[k]),...(m==='FIXED'?{fixedOrderProcess:process==='auto'?'auto':'seller',orderProcess:process==='auto'?'auto':'seller'}:m==='FLEX'?{flexOrderProcess:'store',orderProcess:'store'}:{}),...(m!=='ONCE'?{storeOffDays:[...h.days],storeOffNone:!!h.none,storeOffIrregular:!!h.irregular,storeOffPolicy:legacyPolicy(h.conflict,'conflict'),weekend:legacyPolicy(h.weekend,'weekend'),holiday:legacyPolicy(h.holiday,'holiday'),substituteHoliday:legacyPolicy(h.subholiday,'subholiday'),memo:h.request||''}:{})};
+ a.q4Review={version:'0460',pack:String(regularContext.line.pack),profile:state.mode,activeHoliday:m==='ONCE'?clone(original.q4Review?.activeHoliday||h):clone(h),activeRepeat:m==='FIXED'?OrderRepeatContract.snapshot(r):clone(original.q4Review?.activeRepeat||OrderRepeatContract.snapshot(r)),deliveryDate:clone(dateData(i)),
   common:{contact:clone(state.contact),process:state.process,quality:state.quality,holiday:{days:[...state.holidayDays],none:state.holidayNone,irregular:state.holidayIrregular,...state.holiday,request:state.request},repeat:OrderRepeatContract.snapshot(state)},
   draft:{mode:state.siteModes[i],process:state.siteProcess[i],values:clone(v),variable:state.variable[i],contact:clone(state.siteContacts[i]),holiday:clone(state.siteHolidays[i]),repeat:OrderRepeatContract.snapshot(state.siteRepeat[i]),quality:state.siteQuality[i]}};
  return a;

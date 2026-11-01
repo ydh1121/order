@@ -64,3 +64,30 @@ export function sumNominalByReference(entries){
  const sameReference=!invalidReference&&projected.length===1;
  return {groups:projected,sameReference,total:sameReference?projected[0].total:null,complete:sameReference&&projected[0].resolvedCount===entries.length};
 }
+/** Persisted delivery modes are authoritative; profile/draft are presentation hints. */
+export function restoredDeliveryModes(allocations){
+ const modes=allocations.map(allocation=>['FLEX','FIXED','ONCE'].includes(allocation.mode)?allocation.mode:'FLEX');
+ if(modes.length<=1)return {profile:modes[0]||'FLEX',modes};
+ const requested=allocations[0]?.q4Review?.profile;
+ return {profile:modes.every(mode=>mode===modes[0])&&requested===modes[0]?modes[0]:'MIXED',modes};
+}
+/** Restore active persisted settings; use dormant drafts only for inactive modes. */
+export function restoredDeliverySettings(allocations,{holidayFromAllocation,repeatFromAllocation}){
+ const copy=value=>structuredClone(value),modeState=restoredDeliveryModes(allocations);
+ const sites=allocations.map((allocation,index)=>{
+  const mode=modeState.modes[index],draft=allocation.q4Review?.draft||{};
+  const actual={mode,contact:Object.fromEntries(['phone','sms','kakao','email'].map(key=>[key,(allocation.advanced?.contactChannels||[]).includes(key)])),quality:!!allocation.qualityTest,holiday:holidayFromAllocation(allocation),repeat:repeatFromAllocation(allocation),process:allocation.advanced?.fixedOrderProcess==='auto'?'auto':'contact'};
+  return {...actual,holiday:mode==='ONCE'?copy(draft.holiday||actual.holiday):actual.holiday,repeat:mode==='FIXED'?actual.repeat:copy(draft.repeat||actual.repeat),process:mode==='FIXED'?actual.process:draft.process||actual.process};
+ });
+ const first=sites[0];if(!first)return {...modeState,sites,common:null};
+ const comparable=value=>{const result=copy(value);if(result?.repeat){delete result.repeat.weekOpen;delete result.repeat.legacyOriginal;}if(result?.holiday?.days)result.holiday.days.sort();return planningInputSignature(result);};
+ const active=site=>({contact:site.contact,...(site.mode==='ONCE'?{quality:site.quality}:{holiday:site.holiday}),...(site.mode==='FIXED'?{repeat:site.repeat,process:site.process}:{})});
+ let profile=modeState.profile;
+ if(allocations.length>1&&profile!=='MIXED'){
+  const reference=active(first),signature=comparable(reference),hint=allocations[0]?.q4Review?.common||{};
+  const commonActive={...copy(reference),...Object.fromEntries(Object.keys(reference).filter(key=>hint[key]!==undefined).map(key=>[key,copy(hint[key])]))};
+  if(sites.some(site=>comparable(active(site))!==signature)||comparable(commonActive)!==signature)profile='MIXED';
+ }
+ const dormantCommon=allocations[0]?.q4Review?.common||{};
+ return {profile,modes:modeState.modes,sites,common:{contact:copy(first.contact),quality:first.quality,holiday:copy(first.mode==='ONCE'?dormantCommon.holiday||first.holiday:first.holiday),repeat:copy(first.mode==='FIXED'?first.repeat:dormantCommon.repeat||first.repeat),process:first.mode==='FIXED'?first.process:dormantCommon.process||first.process}};
+}

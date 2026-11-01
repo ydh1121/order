@@ -21,7 +21,7 @@ Backdrop pointer gestures do not dismiss editable dialogs. Dirty explicit exit c
 
 For M=5,000 each, package size30, A manual plan50 and B missing: A's plan share is1,500 each but is not invented observed demand. B's residual demand is3,500 each and its package proposal117. Total plan167 and surplus10 do not rewrite M to5,010. Known D=2,500 each at each of two sites yields84+84 packages; the global ceil(M/30)=167 is not an absolute cap. Manual package edits never overwrite independently known D.
 
-ONCE is excluded from repeated monthly eligibility, sums, residuals, proposals, limits and completion. All-ONCE is not applicable and leaves Q2 intact. Prior inactive-mode values remain separate. Existing ONCE quantity confirmation remains its own policy.
+ONCE is excluded from repeated monthly eligibility, sums, residuals, proposals, limits and completion. All-ONCE is not applicable and leaves Q2 intact. Prior inactive-mode values remain separate. Actual saved allocation mode and active fields take precedence over historical popup profile/draft fields when connections change; inconsistent common presentation falls back to individual mode. Existing ONCE quantity confirmation remains its own policy.
 
 FLEX shows average expected order frequency, not a confirmed delivery count. FIXED proposals distinguish reference month, pattern start week and actual weekdays from nominal counts. Per-week-v1 patterns are not reinterpreted as alternate-week delivery. No four-week/30-day conversion, holiday policy or excess percentage is invented. Variable integer distributions require the user's variable setting and valid limits.
 
