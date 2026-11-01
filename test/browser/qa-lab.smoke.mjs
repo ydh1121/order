@@ -48,7 +48,7 @@ try{
   assert.match(identity.commitSha,/^[a-f0-9]{40}$/);assert.equal(await page.locator('#qa-lab-commit').textContent(),identity.commitSha);assert.equal(identity.storage,'ISOLATED_MEMORY_ONLY');assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabStorage),'ISOLATED_MEMORY');assert.equal((await committed()).lines.length,0);assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);
  });
  await check('L02_OPT_IN_FIXTURE_CURRENT_ENGINE_DERIVED_AND_CANCEL',async()=>{
-  await prepareFixture();const before=await committed();await openQ4();assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'150');await site(0);await page.locator('[data-qty="0:monthly"]').fill('60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');
+  await prepareFixture();await openQ4();const before=await committed();assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'150');await site(0);await page.locator('[data-qty="0:monthly"]').fill('60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');
   await page.locator('#q4-regular-cancel').click();await closed();assert.deepEqual(await committed(),before);await openQ4();assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'50');await page.keyboard.press('Escape');await closed();assert.deepEqual(await committed(),before);
  });
  await check('L03_CONTROLLED_STORAGE_FAILURE_RETAINS_UNCONFIRMED_DRAFT',async()=>{
