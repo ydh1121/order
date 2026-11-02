@@ -1,5 +1,6 @@
 import {validMonthlyQuantity} from './quantity-contract.mjs';
 import {addressStatus} from './address-contract.mjs';
+import {createCadence,inspectCadence} from './cadence-contract.mjs';
 import './contact-ui.mjs';
 /* MSG0481 reimplementation from verified MSG0478 bytes.
  * Pure weekly/month-day contract shared by rendering, selection, bridge and page verdict.
@@ -15,6 +16,12 @@ window.OrderRepeatContract=Object.freeze((()=>{
   return {valid:true,value:String(parseInt(s,10)),display:String(parseInt(s,10))+'일'};
  }
  function inspect(r={}){
+  if(r.cadence){
+   const c=inspectCadence(r.cadence),result={valid:c.valid,weeks:0,perWeek:null,total:null,week:[],issue:null};
+   if(!c.valid){result.issue={kind:r.cadence.kind==='MONTHLY'?'date':'preferred-date',message:r.cadence.kind==='MONTHLY'?'납품 날짜를 1~31의 정수 또는 말일로 입력해 주세요.':'납품 희망 일을 확인해 주세요.'};return result;}
+   if(c.value.kind!=='WEEKLY'){if(c.value.kind==='MONTHLY')result.month=monthValue(c.value.dayRule);return result;}
+   return inspect({...r,cadence:null,period:'매주',semantics:'per-week-v1',legacyReviewRequired:false});
+  }
   const W=periods[r.period],N=/^[1-7]회$/.test(String(r.frequency??''))?parseInt(r.frequency,10):NaN;
   const result={valid:true,weeks:W??0,perWeek:Number.isFinite(N)?N:null,total:Number.isFinite(N)&&W>0?W*N:null,week:[],issue:null};
   const fail=(kind,message,week=null)=>{result.valid=false;if(!result.issue)result.issue={kind,message,week};};
@@ -31,20 +38,26 @@ window.OrderRepeatContract=Object.freeze((()=>{
   return result;
  }
  function fromAllocation(a={}){
+  if(a.cadence){const c=clone(a.cadence),r=a.q4Review?.activeRepeat?clone(a.q4Review.activeRepeat):fromAllocation({...a,cadence:null});return {...r,cadence:c,period:c.kind==='MONTHLY'?'매월':c.kind==='INTERVAL_DAYS'?(c.intervalDays===14?'2주':'3주'):'매주',frequency:c.kind==='INTERVAL_DAYS'?'1회':r.frequency,date:c.kind==='MONTHLY'?(c.dayRule==='last'?'말일':String(c.dayRule)+'일'):r.date,semantics:'cadence-v2',legacyReviewRequired:false};}
   if(a.q4Review?.activeRepeat){const r=clone(a.q4Review.activeRepeat);if(!('legacyReviewRequired' in r))r.legacyReviewRequired=periods[r.period]>1&&r.semantics!=='per-week-v1';return r;}
   const W=Number(a.intervalWeeks??1),weekdays={};
   (Array.isArray(a.weekPlans)&&a.weekPlans.length?a.weekPlans:[{weekdays:a.days||[]}]).forEach((p,j)=>(p.weekdays||[]).forEach(d=>{if(days.includes(d))weekdays[(j+1)+':'+d]=true;}));
-  const old=a.frequencyPerWeek??(W===1?a.freq:a.cycleCount);
+  const old=a.frequencyPerWeek??(W===1||a.repeatSemantics==='per-week-v1'?a.freq:a.cycleCount);
   return {period:W===0?'매월':W===1?'매주':W+'주',frequency:old===undefined?'2회':String(old)+'회',date:a.monthDay==='last'?'말일':a.monthDay==null?'':String(a.monthDay)+'일',dateMode:a.monthDay==null?'custom':'preset',weeklyCheck:a.scheduleDetail==='days',weekdays,weekOpen:1,semantics:a.repeatSemantics||null,legacyReviewRequired:W>1&&a.repeatSemantics!=='per-week-v1',legacyOriginal:{cycleCount:a.cycleCount,freq:a.freq,intervalWeeks:a.intervalWeeks,weekPlans:clone(a.weekPlans||[])}};
  }
  function serialize(r){
   const v=inspect(r),W=periods[r.period],month=monthValue(r.date);
   if(!v.valid)return {ok:false,issue:v.issue};
+  if(r.cadence){
+   const c=clone(r.cadence),weekly=c.kind==='WEEKLY',monthly=c.kind==='MONTHLY';
+   const plans=weekly?[{weekdays:r.weeklyCheck?days.filter(d=>r.weekdays?.['1:'+d]===true):[]}]:[];
+   return {ok:true,value:{cadence:c,repeatSemantics:'cadence-v2',intervalWeeks:weekly?1:monthly?0:c.intervalDays/7,frequencyPerWeek:weekly?v.perWeek:null,freq:weekly?v.perWeek:1,cycleCount:weekly?v.perWeek:1,monthDay:monthly?String(c.dayRule):'',scheduleDetail:weekly&&r.weeklyCheck?'days':'count',weekPlans:plans,days:plans[0]?.weekdays||[]}};
+  }
   const plans=W===0?[]:Array.from({length:W},(_,i)=>({weekdays:r.weeklyCheck?days.filter(d=>r.weekdays?.[(i+1)+':'+d]===true):[]}));
   return {ok:true,value:{repeatSemantics:'per-week-v1',intervalWeeks:W,frequencyPerWeek:W===0?null:v.perWeek,freq:W===0?1:v.perWeek,cycleCount:W===0?1:v.total,monthDay:W===0?month.value:'',scheduleDetail:W>0&&r.weeklyCheck?'days':'count',weekPlans:plans,days:plans[0]?.weekdays||[]}};
  }
- function resetPeriod(r,value){if(r.period===value)return false;r.period=value;r.weeklyCheck=false;r.weekdays={};r.weekOpen=0;r.legacyReviewRequired=false;r.semantics='per-week-v1';if(value==='매월'){r.date='';r.dateMode='custom';}return true;}
- const snapshot=r=>({period:r.period,frequency:r.frequency,date:r.date??'',dateMode:r.dateMode||'custom',weeklyCheck:!!r.weeklyCheck,weekdays:clone(r.weekdays||{}),weekOpen:r.weekOpen??0,semantics:r.semantics||'per-week-v1',legacyReviewRequired:!!r.legacyReviewRequired,...(r.legacyOriginal?{legacyOriginal:clone(r.legacyOriginal)}:{})});
+ function resetPeriod(r,value){const cadence=createCadence(value,r.cadence);if(!cadence)return false;if(r.period===value&&r.cadence)return false;r.period=value;r.cadence=cadence;r.weeklyCheck=false;r.weekdays={};r.weekOpen=0;r.legacyReviewRequired=false;r.semantics='cadence-v2';if(cadence.kind==='INTERVAL_DAYS')r.frequency='1회';if(value==='매월'){r.date=cadence.dayRule==='last'?'말일':cadence.dayRule?cadence.dayRule+'일':'';r.dateMode='custom';}return true;}
+ const snapshot=r=>({period:r.period,frequency:r.frequency,date:r.date??'',dateMode:r.dateMode||'custom',weeklyCheck:!!r.weeklyCheck,weekdays:clone(r.weekdays||{}),weekOpen:r.weekOpen??0,semantics:r.semantics||'per-week-v1',legacyReviewRequired:!!r.legacyReviewRequired,...(r.cadence?{cadence:clone(r.cadence)}:{}),...(r.legacyOriginal?{legacyOriginal:clone(r.legacyOriginal)}:{})});
  return {days,periods,inspect,monthValue,fromAllocation,serialize,resetPeriod,snapshot};
 })());
 /* MSG0485. Input ownership: one phone buffer, one email field and domain-only verifier.
@@ -147,7 +160,6 @@ window.OrderModalShell=Object.freeze((()=>{
  const less=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
  const time=(name,fallback)=>{const value=getComputedStyle(root).getPropertyValue(name).trim(),n=parseFloat(value);return Number.isFinite(n)?n*(value.endsWith('ms')?1:1000):fallback;};
  const ease=()=>getComputedStyle(root).getPropertyValue('--ui-ease').trim()||'ease-out';
- const rgb=value=>{const n=String(value).match(/[\d.]+/g)?.map(Number);return n?.length>=3?[...n.slice(0,3),n[3]??1]:null;};
  const capture=(el,names)=>Object.fromEntries(names.map(k=>[k,[el.style.getPropertyValue(k),el.style.getPropertyPriority(k)]]));
  const restore=(el,values)=>Object.entries(values).forEach(([k,[v,p]])=>v?el.style.setProperty(k,v,p):el.style.removeProperty(k));
  const top=()=>[...entries.keys()].filter(d=>d.open).at(-1)||null;
@@ -205,17 +217,37 @@ window.OrderModalShell=Object.freeze((()=>{
   }
   reconcileHistory();
  },{capture:true});
- function paintLock(){
+ function paintLock(opening=null){
   const open=[...entries.keys()].filter(d=>d.open);
+  if(opening&&entries.has(opening)&&!open.includes(opening))open.push(opening);
   if(open.length){
-   if(!saved){saved={root:capture(root,['--ui-modal-gutter']),x:scrollX,y:scrollY,rootClass:root.classList.contains('ui-modal-locked'),bodyClass:body.classList.contains('ui-modal-body-locked'),base:(rgb(getComputedStyle(body).backgroundColor)||rgb(getComputedStyle(root).backgroundColor)||[255,255,255]).slice(0,3)};}
-   // Native backdrops do not consistently paint reserved root gutters. Composite
-   // their actual shared token over the saved canvas; nested close leaves one dim.
-   let color=[...saved.base];for(const dialog of open){const dim=rgb(getComputedStyle(dialog,'::backdrop').backgroundColor)||rgb(getComputedStyle(root).getPropertyValue('--ui-modal-backdrop'));if(dim)color=color.map((c,i)=>c*(1-dim[3])+dim[i]*dim[3]);}
-   root.style.setProperty('--ui-modal-gutter',`rgb(${color.map(Math.round).join(',')})`);
+   if(!saved){
+    const width=body.getBoundingClientRect?.().width,viewportWidth=window.innerWidth;
+    const inline=Number.isFinite(width)&&Number.isFinite(viewportWidth)?Math.max(0,viewportWidth-width):0;
+    saved={root:capture(root,['--ui-modal-page-inline']),x:scrollX,y:scrollY,rootClass:root.classList.contains('ui-modal-locked'),bodyClass:body.classList.contains('ui-modal-body-locked')};
+    root.style.setProperty('--ui-modal-page-inline',inline+'px');
+   }
+   // Reserve the same document geometry inside the body, not in the viewport.
+   // The native backdrop now paints the entire canvas, including both edges;
+   // no independently composited gutter colour can get ahead of its animation.
    root.classList.add('ui-modal-locked');body.classList.add('ui-modal-body-locked');return;
   }
   if(saved){const old=saved;saved=null;restore(root,old.root);root.classList.toggle('ui-modal-locked',old.rootClass);body.classList.toggle('ui-modal-body-locked',old.bodyClass);window.scrollTo({left:old.x,top:old.y,behavior:'instant'});}
+ }
+ function cancelMotion(rec){
+  rec.animation?.cancel();rec.animation=null;
+  rec.backdropAnimation?.cancel();rec.backdropAnimation=null;
+ }
+ function fade(dialog,rec,from,to,duration){
+  const options={duration,easing:to===0?'ease-in':ease(),fill:'forwards'};
+  const animation=dialog.animate([{opacity:from},{opacity:to}],options);rec.animation=animation;
+  // Animate the existing native pseudo-element on the same timeline. Older
+  // engines which cannot target ::backdrop keep its native shade until close.
+  let backdrop=null;
+  try{backdrop=dialog.animate([{opacity:from},{opacity:to}],{...options,pseudoElement:'::backdrop'});}catch{}
+  rec.backdropAnimation=backdrop;
+  if(backdrop&&animation.startTime!==null)backdrop.startTime=animation.startTime;
+  return Promise.all([animation.finished,...(backdrop?[backdrop.finished]:[])]);
  }
  function restoreFocus(rec){
   const target=typeof rec?.returnFocus==='function'?rec.returnFocus():rec?.returnFocus;
@@ -224,7 +256,7 @@ window.OrderModalShell=Object.freeze((()=>{
  function release(dialog,after){
   const rec=entries.get(dialog);if(!rec){after?.();return;}
   retireHistory(rec);
-  entries.delete(dialog);rec.animation?.cancel();rec.sizeAnimation?.cancel();dialog.classList.remove('is-open','is-closing');
+  entries.delete(dialog);cancelMotion(rec);rec.sizeAnimation?.cancel();dialog.classList.remove('is-open','is-closing');
   dialog.style.opacity='';dialog.style.transform='';
   restore(dialog,rec.geometry);delete dialog.dataset.modalContentSize;delete dialog.dataset.modalResizing;
   dialog.querySelector(':scope > .q4-regular-panel')?.style.removeProperty('--ui-modal-editor-session-block');
@@ -331,17 +363,17 @@ window.OrderModalShell=Object.freeze((()=>{
   const finish=()=>{if(entries.get(dialog)===rec&&rec.sizeAnimation===a){a.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;revealFocusedControl(dialog);}};
   a.finished.then(finish,()=>{});return true;
  }
- function open(dialog,{variant='compact',returnFocus=document.activeElement,initialFocus=null,contentSize='session',history=false}={}){
-  const old=entries.get(dialog);if(old){old.epoch++;old.animation?.cancel();old.sizeAnimation?.cancel();}
+ function open(dialog,{variant='compact',role=null,returnFocus=document.activeElement,initialFocus=null,contentSize='session',history=false}={}){
+  const old=entries.get(dialog);if(old){old.epoch++;cancelMotion(old);old.sizeAnimation?.cancel();}
   cancelDiscardFor(dialog);
-  const rec={session:++sessionSerial,epoch:(old?.epoch||0)+1,animation:null,sizeAnimation:null,returnFocus,variant,closing:false,contentSize,geometry:old?.geometry||capture(dialog,['--ui-modal-max-block','--ui-modal-viewport-top','--ui-modal-viewport-bottom'])};entries.set(dialog,rec);version++;
-  dialog.dataset.modalVariant=variant;dialog.classList.remove('is-closing');dialog.style.opacity='';dialog.style.transform='';
+  const rec={session:++sessionSerial,epoch:(old?.epoch||0)+1,animation:null,backdropAnimation:null,sizeAnimation:null,returnFocus,variant,closing:false,contentSize,geometry:old?.geometry||capture(dialog,['--ui-modal-max-block','--ui-modal-viewport-top','--ui-modal-viewport-bottom'])};entries.set(dialog,rec);version++;
+  dialog.dataset.modalVariant=variant;dialog.dataset.modalRole=role||dialog.dataset.modalRole||(dialog.classList.contains('ui-compact-confirm')||dialog.classList.contains('q1-delete-dialog')?'confirm':variant==='editor'?'editor':'selection');dialog.classList.remove('is-closing');dialog.style.opacity='';dialog.style.transform='';
   dialog.dataset.modalContentSize=contentSize;delete dialog.dataset.modalResizing;
   if(!bound.has(dialog))bind(dialog,()=>close(dialog));
-  viewport(dialog);if(!dialog.open)dialog.showModal();paintLock();if(variant==='editor')resize(dialog,null,{animate:false});
+  viewport(dialog);paintLock(dialog);try{if(!dialog.open)dialog.showModal();}catch(error){release(dialog);throw error;}if(variant==='editor')resize(dialog,null,{animate:false});
   registerHistory(dialog,rec,old,history);
   dialog.classList.add('is-open');
-  if(!less()){const a=dialog.animate([{opacity:0},{opacity:1}],{duration:time('--ui-modal-fade-open',200),easing:ease()});rec.animation=a;a.finished.then(()=>{if(entries.get(dialog)===rec&&rec.animation===a){a.cancel();rec.animation=null;}},()=>{});}
+  if(!less()){const epoch=rec.epoch;fade(dialog,rec,0,1,time('--ui-modal-fade-open',200)).then(()=>{if(entries.get(dialog)===rec&&rec.epoch===epoch&&!rec.closing)cancelMotion(rec);},()=>{});}
   if(initialFocus){const t=typeof initialFocus==='function'?initialFocus():initialFocus;t?.focus({preventScroll:true});revealFocusedControl(dialog);}
   return rec.epoch;
  }
@@ -350,13 +382,13 @@ window.OrderModalShell=Object.freeze((()=>{
   const rec=entries.get(dialog);if(!dialog.open){release(dialog,after);return;}
   if(!rec){dialog.close();after?.();return;}
   if(rec.closing)return;rec.closing=true;retireHistory(rec);version++;const epoch=++rec.epoch;
-  const opacity=getComputedStyle(dialog).opacity;rec.animation?.cancel();rec.animation=null;rec.sizeAnimation?.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;
+  const opacity=getComputedStyle(dialog).opacity;cancelMotion(rec);rec.sizeAnimation?.cancel();rec.sizeAnimation=null;delete dialog.dataset.modalResizing;
   dialog.classList.remove('is-open');dialog.classList.add('is-closing');
   const finish=()=>{if(entries.get(dialog)!==rec||rec.epoch!==epoch)return;if(dialog.open)dialog.close();release(dialog,after);};
-  // The verified desktop close strategy is synchronous. Mobile has one opacity-only owner.
-  if(immediate||less()||matchMedia('(min-width:768px)').matches){finish();return;}
-  const a=dialog.animate([{opacity:Number(opacity)||1},{opacity:0}],{duration:time('--ui-modal-fade-close',150),easing:'ease-in',fill:'forwards'});rec.animation=a;
-  a.finished.then(finish,()=>{});
+  // Keep every native top-layer/backdrop and the page lock alive until both
+  // presentation animations finish. Nested release still leaves its parent.
+  if(immediate||less()){finish();return;}
+  const from=Number(opacity);fade(dialog,rec,Number.isFinite(from)?Math.max(0,Math.min(1,from)):1,0,time('--ui-modal-fade-close',150)).then(finish,()=>{});
  }
  let resizeFrame=0;const resizeViewport=()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{entries.forEach((r,d)=>{if(d.open&&!r.closing){viewport(d);if(r.variant==='editor')resize(d,null,{animate:false});else revealFocusedControl(d);}});});};
  window.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('scroll',resizeViewport);
@@ -444,11 +476,7 @@ const CODE1_ORDER_VALIDATION=(()=>{
    const prefix=a.id;
    if(!modeOk(a.mode)||a.modeExplicit!==true)put('q4',prefix+':mode','납품 방식을 선택해 주세요.','BLOCK_REQUIRED',a.locationId,a.lineId);
    if(!Array.isArray(a.advanced?.contactChannels)||!a.advanced.contactChannels.length)put('q4',prefix+':contact','연락 수단을 하나 이상 선택해 주세요.','BLOCK_REQUIRED',a.locationId,a.lineId);
-   if(a.mode!=='ONCE'){
-    const proc=a.mode==='FIXED'?a.advanced?.fixedOrderProcess:a.advanced?.flexOrderProcess;
-    const allow=a.mode==='FIXED'?['seller','auto']:['store','seller'];
-    if(!allow.includes(proc))put('q4',prefix+':process','주문 진행 방식을 선택해 주세요.','BLOCK_REQUIRED',a.locationId,a.lineId);
-   }
+   // Order initiation remains stored history, not an input or a completion prerequisite.
    if(count===1&&(!int(a.qty,99999)))put('q4',prefix+':qty',a.mode==='ONCE'?'1회 납품 수량을 입력해 주세요.':'회당 예상 납품 수량을 입력해 주세요.','BLOCK_REQUIRED',a.locationId,a.lineId);
    if(a.mode==='ONCE'){
     if(count>=2){

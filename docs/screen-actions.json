@@ -269,19 +269,57 @@
         {
           "id": "q4-reference-year-{i}/q4-reference-month-{i}/q4-anchor-{i}/q4-visit-count-{i}",
           "type": "nominal-calendar-reference",
-          "requires": "real calendar or explicit nominal count; not operational schedule/holiday approval",
-          "durableWrites": 0
+          "requires": "Historical action only; absent from current product form and completion gate",
+          "durableWrites": 0,
+          "status": "REMOVED_BY_MSG0526"
         },
         {
           "id": "data-apply-plan",
           "type": "explicit-package-plan-proposal-acceptance",
-          "requires": "current reference/monthly demand/range; manual quantity unchanged until explicit apply",
-          "durableWrites": 0
+          "requires": "Historical action only; absent from current product form and completion gate",
+          "durableWrites": 0,
+          "status": "REMOVED_BY_MSG0526"
         },
         {
           "id": "data-frequency-output",
           "type": "readonly-average-frequency",
           "requires": "FLEX plan/quantity or existing variable range; never fixed delivery count"
+        }
+      ]
+    },
+    {
+      "id": "MSG0526_CANONICAL_Q4",
+      "route": "/#/form",
+      "contract": "CADENCE_V2_STORAGE_V5",
+      "actions": [
+        {
+          "id": "numeric-input ArrowUp/ArrowDown/wheel",
+          "type": "exact-integer-step",
+          "requires": "focused editable numeric; wheel pointer inside; unchanged bounds emits zero edits; identifiers and IME excluded"
+        },
+        {
+          "id": "period/site-repeat-{i}-period",
+          "type": "explicit-cadence-choice",
+          "requires": "weekly, 14/21 day interval, monthly; old per-week-v1 retained until explicit choice",
+          "durableWrites": 0
+        },
+        {
+          "id": "q4-date-year-{i}/q4-date-month-{i}/q4-date-day-{i}/calendar",
+          "type": "optional-preferred-date",
+          "requires": "Seoul year bounds; monthly dayRule independent until explicit date selection; saved past anchor valid",
+          "durableWrites": 0
+        },
+        {
+          "id": "q4-regular-save",
+          "type": "confirm-delivery-draft",
+          "requires": "shared monthly package contract, current revision; no removed process/reference/FLEX policy gate",
+          "durableWrites": 1
+        },
+        {
+          "id": "q4-delete-commit",
+          "type": "delete-target-allocation-only",
+          "requires": "compact identity confirmation, duplicate guard; cancel unchanged",
+          "durableWrites": 1
         }
       ]
     }

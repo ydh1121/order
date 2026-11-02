@@ -8,6 +8,7 @@ import {execFileSync} from 'node:child_process';
 import {createHash,webcrypto} from 'node:crypto';
 import {parse} from 'acorn';
 import {buildQaLab,collectQaModules} from '../../scripts/build-qa-lab.mjs';
+import {buildQaComparison} from '../../scripts/build-qa-comparison.mjs';
 import {allocationFixture,syntheticDns,syntheticAddressResult} from '../fixtures/qa-lab.mjs';
 import {createAddressSearchService} from '../../web/address-service.mjs';
 
@@ -73,6 +74,18 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   element('qa-lab-address').value='empty';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'EMPTY','mode change clears previous synthetic cache');
   element('qa-lab-address').value='unavailable';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'UNAVAILABLE');address.close();
   await element('qa-lab-restart').listeners.click();assert.equal(location.hash,'');assert.equal(reloads,1);
+ });
+
+ await t.test('comparison keeps two exact graphs, explicit identical fixtures and isolated memory',async()=>{
+  const compared=await buildQaComparison({root:directory,baselineRoot:directory,now,write:false});
+  assert.equal(compared.identity.baseline.commitSha,compared.identity.current.commitSha);
+  assert.equal(compared.identity.baseline.sourceState,'EXACT_GIT_COMMIT');
+  assert.equal(compared.identity.storage,'TWO_ISOLATED_MEMORY_STORES');
+  assert.equal(compared.identity.network,'NO_EXTERNAL_NETWORK');
+  assert.match(compared.html,/id="frame-before"/);assert.match(compared.html,/id="frame-after"/);
+  assert.match(compared.html,/order-qa-seed:/);assert.match(compared.html,/connect-src 'none'/);
+  assert.doesNotMatch(compared.html,/<script[^>]+src=|<link[^>]+href=/i);
+  await assert.rejects(()=>buildQaComparison({root:directory,baselineRoot:directory,now,outputPath:resolve(directory,'dist/compare.html')}),/QA_OUTPUT_MUST_NOT_BE_DIST/);
  });
 
  await t.test('dirty source cannot masquerade as a fixed commit, and LAB output cannot enter dist',async()=>{

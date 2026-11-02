@@ -147,7 +147,7 @@ try{
   const prior=(await persisted()).allocations;await editAllocation();
   assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'50');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'150');
   assert.equal(await page.locator('[data-field-group="1-monthly"]').getAttribute('data-quantity-source'),'derived');
-  assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/남은 수량:.*150판/);assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/전체 수량:.*총200판/);
+  assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/남은 수량 :.*150판/);assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/전체 수량 :.*총200판/);
   await allocationSite(0);await page.locator('[data-qty="0:monthly"]').fill('60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');assert.deepEqual((await persisted()).allocations,prior);
   await allocationSite(1);await page.locator('[data-qty="1:monthly"]').fill('150');await page.locator('#q4-regular-save').click();
   assert.equal(await page.locator('#q4-regular-dialog').evaluate(el=>el.open),true,'210 package plans cannot overwrite a 200-package plan when both demands are unknown');assert.deepEqual((await persisted()).allocations,prior);

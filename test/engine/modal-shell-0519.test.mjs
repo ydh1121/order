@@ -18,7 +18,7 @@ function element(){const classes=new Set(),listeners=new Map(),attrs=new Map();r
 function harness({reduced=false,mobile=false,withHistory=false}={}){
  const root=element(),body=element(),frames=new Map(),animations=[],scrolls=[];let frameId=0;
  const document=Object.assign(element(),{documentElement:root,body,activeElement:null}),created=[];
- const window=element();window.visualViewport=Object.assign(element(),{height:800,offsetTop:0});
+ const window=element();window.innerWidth=1440;body.getBoundingClientRect=()=>({width:1410});window.visualViewport=Object.assign(element(),{height:800,offsetTop:0});
  const historyStack=[{state:{route:'form',untouched:'keep'},url:'https://order.test/#/form'}],historyQueue=[];let historyIndex=0,historyBacks=0;
  if(withHistory){window.location={href:historyStack[0].url};window.history={get state(){return historyStack[historyIndex].state;},pushState(state,unused,url){historyStack.splice(++historyIndex);historyStack.push({state:structuredClone(state),url});window.location.href=url;},replaceState(state,unused,url){historyStack[historyIndex]={state:structuredClone(state),url};window.location.href=url;},back(){historyBacks++;historyQueue.push(-1);},forward(){historyQueue.push(1);}};}
  window.scrollTo=value=>scrolls.push(value);
@@ -38,13 +38,35 @@ function harness({reduced=false,mobile=false,withHistory=false}={}){
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
-test('A06 nested child close preserves parent lock, backdrop color, focus and original scroll until final close',()=>{
+test('C26-01 nested native backdrop retains page geometry and lock until final top-layer close',()=>{
  const h=harness({reduced:true}),launch=h.focus(element()),parent=h.dialog('parent'),trigger=h.focus(element()),child=h.dialog('child');parent.children=[trigger];
- h.root.style.setProperty('--ui-modal-gutter','original','important');
- h.shell.open(parent,{variant:'editor',returnFocus:launch});assert.equal(h.root.style.getPropertyValue('--ui-modal-gutter'),'rgb(141,147,155)');
- h.shell.open(child,{variant:'editor',returnFocus:trigger});assert.deepEqual([...h.shell.activeIds],['parent','child']);assert.equal(h.root.style.getPropertyValue('--ui-modal-gutter'),'rgb(81,91,103)');
- h.shell.close(child);h.flush();assert.equal(h.root.classList.contains('ui-modal-locked'),true);assert.equal(h.body.classList.contains('ui-modal-body-locked'),true);assert.equal(h.root.style.getPropertyValue('--ui-modal-gutter'),'rgb(141,147,155)');assert.equal(h.document.activeElement,trigger);assert.equal(h.scrolls.length,0);
- h.shell.close(parent);h.flush();assert.equal(h.root.classList.contains('ui-modal-locked'),false);assert.equal(h.body.classList.contains('ui-modal-body-locked'),false);assert.equal(h.root.style.getPropertyValue('--ui-modal-gutter'),'original');assert.equal(h.root.style.getPropertyPriority('--ui-modal-gutter'),'important');assert.equal(h.document.activeElement,launch);assert.equal(h.scrolls.length,1);assert.deepEqual({...h.scrolls[0]},{left:4,top:360,behavior:'instant'});
+ h.root.style.setProperty('--ui-modal-page-inline','original','important');
+ h.shell.open(parent,{variant:'editor',returnFocus:launch});assert.equal(h.root.style.getPropertyValue('--ui-modal-page-inline'),'30px');
+ h.shell.open(child,{variant:'editor',returnFocus:trigger});assert.deepEqual([...h.shell.activeIds],['parent','child']);assert.equal(h.root.style.getPropertyValue('--ui-modal-page-inline'),'30px');
+ assert.equal(h.root.style.getPropertyValue('--ui-modal-gutter'),'','native backdrop is the sole shade; no separately composited canvas colour');
+ h.shell.close(child);h.flush();assert.equal(h.root.classList.contains('ui-modal-locked'),true);assert.equal(h.body.classList.contains('ui-modal-body-locked'),true);assert.equal(h.document.activeElement,trigger);assert.equal(h.scrolls.length,0);
+ h.shell.close(parent);h.flush();assert.equal(h.root.classList.contains('ui-modal-locked'),false);assert.equal(h.body.classList.contains('ui-modal-body-locked'),false);assert.equal(h.root.style.getPropertyValue('--ui-modal-page-inline'),'original');assert.equal(h.root.style.getPropertyPriority('--ui-modal-page-inline'),'important');assert.equal(h.document.activeElement,launch);assert.equal(h.scrolls.length,1);assert.deepEqual({...h.scrolls[0]},{left:4,top:360,behavior:'instant'});
+});
+
+test('C26-01 desktop and mobile close wait for dialog AND native backdrop motion before unlocking',async()=>{
+ for(const mobile of [false,true]){
+  const h=harness({mobile}),p=h.dialog('parent'),c=h.dialog('child');h.shell.open(p);h.shell.open(c);h.shell.close(c);
+  const [surface,backdrop]=h.animations.slice(-2);assert.equal(backdrop.options.pseudoElement,'::backdrop');assert.equal(surface.options.duration,150);assert.equal(backdrop.options.duration,150);
+  surface.finish();await tick();assert.equal(c.open,true);assert.equal(h.root.classList.contains('ui-modal-locked'),true);assert.equal(h.scrolls.length,0);
+  backdrop.finish();await tick();assert.equal(c.open,false);assert.equal(p.open,true);assert.equal(h.root.classList.contains('ui-modal-locked'),true);
+  h.shell.close(p);const final=h.animations.slice(-2);final[1].finish();await tick();assert.equal(p.open,true);final[0].finish();await tick();assert.equal(p.open,false);assert.equal(h.root.classList.contains('ui-modal-locked'),false);assert.equal(h.scrolls.length,1);
+ }
+});
+
+test('C26-01 rapid close preserves an opening opacity of zero instead of flashing fully visible',()=>{
+ const h=harness(),d=h.dialog('rapid');const computed=h.context.getComputedStyle;h.context.getComputedStyle=(el,pseudo)=>({...computed(el,pseudo),opacity:'0'});
+ h.shell.open(d);h.shell.close(d);for(const motion of h.animations.slice(-2))assert.equal(motion.keyframes[0].opacity,0);
+});
+
+test('C26-02 modal geometry role is independent of content motion variant',()=>{
+ const h=harness({reduced:true}),compact=h.dialog('confirm'),selection=h.dialog('selection'),editor=h.dialog('editor');compact.classList.add('ui-compact-confirm');
+ h.shell.open(compact);h.shell.open(selection,{variant:'copy'});h.shell.open(editor,{variant:'compact',role:'editor'});
+ assert.equal(compact.dataset.modalRole,'confirm');assert.equal(selection.dataset.modalRole,'selection');assert.equal(editor.dataset.modalRole,'editor');
 });
 
 test('A07 native cancel and backdrop are consumed only by top modal',()=>{

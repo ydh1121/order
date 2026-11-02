@@ -1,34 +1,45 @@
 import {calendarForecast,demandFrequency,fixedQuantityPlan} from '../src/browser/engine.mjs';
-import {fromRatio,round,exact,multiply,add,toJSON} from '../src/engine/calculation/exact.mjs';
+import {fromRatio,exact,multiply,add,toJSON} from '../src/engine/calculation/exact.mjs';
 const integer=value=>/^[1-9]\d*$/.test(String(value??''));
 const days=['월','화','수','목','금','토','일'];
 export function frequencyText({monthlyPlan,quantity,variable=false,min='',max=''}){
  const result=demandFrequency({monthlyPlan,quantity,...(variable?{range:{min,max}}:{})});
  if(result.status!=='VALID')return '—';
- const decimal=value=>round(fromRatio(value),{scale:1,mode:'HALF_UP'}).decimal.replace(/\.0$/,'');
- const n=result.normalized;return `월 약 ${variable?decimal(n.low)+'~'+decimal(n.high):decimal(n.average)}회`;
+ const {low,high}=result.normalized.display;return `월 약${low===high?low:low+'~'+high}회`;
 }
 /** A nominal planning projection; never writes calendarPolicy or invents holidays. */
 export function repeatVisitPlan(repeat,reference,count=''){
- if(!reference||!Number.isInteger(Number(reference.year))||!Number.isInteger(Number(reference.month))||Number(reference.year)<2000||Number(reference.year)>2100||Number(reference.month)<1||Number(reference.month)>12)return {resolved:false,message:'참조월을 확인해 주세요.'};
+ if(!reference||!Number.isInteger(Number(reference.year))||!Number.isInteger(Number(reference.month))||Number(reference.year)<1||Number(reference.year)>9999||Number(reference.month)<1||Number(reference.month)>12)return {resolved:false,reason:'PROJECTION_MONTH_UNSPECIFIED',message:''};
  const common={year:Number(reference.year),month:Number(reference.month),mode:'FIXED',quantity:'1',calendarPolicy:{kind:'UNADJUSTED'}};
  let schedule;
- if(repeat.period==='매월')schedule={kind:'MONTHLY',day:repeat.date==='말일'?'last':Number(String(repeat.date??'').replace(/일$/,''))};
+ if(repeat.cadence?.version==='2.0.0'){
+  const cadence=repeat.cadence;
+  if(cadence.kind==='INTERVAL_DAYS'){
+   if(!cadence.preferredDate)return {resolved:false,reason:'OPTIONAL_ANCHOR_UNSELECTED',message:''};
+   schedule={kind:'INTERVAL_DAYS',intervalDays:cadence.intervalDays,anchorDate:cadence.preferredDate};
+  }else if(cadence.kind==='MONTHLY')schedule={kind:'MONTHLY',day:cadence.dayRule,shortMonthPolicy:'CLAMP',...(cadence.preferredDate?{anchorDate:cadence.preferredDate}:{})};
+  else if(cadence.kind==='WEEKLY'){
+   if(!repeat.weeklyCheck)return {resolved:false,reason:'WEEKDAYS_UNSELECTED',message:''};
+   const selected=days.flatMap((day,d)=>repeat.weekdays?.['1:'+day]?[d+1]:[]),frequency=Number.parseInt(repeat.frequency,10);
+   if(selected.length!==frequency)return {resolved:false,reason:'WEEKDAYS_INCOMPLETE',message:''};
+   schedule={kind:'WEEKLY',weekdays:selected};
+  }else return {resolved:false,reason:'CADENCE_UNSUPPORTED',message:''};
+ }else if(repeat.period==='매월')schedule={kind:'MONTHLY',day:repeat.date==='말일'?'last':Number(String(repeat.date??'').replace(/일$/,''))};
  else if(!repeat.weeklyCheck){
-  if(!integer(count)||!Number.isSafeInteger(Number(count))||Number(count)>366)return {resolved:false,message:'월 예상 횟수를 입력하면 회당 수량을 계산할 수 있습니다.'};
-  return {resolved:true,visits:Number(count),dates:[],basis:'count',message:'입력 횟수 기준 예상 · 휴무 조정 전'};
+  if(!integer(count)||!Number.isSafeInteger(Number(count))||Number(count)>366)return {resolved:false,reason:'LEGACY_COUNT_UNSPECIFIED',message:''};
+  return {resolved:true,visits:Number(count),dates:[],basis:'count',message:''};
  }else{
   const weeks=repeat.period==='매주'?1:Number.parseInt(repeat.period,10);
   const frequency=Number.parseInt(repeat.frequency,10);
-  if(![1,2,3,4].includes(weeks)||!Number.isInteger(frequency))return {resolved:false,message:'주기와 횟수를 확인해 주세요.'};
+  if(![1,2,3,4].includes(weeks)||!Number.isInteger(frequency))return {resolved:false,reason:'LEGACY_CADENCE_INVALID',message:''};
   const plans=Array.from({length:weeks},(_,i)=>days.flatMap((day,d)=>repeat.weekdays?.[`${i+1}:${day}`]?[d+1]:[]));
-  if(plans.some(plan=>plan.length!==frequency))return {resolved:false,message:'희망 요일을 확인해 주세요.'};
-  if(weeks>1&&!reference.anchorDate)return {resolved:false,message:'주차 기준을 정하려면 시작 주를 선택해 주세요.'};
+  if(plans.some(plan=>plan.length!==frequency))return {resolved:false,reason:'LEGACY_WEEKDAYS_INCOMPLETE',message:''};
+  if(weeks>1&&!reference.anchorDate)return {resolved:false,reason:'LEGACY_ANCHOR_UNSPECIFIED',message:''};
   schedule=weeks===1?{kind:'WEEKLY',weekdays:plans[0]}:{kind:'CYCLE',weekPlans:plans,anchorDate:reference.anchorDate};
  }
  const result=calendarForecast({...common,schedule});
- if(result.status!=='VALID')return {resolved:false,message:result.reasonCodes?.includes('CYCLE_MONDAY_ANCHOR_REQUIRED')?'시작 주의 월요일을 선택해 주세요.':'선택한 날짜의 예상 횟수를 확인해 주세요.',result};
- return {resolved:true,visits:result.normalized.visits,dates:result.normalized.dates,basis:'calendar',message:'참조월 달력 기준 예상 · 휴무 조정 전',result};
+ if(result.status!=='VALID')return {resolved:false,reason:result.reasonCodes?.[0]||'CALENDAR_UNRESOLVED',message:'',result};
+ return {resolved:true,visits:result.normalized.visits,dates:result.normalized.dates,basis:'calendar',message:'',result};
 }
 export function deliverySuggestion({monthlyPlan,repeat,reference,count='',variable=false,min='',max=''}){
  const visits=repeatVisitPlan(repeat,reference,count);if(!visits.resolved)return {...visits,feasible:false};
@@ -51,18 +62,23 @@ export function deliveryPlanIsCurrent(plan,{signature,monthlyPlan,unit,reference
  if(expected.status!=='VALID'||!expected.normalized?.feasible||planningInputSignature(plan.distribution)!==planningInputSignature(expected.normalized.distribution))return false;
  return String(quantity)===String(expected.normalized.constantQuantity||expected.normalized.distribution[0]?.quantity);
 }
-/** A total has one reference month. Other months remain separate projections. */
+/** Each site's nominal projection retains its own month. The total is a sum
+ * of valid per-site values, never an implicit requirement to align anchors. */
 export function sumNominalByReference(entries){
- const groups=new Map();let invalidReference=false;
+ const groups=new Map(),values=[];
  for(const entry of entries){
-  const {year,month}=entry.reference||{};
-  if(!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12){invalidReference=true;continue;}
-  const key=`${year}-${month}`;if(!groups.has(key))groups.set(key,{year,month,entries:[],values:[]});
-  const group=groups.get(key);group.entries.push(entry);if(entry.value)group.values.push(entry.value);
+  const {year,month}=entry.reference||{},validReference=Number.isInteger(year)&&Number.isInteger(month)&&month>=1&&month<=12;
+  const key=validReference?`${year}-${month}`:'unspecified';
+  if(!groups.has(key))groups.set(key,{year:validReference?year:null,month:validReference?month:null,entries:[],values:[]});
+  const group=groups.get(key);group.entries.push(entry);if(entry.value){group.values.push(entry.value);values.push(entry.value);}
  }
  const projected=[...groups.values()].map(group=>({year:group.year,month:group.month,siteCount:group.entries.length,resolvedCount:group.values.length,total:group.values.length?sumNominalQuantities(group.values):null}));
- const sameReference=!invalidReference&&projected.length===1;
- return {groups:projected,sameReference,total:sameReference?projected[0].total:null,complete:sameReference&&projected[0].resolvedCount===entries.length};
+ return {groups:projected,sameReference:projected.length===1&&projected[0].year!==null,total:values.length?sumNominalQuantities(values):null,resolvedCount:values.length,complete:entries.length>0&&values.length===entries.length};
+}
+/** FLEX owns recurring closures and requests, not FIXED holiday policies. */
+export function activeHolidayFields(value={},mode='FIXED'){
+ const keys=mode==='FLEX'?['days','none','irregular','request']:Object.keys(value);
+ return structuredClone(Object.fromEntries(keys.filter(key=>value[key]!==undefined).map(key=>[key,value[key]])));
 }
 /** Persisted delivery modes are authoritative; profile/draft are presentation hints. */
 export function restoredDeliveryModes(allocations){
@@ -81,11 +97,12 @@ export function restoredDeliverySettings(allocations,{holidayFromAllocation,repe
  });
  const first=sites[0];if(!first)return {...modeState,sites,common:null};
  const comparable=value=>{const result=copy(value);if(result?.repeat){delete result.repeat.weekOpen;delete result.repeat.legacyOriginal;}if(result?.holiday?.days)result.holiday.days.sort();return planningInputSignature(result);};
- const active=site=>({contact:site.contact,...(site.mode==='ONCE'?{quality:site.quality}:{holiday:site.holiday}),...(site.mode==='FIXED'?{repeat:site.repeat,process:site.process}:{})});
+ const active=site=>({contact:site.contact,...(site.mode==='ONCE'?{quality:site.quality}:{holiday:activeHolidayFields(site.holiday,site.mode)}),...(site.mode==='FIXED'?{repeat:site.repeat}:{})});
  let profile=modeState.profile;
  if(allocations.length>1&&profile!=='MIXED'){
   const reference=active(first),signature=comparable(reference),hint=allocations[0]?.q4Review?.common||{};
   const commonActive={...copy(reference),...Object.fromEntries(Object.keys(reference).filter(key=>hint[key]!==undefined).map(key=>[key,copy(hint[key])]))};
+  if(first.mode==='FLEX')commonActive.holiday=activeHolidayFields(commonActive.holiday,'FLEX');
   if(sites.some(site=>comparable(active(site))!==signature)||comparable(commonActive)!==signature)profile='MIXED';
  }
  const dormantCommon=allocations[0]?.q4Review?.common||{};

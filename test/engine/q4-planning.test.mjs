@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {frequencyText,repeatVisitPlan,deliverySuggestion,distributionText,nominalQuantity,sumNominalQuantities} from '../../web/q4-planning.mjs';
 const reference={year:2026,month:11,anchorDate:'',nominal:true};
 const repeat={period:'매주',frequency:'2회',weeklyCheck:true,weekdays:{'1:월':true,'1:목':true}};
-test('FLEX long-run average uses P/base or variable denominator range, no rounded delivery count',()=>{assert.equal(frequencyText({monthlyPlan:'167',quantity:'25'}),'월 약 6.7회');assert.equal(frequencyText({monthlyPlan:'167',quantity:'25',variable:true,min:'20',max:'30'}),'월 약 5.6~8.4회');for(const quantity of ['', '10가20','0','605/3'])assert.equal(frequencyText({monthlyPlan:'167',quantity}),'—');});
+test('FLEX exact average uses the MSG0526 integer display without changing quantities',()=>{assert.equal(frequencyText({monthlyPlan:'167',quantity:'25'}),'월 약7회');assert.equal(frequencyText({monthlyPlan:'167',quantity:'25',variable:true,min:'20',max:'30'}),'월 약5~9회');for(const quantity of ['', '10가20','0','605/3'])assert.equal(frequencyText({monthlyPlan:'167',quantity}),'—');});
 test('November 2026 Mon/Thu yields 9 actual calendar nominal dates, never 4 weeks',()=>{const r=repeatVisitPlan(repeat,reference);assert.equal(r.visits,9);assert.deepEqual(r.dates,['2026-11-02','2026-11-05','2026-11-09','2026-11-12','2026-11-16','2026-11-19','2026-11-23','2026-11-26','2026-11-30']);assert.equal(r.result.evidence.holidayAdjustmentsApplied,false);});
 test('optional weekdays require explicit monthly count; cyclic plans require starting Monday',()=>{assert.equal(repeatVisitPlan({...repeat,weeklyCheck:false},reference).resolved,false);assert.equal(repeatVisitPlan({...repeat,weeklyCheck:false},reference,'8').visits,8);const cycle={...repeat,period:'2주',weekdays:{...repeat.weekdays,'2:월':true,'2:목':true}};assert.equal(repeatVisitPlan(cycle,reference).resolved,false);assert.equal(repeatVisitPlan(cycle,{...reference,anchorDate:'2026-10-26'}).visits,9);assert.equal(repeatVisitPlan(cycle,{...reference,anchorDate:'2026-10-27'}).resolved,false);});
 test('167/8 is 21×7+20×1 only after variable permission and feasible range',()=>{const input={monthlyPlan:'167',repeat:{...repeat,weeklyCheck:false},reference,count:'8'};assert.equal(deliverySuggestion(input).feasible,false);assert.equal(deliverySuggestion({...input,variable:true,min:'21',max:'25'}).feasible,false);const plan=deliverySuggestion({...input,variable:true,min:'20',max:'21'});assert.equal(plan.feasible,true);assert.equal(distributionText(plan,'판'),'21판 7회 + 20판 1회');assert.equal(deliverySuggestion({...input,monthlyPlan:'168'}).constantQuantity,'21');});
@@ -18,19 +18,19 @@ test('restored accepted plan requires original M/links/cadence evidence and matc
  assert.equal(deliveryPlanIsCurrent({...plan,distribution:[{quantity:'20',visits:8}]},input),false);
  assert.equal(planningInputSignature({a:1,b:2}),planningInputSignature({b:2,a:1}));
 });
-test('different reference months never create a whole total; same-month unresolved sites stay partial',async()=>{
+test('per-site nominal values retain their own months without a hidden matching-month requirement',async()=>{
  const {sumNominalByReference}=await import('../../web/q4-planning.mjs');
  const a={reference:{year:2026,month:11},value:nominalQuantity({quantity:'10',visits:9})};
  const b={reference:{year:2026,month:12},value:nominalQuantity({quantity:'20',visits:8})};
  const mixed=sumNominalByReference([a,b]);
- assert.equal(mixed.sameReference,false);assert.equal(mixed.complete,false);assert.equal(mixed.total,null);
+ assert.equal(mixed.sameReference,false);assert.equal(mixed.complete,true);assert.equal(mixed.total.low.n,250n);
  assert.deepEqual(mixed.groups.map(group=>[group.month,group.total.low.n]),[[11,90n],[12,160n]]);
  const sameMonth=sumNominalByReference([a,{...b,reference:a.reference}]);
  assert.equal(sameMonth.complete,true);assert.equal(sameMonth.total.low.n,250n);
  const partial=sumNominalByReference([a,{reference:a.reference,value:null}]);
  assert.equal(partial.sameReference,true);assert.equal(partial.complete,false);assert.equal(partial.total.low.n,90n);
- assert.equal(sumNominalByReference([a,{...b,reference:{year:2027,month:11}}]).total,null);
- assert.equal(sumNominalByReference([a,{reference:{year:2026,month:''},value:b.value}]).total,null);
+ assert.equal(sumNominalByReference([a,{...b,reference:{year:2027,month:11}}]).total.low.n,250n);
+ assert.equal(sumNominalByReference([a,{reference:{year:2026,month:''},value:b.value}]).total.low.n,250n);
 });
 test('restored mode is authoritative over stale common profile and dormant draft mode',async()=>{
  const {restoredDeliveryModes}=await import('../../web/q4-planning.mjs');
@@ -76,7 +76,8 @@ test('single ONCE email plus newly linked FLEX keeps email; mismatched common fi
  const mixed=restoredDeliverySettings([a,b],projectors);assert.equal(mixed.profile,'MIXED');assert.equal(mixed.sites[0].contact.email,true);assert.equal(mixed.sites[0].contact.phone,false);assert.equal(mixed.sites[0].quality,true);assert.equal(mixed.sites[1].contact.phone,true);
  const commonBase={mode:'FIXED',qualityTest:false,advanced:{contactChannels:['email'],fixedOrderProcess:'auto'},q4Review:{profile:'FIXED',activeHoliday:holiday,activeRepeat}};
  assert.equal(restoredDeliverySettings([commonBase,structuredClone(commonBase)],projectors).profile,'FIXED');
- for(const changed of [{advanced:{contactChannels:['phone'],fixedOrderProcess:'auto'}},{advanced:{contactChannels:['email'],fixedOrderProcess:'seller'}},{q4Review:{...commonBase.q4Review,activeHoliday:{...holiday,none:false,days:['월']}}},{q4Review:{...commonBase.q4Review,activeRepeat:{...activeRepeat,frequency:'1회'}}}])assert.equal(restoredDeliverySettings([commonBase,{...commonBase,...changed}],projectors).profile,'MIXED');
+ assert.equal(restoredDeliverySettings([commonBase,{...commonBase,advanced:{contactChannels:['email'],fixedOrderProcess:'contact'}}],projectors).profile,'FIXED','Removed process control is inactive for shared-form grouping');
+ for(const changed of [{advanced:{contactChannels:['phone'],fixedOrderProcess:'auto'}},{q4Review:{...commonBase.q4Review,activeHoliday:{...holiday,none:false,days:['월']}}},{q4Review:{...commonBase.q4Review,activeRepeat:{...activeRepeat,frequency:'1회'}}}])assert.equal(restoredDeliverySettings([commonBase,{...commonBase,...changed}],projectors).profile,'MIXED');
  const staleCommon={...commonBase,q4Review:{...commonBase.q4Review,common:{contact:{phone:true,sms:false,kakao:false,email:false}}}};assert.equal(restoredDeliverySettings([staleCommon,commonBase],projectors).profile,'MIXED');
  const sameWithUiState={...commonBase,q4Review:{...commonBase.q4Review,activeRepeat:{...activeRepeat,weekOpen:0}}};assert.equal(restoredDeliverySettings([commonBase,sameWithUiState],projectors).profile,'FIXED');
 });
@@ -92,8 +93,8 @@ test('production serialization updates only active mode settings and preserves d
  const find=node=>{if(!node||typeof node!=='object')return null;if(node.type==='FunctionDeclaration'&&node.id?.name==='serializedAllocations')return node;for(const value of Object.values(node)){for(const child of Array.isArray(value)?value:[value]){const hit=find(child);if(hit)return hit;}}return null;},node=find(ast);assert.ok(node);
  const oldHoliday={days:['월'],none:false,irregular:false,conflict:'협의 후 조정',request:'confirmed'},oldRepeat={period:'2주',frequency:'2회'},dormantRepeat={period:'매주',frequency:'3회'};
  const original={id:'A1',lineId:'L',locationId:'A',mode:'ONCE',qty:'9',advanced:{contactChannels:['email'],fixedOrderProcess:'auto',storeOffDays:['월'],memo:'confirmed'},q4Review:{activeHoliday:oldHoliday,activeRepeat:oldRepeat}};
- const state={count:1,mode:'ONCE',pack:'30',values:[{once:'9',base:'12'}],qtySources:['user'],variable:[true],siteQuality:[true],siteModes:['ONCE'],siteProcess:['contact'],siteContacts:[{email:true}],contact:{email:true},process:'contact',quality:true,siteHolidays:[{...oldHoliday,request:'dormant'}],siteRepeat:[dormantRepeat],holidayDays:['화'],holidayNone:false,holidayIrregular:false,holiday:{conflict:'협의 후 조정'},request:'dormant',period:'매주',frequency:'3회',planningReferences:[reference],nominalVisitCounts:[''],deliveryPlans:[null],deliveryPlanFingerprints:['']};
- const context={state,regularContext:{line:{id:'L',pack:'30'},allocations:[original]},monthlyEditor:null,clone:value=>JSON.parse(JSON.stringify(value)),siteMode:()=>state.mode,isIndividual:()=>false,dateData:()=>({}),legacyPolicy:()=> 'ask',OrderRepeatContract:{snapshot:r=>({period:r.period,frequency:r.frequency}),serialize:()=>({ok:true,value:{}})}};
+ const state={count:1,mode:'ONCE',pack:'30',values:[{once:'9',base:'12'}],qtySources:['user'],variable:[true],siteQuality:[true],siteModes:['ONCE'],siteProcess:['contact'],siteContacts:[{email:true}],contact:{email:true},process:'contact',quality:true,siteHolidays:[{...oldHoliday,request:'dormant'}],siteRepeat:[dormantRepeat],holidayDays:['화'],holidayNone:false,holidayIrregular:false,holiday:{conflict:'협의 후 조정'},request:'dormant',period:'매주',frequency:'3회',datesByAllocation:{aa:{}},planningReferences:[reference],nominalVisitCounts:[''],deliveryPlans:[null],deliveryPlanFingerprints:['']};
+ const context={state,regularContext:{line:{id:'L',pack:'30'},allocations:[original]},monthlyEditor:null,clone:value=>JSON.parse(JSON.stringify(value)),siteMode:()=>state.mode,isIndividual:()=>false,dateData:()=>({}),dateKey:()=>'aa',legacyPolicy:()=> 'ask',OrderRepeatContract:{snapshot:r=>({period:r.period,frequency:r.frequency}),serialize:()=>({ok:true,value:{}})}};
  const serialize=vm.runInNewContext(source.slice(node.start,node.end)+'\nserializedAllocations',context),before=structuredClone(original);
  const once=JSON.parse(JSON.stringify(serialize(true)))[0];assert.deepEqual(once.advanced.contactChannels,['email']);assert.equal(once.qualityTest,true);assert.deepEqual(once.advanced.storeOffDays,['월']);assert.equal(once.advanced.memo,'confirmed');assert.equal(once.advanced.fixedOrderProcess,'auto');assert.deepEqual(once.q4Review.activeHoliday,oldHoliday);assert.deepEqual(once.q4Review.activeRepeat,oldRepeat);assert.deepEqual(once.q4Review.draft.repeat,dormantRepeat);
  state.mode='FLEX';const flex=JSON.parse(JSON.stringify(serialize(true)))[0];assert.deepEqual(flex.advanced.storeOffDays,['화']);assert.equal(flex.advanced.memo,'dormant');assert.equal(flex.advanced.fixedOrderProcess,'auto');assert.deepEqual(flex.q4Review.activeRepeat,oldRepeat);assert.deepEqual(original,before);

@@ -10,11 +10,11 @@ const legacy=()=>({...emptyStoredPayload(),lines:[{id:'sku',housing:'4',size:'íŠ
 const current=()=>{const data=legacy();data.allocations.forEach(a=>Object.assign(a,{monthlyPlanQty:'84',monthlyPlanUnit:'tray',monthlyPlanSource:'derived',monthlyDemandBasis:'known',monthlyAllocationContract:'2.0.0',deliveryQtyUnit:'tray',qtySource:'user'}));return data;};
 const envelope=(version,data)=>JSON.stringify({schemaVersion:version,generation:'historic-generation',revision:7,state:'data',data,receipts:[],migration:null,updatedAt:0});
 const reference={year:2026,month:11,anchorDate:'2026-11-02',nominal:true};
-test('R23 schema1/2/3 source bytes and demand meaning survive read; explicit package commit alone upgrades to4',async()=>{
- assert.equal(STORAGE_SCHEMA_VERSION,4);
+test('R23 schema1/2/3 source bytes and demand meaning survive read; explicit package commit alone upgrades to5',async()=>{
+ assert.equal(STORAGE_SCHEMA_VERSION,5);
  for(const version of [1,2,3]){const source=legacy(),raw=envelope(version,source),env=setup({local:new MemoryStorage({[STORAGE_KEY]:raw})}),loaded=await env.api.load();assert.equal(loaded.status,'LOADED');assert.deepEqual(loaded.data,source);assert.equal(env.local.writes,0);assert.equal(env.local.getItem(STORAGE_KEY),raw);
   const next=current();env.local.fail=true;assert.equal((await env.api.commit(next,opts(loaded))).status,'WRITE_FAILED');assert.equal(env.local.getItem(STORAGE_KEY),raw);env.local.fail=false;
-  const saved=await env.api.commit(next,opts(loaded));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,4);assert.equal(saved.data.allocations[0].monthlyDemandQty,'2500');assert.equal(saved.data.allocations[0].monthlyPlanQty,'84');assert.equal(saved.data.lines[0].qty,'5000');assert.deepEqual((await setup(env).api.load()).data,next);
+  const saved=await env.api.commit(next,opts(loaded));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,5);assert.equal(saved.data.allocations[0].monthlyDemandQty,'2500');assert.equal(saved.data.allocations[0].monthlyPlanQty,'84');assert.equal(saved.data.lines[0].qty,'5000');assert.deepEqual((await setup(env).api.load()).data,next);
  }
 });
 test('R23 schema4 export/import projection keeps known D, residual D and unknown plan as distinct records',()=>{
@@ -33,7 +33,7 @@ test('R23 old durable schemas cannot smuggle new plan fields and malformed origi
  for(const version of [1,2,3]){const raw=envelope(version,current()),env=setup({local:new MemoryStorage({[STORAGE_KEY]:raw}),session:new MemoryStorage({[LEGACY_KEYS[0]]:JSON.stringify(legacy())})});assert.equal((await env.api.load()).status,'CORRUPT');assert.equal(env.local.getItem(STORAGE_KEY),raw);assert.equal(env.local.writes,0);}
 });
 test('R17/R23 accepted integer distribution preserves nominal reference and rejects silent plan/range changes',async()=>{
- const data=current(),a=data.allocations[0];Object.assign(a,{monthlyDemandQty:'5000',monthlyPlanQty:'167',variableQty:true,qtyMin:'20',qtyMax:'21',qty:'21',qtySource:'auto',planningReference:reference,nominalVisitCount:'8',deliveryPlan:{version:'1.0.0',monthlyPlan:'167',visits:8,unit:'tray',distribution:[{quantity:'21',visits:7},{quantity:'20',visits:1}],range:{min:'20',max:'21'},reference,source:'derived',reviewed:true}});
+ const data=current(),a=data.allocations[0];Object.assign(a,{mode:'FIXED',monthlyDemandQty:'5000',monthlyPlanQty:'167',variableQty:true,qtyMin:'20',qtyMax:'21',qty:'21',qtySource:'auto',planningReference:reference,nominalVisitCount:'8',deliveryPlan:{version:'1.0.0',monthlyPlan:'167',visits:8,unit:'tray',distribution:[{quantity:'21',visits:7},{quantity:'20',visits:1}],range:{min:'20',max:'21'},reference,source:'derived',reviewed:true}});
  assert.deepEqual(projectStoredPayload(data).allocations[0].deliveryPlan,a.deliveryPlan);
  const env=setup(),saved=await env.api.commit(data,opts(await env.api.load()));assert.equal(saved.ok,true);assert.deepEqual((await setup(env).api.load()).data,data);
  for(const mutate of [row=>row.deliveryPlan.distribution[0].visits=8,row=>row.monthlyPlanQty='168',row=>row.variableQty=false,row=>row.deliveryPlan.range.min='21',row=>row.qtyMax='22',row=>row.planningReference={...row.planningReference,month:12},row=>row.deliveryPlan.reference.anchorDate='2026-02-30',row=>row.nominalVisitCount='1.5',row=>row.deliveryPlan.extraPolicy=5]){const invalid=structuredClone(data);mutate(invalid.allocations[0]);assert.throws(()=>projectStoredPayload(invalid));}

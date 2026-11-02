@@ -1,7 +1,7 @@
 import {engineResult} from '../contracts/result.mjs';
 import {exact,fromRatio,add,subtract,multiply,divide,compare,toJSON,round} from './exact.mjs';
 
-export const ALLOCATION_RULE_VERSION='monthly-allocation-2.0.0';
+export const ALLOCATION_RULE_VERSION='monthly-allocation-2.1.0';
 const zero=()=>exact(0);
 const id=value=>typeof value==='string'&&value.length>0&&value.length<=200;
 const copy=value=>structuredClone(value);
@@ -130,7 +130,7 @@ function evaluatePackageAllocation(state,line,{scope,entries}){
   if(unfilled.length===1&&unfilled[0].editable&&residual.n>0n){
     const row=unfilled[0];proposals.push({locationId:row.locationId,quantity:packageQuantity(residual,unit,line),source:'derived',demand:displayQuantity(residual,line.unitTable.baseUnit,line),demandOrigin:records.length===1?'single-total':'residual',demandSource:'derived',baseQuantity:toJSON(residual),allocatesResidual:true,reason:records.length===1?'SINGLE_SITE_TOTAL_REUSE':'SINGLE_REMAINING_LOCATION'});
   }
-  const residualProposal=proposals.filter(p=>p.allocatesResidual===true),projectedResidual=subtract(residual,residualProposal.reduce((sum,p)=>add(sum,fromRatio(p.baseQuantity)),zero()));
+  const residualProposal=proposals.filter(p=>p.allocatesResidual===true),rawProjectedResidual=subtract(residual,residualProposal.reduce((sum,p)=>add(sum,fromRatio(p.baseQuantity)),zero()));
   const sites=records.map(row=>{
     const proposal=proposals.find(p=>p.locationId===row.locationId),effective=proposal?parsePackage(proposal.quantity,line):row.parsed;
     const demand=proposal?.demand?parseQuantity(proposal.demand,line):row.demand;
@@ -140,14 +140,23 @@ function evaluatePackageAllocation(state,line,{scope,entries}){
     return {locationId:row.locationId,status:row.parsed.status,raw:row.quantity.raw,unit,source:row.source,demandOrigin:proposal?.demandOrigin??row.origin,demandSource:proposal?.demandSource??(row.singleDemand?'derived':row.active?.demandSource??null),editable:row.editable,baseQuantity:effective.status==='VALID'?toJSON(effective.base):null,demandBase:demand?.status==='VALID'?toJSON(demand.base):null,allocationShareBase:share?toJSON(share):null,planPacks:currentPacks?toJSON(currentPacks):null,packSlackBase:demand?.status==='VALID'&&effective.status==='VALID'?toJSON(subtract(effective.base,demand.base)):null,currentMaximum:toJSON(maximum),currentMaximumPacks:maximumPacks===null?null:toJSON(exact(maximumPacks)),additionalCapacity:share?toJSON(subtract(maximum,share)):toJSON(maximum),additionalCapacityPacks:maximumPacks===null?null:toJSON(subtract(exact(maximumPacks),currentPacks??zero())),proposal:proposal??null};
   });
   const completeRows=sites.every(row=>row.planPacks&&row.allocationShareBase),shortPackages=sites.filter(row=>row.packSlackBase&&fromRatio(row.packSlackBase).n<0n);
+  // An unobserved package-plan share is capacity, not an exact demand claim.
+  // Once every site is filled, ceil(remaining demand / size) may carry less
+  // than one package of slack. Retyping a derived plan does not turn that
+  // same capacity into excess demand. Known D is never reduced or invented.
+  const knownDemand=sites.reduce((sum,row)=>row.demandBase?add(sum,fromRatio(row.demandBase)):sum,zero());
+  const packageOnly=sites.some(row=>row.planPacks&&!row.demandBase);
+  const roundingSlack=completeRows&&packageOnly&&compare(knownDemand,total.base)<=0&&rawProjectedResidual.n<0n&&compare(subtract(zero(),rawProjectedResidual),factor)<0;
+  const projectedResidual=roundingSlack?zero():rawProjectedResidual;
+  const demandExceeded=projectedResidual.n<0n;
   const projectedComplete=completeRows&&projectedResidual.n===0n&&!shortPackages.length;
   const planSum=sites.reduce((sum,row)=>row.planPacks?add(sum,fromRatio(row.planPacks)):sum,zero()),capacity=multiply(planSum,factor);
   const requiredPacks=packageQuantity(total.base,unit,line),allKnown=sites.every(row=>row.demandBase),knownSum=sites.reduce((sum,row)=>row.demandBase?add(sum,fromRatio(row.demandBase)):sum,zero());
-  const reasons=residual.n<0n?['MONTHLY_ALLOCATION_EXCEEDED']:shortPackages.length?['SITE_PACKAGE_PLAN_SHORT']:!completeRows?['MONTHLY_ALLOCATION_INCOMPLETE']:projectedResidual.n>0n?['MONTHLY_ALLOCATION_SHORT']:proposals.length?['DERIVED_PROPOSAL_AWAITING_CONFIRMATION']:[];
+  const reasons=demandExceeded?['MONTHLY_ALLOCATION_EXCEEDED']:shortPackages.length?['SITE_PACKAGE_PLAN_SHORT']:!completeRows?['MONTHLY_ALLOCATION_INCOMPLETE']:projectedResidual.n>0n?['MONTHLY_ALLOCATION_SHORT']:proposals.length?['DERIVED_PROPOSAL_AWAITING_CONFIRMATION']:[];
   let storedComplete=false;
   if(!entries.length)storedComplete=projectedComplete&&!proposals.length;
   else {const saved=evaluatePackageAllocation(state,line,{scope:[],entries:[]});storedComplete=!!saved.normalized?.projectedComplete;}
-  return out(residual.n<0n||shortPackages.length?'INVALID':reasons.length?'INCOMPLETE':'VALID',reasons,{lineId:line.lineId,specVersion:line.specVersion,totalRaw:copy(line.total),totalBase:toJSON(total.base),baseUnit:line.unitTable.baseUnit,packageUnit:unit,packageSize:toJSON(factor),totalPlanPacks:toJSON(exact(requiredPacks.raw)),planSumPacks:toJSON(planSum),displayTotalPacks:toJSON(projectedComplete?planSum:exact(requiredPacks.raw)),packSlackBase:completeRows?toJSON(subtract(capacity,total.base)):null,knownDemandSum:toJSON(knownSum),allSiteDemandKnown:allKnown,fixedSum:toJSON(fixedSum),residualBeforeSuggestions:toJSON(residual),rawResidualBase:toJSON(residual),projectedResidual:toJSON(projectedResidual),excess:toJSON(residual.n<0n?subtract(zero(),residual):zero()),excessBase:toJSON(residual.n<0n?subtract(zero(),residual):zero()),proposals,sites,excludedLocationIds,projectedComplete,storedComplete,canConfirm:projectedComplete,monthlyHardCapApplied:false},{dataVersion:line.unitTable.version,evidence:{storageCommitPerformed:false,scope,monthlyOnly:true,deliveryQuantityModified:false,demandAndPlanSeparate:true}});
+  return out(demandExceeded||shortPackages.length?'INVALID':reasons.length?'INCOMPLETE':'VALID',reasons,{lineId:line.lineId,specVersion:line.specVersion,totalRaw:copy(line.total),totalBase:toJSON(total.base),baseUnit:line.unitTable.baseUnit,packageUnit:unit,packageSize:toJSON(factor),totalPlanPacks:toJSON(exact(requiredPacks.raw)),planSumPacks:toJSON(planSum),displayTotalPacks:toJSON(projectedComplete?planSum:exact(requiredPacks.raw)),packSlackBase:completeRows?toJSON(subtract(capacity,total.base)):null,knownDemandSum:toJSON(knownSum),allSiteDemandKnown:allKnown,fixedSum:toJSON(fixedSum),residualBeforeSuggestions:toJSON(roundingSlack?zero():residual),rawResidualBase:toJSON(residual),projectedResidual:toJSON(projectedResidual),planRoundingSlackBase:toJSON(roundingSlack?subtract(zero(),rawProjectedResidual):zero()),excess:toJSON(demandExceeded?subtract(zero(),projectedResidual):zero()),excessBase:toJSON(demandExceeded?subtract(zero(),projectedResidual):zero()),proposals,sites,excludedLocationIds,projectedComplete,storedComplete,canConfirm:projectedComplete,monthlyHardCapApplied:false},{dataVersion:line.unitTable.version,evidence:{storageCommitPerformed:false,scope,monthlyOnly:true,deliveryQuantityModified:false,demandAndPlanSeparate:true}});
 }
 
 /** Read-only proposal. Saved entries outside the explicit edit scope are fixed. */

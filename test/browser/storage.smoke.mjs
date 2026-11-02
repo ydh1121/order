@@ -88,7 +88,7 @@ try{
  profile=await mkdtemp(join(tmpdir(),'order-storage-profile-'));await launchProfile();
  await check('S01_COMMITTED_Q1_Q4_ID_UNIT_SOURCE_AND_PRODUCT_RELOAD',async()=>{
   await clean();await seed();await product();await dnsReady();const stored=await envelope(page);
-  assert.equal(stored.schemaVersion,4);assert.equal(stored.state,'data');assert.equal(stored.data.lines[0].qty,'200');assert.equal(stored.data.lines[0].qtyUnit,'tray');
+  assert.equal(stored.schemaVersion,5);assert.equal(stored.state,'data');assert.equal(stored.data.lines[0].qty,'200');assert.equal(stored.data.lines[0].qtyUnit,'tray');
   assert.deepEqual(stored.data.allocations.map(a=>[a.locationId,a.monthlyPlanQty,a.monthlyPlanSource,a.qty]),[['storage-A','50','manual','10'],['storage-B','150','derived','10']]);
   assert.equal(stored.data.locations[0].contactPhone,'010-2345-6789');await page.reload();await settled();assert.deepEqual((await envelope(page)).data,stored.data);
  });
