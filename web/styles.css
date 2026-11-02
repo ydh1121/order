@@ -1636,6 +1636,7 @@ button,input,select,textarea{font-family:inherit}
 @media(min-width:768px){.ui-egg-field{--ui-field-title-size:var(--type-label)}}
 /* One inter-field gap; internal number/unit spacing is a different token. */
 .line-panel .pair,.ui-field-pair,.q4-regular-dialog .qa-inline-pair,.q4-regular-dialog .qa-var-range,.q4-regular-dialog [data-section="repeat"] .qa-inline-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr));column-gap:var(--ui-pair-gap);row-gap:var(--ui-field-nested-gap);align-items:end;min-width:0}
+.line-panel .pair{align-items:start}
 .ui-field-pair>*,.qa-inline-pair>*,.qa-var-range>*{min-width:0}
 .qa-computed-output{display:flex;align-items:center;flex-wrap:wrap;gap:var(--ui-action-gap);min-height:var(--ui-input-row-height);padding:0;border:0;background:transparent;color:var(--text-secondary);font-size:var(--ui-input-type);font-weight:var(--type-weight-body);line-height:1.5}
 .qa-computed-basis{font-size:var(--type-meta);font-weight:var(--type-weight-body);line-height:1.5;white-space:nowrap}
@@ -1650,7 +1651,7 @@ button,input,select,textarea{font-family:inherit}
 .ui-copy-review-site--contact .ui-copy-review-direction>svg{transform:none}
 .ui-icon-text{display:inline-flex;align-items:center;justify-content:center;gap:var(--ui-action-gap)}
 .ui-icon-text>svg{display:block;flex:none;width:1.125rem;height:1.125rem;color:inherit}
-.form-primary-actions{display:grid;grid-template-columns:minmax(6rem,.7fr) minmax(0,1.7fr);gap:var(--ui-field-nested-gap);align-items:stretch}.form-primary-actions>:is(button,.primary){width:100%;min-width:0;min-height:var(--ui-transaction-height);margin:0}.form-save-status{margin:var(--ui-gap-dependent) 0 0;color:var(--text-secondary);font-size:var(--type-meta);line-height:var(--info-line-height)}
+.form-primary-actions{display:grid;grid-template-columns:minmax(6rem,.7fr) minmax(0,1.7fr);gap:var(--ui-field-nested-gap);align-items:stretch;margin-top:var(--ui-field-section-gap)}.form-primary-actions>:is(button,.primary){width:100%;min-width:0;min-height:var(--ui-transaction-height);margin:0}.form-save-status{margin:var(--ui-gap-dependent) 0 0;color:var(--text-secondary);font-size:var(--type-meta);line-height:var(--info-line-height)}
 .form-reset-actions{display:flex;justify-content:center;align-items:center;margin-top:var(--ui-field-nested-gap)}
 #q4-assignment-clear{padding-inline:0;justify-content:flex-start;justify-self:start}
 

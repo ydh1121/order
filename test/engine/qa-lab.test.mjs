@@ -50,6 +50,7 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
    assert.equal(decode(imports['order-qa/source/'+path]),expected,path);
   }
   for(const source of Object.values(imports))parse(decode(source),{ecmaVersion:2024,sourceType:'module'});
+  for(const match of result.html.matchAll(/<script>([\s\S]*?)<\/script>/g))parse(match[1],{ecmaVersion:2024,sourceType:'script'});
  });
 
  await t.test('LAB runtime uses the actual storage adapter with memory only, one-shot failure and revision conflict',async()=>{
@@ -83,6 +84,9 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   element('qa-lab-address').value='empty';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'EMPTY','mode change clears previous synthetic cache');
   element('qa-lab-address').value='unavailable';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'UNAVAILABLE');address.close();
   await element('qa-lab-restart').listeners.click();assert.equal(location.hash,'');assert.equal(reloads,1);
+  const seedWindow={name:'frame-before',__orderQaEnvelope:{state:allocationFixture(),caseId:'200',seedGeneration:2}};
+  const seeded=await new AsyncFunction('createBrowserStorage','createAddressSearchService','allocationFixture','syntheticDns','syntheticAddressResult','document','location','crypto','window',source+'\nreturn {createQaStorage};')(createBrowserStorage,createAddressSearchService,allocationFixture,syntheticDns,syntheticAddressResult,document,location,webcrypto,seedWindow);
+  assert.deepEqual((await seeded.createQaStorage().load()).data,projectStoredPayload(seedWindow.__orderQaEnvelope.state),'explicit iframe envelope seeds the real storage even when Chrome retains a different window.name');
  });
 
  await t.test('comparison keeps two exact graphs, explicit identical fixtures and isolated memory',async()=>{
@@ -93,6 +97,7 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   assert.equal(compared.identity.network,'NO_EXTERNAL_NETWORK');
   assert.match(compared.html,/id="frame-before"/);assert.match(compared.html,/id="frame-after"/);
   assert.match(compared.html,/order-qa-envelope:/);assert.match(compared.html,/connect-src 'none'/);
+  for(const match of compared.html.matchAll(/<script>([\s\S]*?)<\/script>/g))parse(match[1],{ecmaVersion:2024,sourceType:'script'});
   assert.doesNotMatch(compared.html,/<script[^>]+src=|<link[^>]+href=/i);
   await assert.rejects(()=>buildQaComparison({root:directory,baselineRoot:directory,now,outputPath:resolve(directory,'dist/compare.html')}),/QA_OUTPUT_MUST_NOT_BE_DIST/);
  });
