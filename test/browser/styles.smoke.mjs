@@ -19,7 +19,7 @@ const hash=b=>createHash('sha256').update(b).digest('hex');
 const check=(id,passed,details={})=>{checks.push({id,status:passed?'PASS':'FAIL',...details});return passed;};
 const chevron='<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M4 7l6 6 6-6"/></svg>';
 const properties=['display','color','backgroundColor','borderTopColor','borderTopWidth','borderTopStyle','borderRadius',
- 'boxShadow','outlineColor','outlineStyle','outlineWidth','outlineOffset','fontFamily','fontSize','fontWeight','lineHeight',
+ 'borderBottomColor','borderBottomWidth','borderBottomStyle','boxShadow','outlineColor','outlineStyle','outlineWidth','outlineOffset','fontFamily','fontSize','fontWeight','lineHeight',
  'letterSpacing','paddingTop','paddingRight','paddingBottom','paddingLeft','marginTop','marginRight','marginBottom','marginLeft',
  'columnGap','rowGap','gridTemplateColumns','gridTemplateRows','gridColumnStart','gridColumnEnd','gridRowStart','gridRowEnd',
  'alignItems','justifyContent','opacity','cursor','minHeight','maxWidth','overflowX','overflowY'];
@@ -28,8 +28,8 @@ const pairDOM='<main id="page-form" class="page active"><div class="main"><div i
 function inputDOM(owner,invalid){
  const attr=`aria-invalid="${invalid}" data-probe="input" value="200"`;
  if(owner==='q2')return `<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><div class="numeric-field"><label>합성 월 구매량</label><div class="input-unit" data-probe="input-parent"><input type="text" ${attr}><span>판</span></div></div></div></div></main>`;
- if(owner==='q3')return `<div class="main"><div id="site-editor"><label>합성 사업장</label><div data-probe="input-parent"><input class="text-input" type="text" ${attr}></div></div></div>`;
- return q4Shell(`<div class="qa-number" data-probe="input-parent"><input type="text" inputmode="numeric" ${attr}><span class="qa-unit">판</span></div>`);
+ if(owner==='q3')return `<div class="main"><div id="site-editor"><label>합성 사업장</label><div class="ui-input-field" data-field-size="name" data-probe="input-parent"><input class="text-input ui-input-control" type="text" ${attr}></div></div></div>`;
+ return q4Shell(`<div class="ui-input-field" data-field-size="quantity"><div class="qa-number input-unit" data-probe="input-parent"><input type="text" inputmode="numeric" ${attr}><span class="qa-unit">판</span></div></div>`);
 }
 function buttonDOM(owner){
  const cancel='<button type="button" class="ui-transaction-action" data-probe="cancel">취소</button>';
@@ -87,6 +87,25 @@ function msg0521ShellDelta(before,after,options,delta){
  if(editor&&(!near(after.actions.rect.height-before.actions.rect.height,-1)||after.actions.style.borderTopWidth!=='0px'||after.actions.style.borderTopStyle!=='none'||after.actions.style.borderTopColor!==after.actions.style.color))return false;
  if(compact&&after.actions.style.marginTop!=='18px')return false;
  return true;
+}
+// MSG0526 replaces box borders/padding with the existing Q2 underline owner.
+// Only geometry and these declared primitive properties may differ from c024.
+const fieldStyleDelta=new Set(['display','backgroundColor','borderTopColor','borderTopWidth','borderTopStyle','borderBottomColor','borderBottomWidth','borderBottomStyle','borderRadius','boxShadow','outlineColor','outlineStyle','outlineWidth','outlineOffset','fontSize','fontWeight','lineHeight','letterSpacing','paddingTop','paddingRight','paddingBottom','paddingLeft','marginTop','marginRight','marginBottom','marginLeft','columnGap','rowGap','gridTemplateColumns','gridTemplateRows','alignItems','minHeight','maxWidth']);
+function msg0526FieldDelta(before,after,options,delta){
+ if(options.kind!=='input')return false;
+ const i=after.input,p=after['input-parent'],q3=options.owner==='q3';
+ const pathsAllowed=delta.every(d=>{
+  const [probe,group,property]=d.path.split('.');
+  if(!['input','input-parent','shell'].includes(probe))return false;
+  if(group==='rect')return ['x','y','width','height'].includes(property);
+  if(probe==='shell')return ['marginTop','marginBottom'].includes(property);
+  return group==='style'&&fieldStyleDelta.has(property);
+ });
+ const underline=q3?i:p;
+ const expectedFocus=options.state==='focus-visible',expectedLine=options.invalid?'rgb(217, 45, 72)':expectedFocus?'rgb(49, 93, 222)':'rgb(203, 213, 220)';
+ const baseline=near(i.rect.height,q3?45:44)&&i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&i.style.borderRadius==='0px'&&i.style.fontSize===(q3?'16px':'19px')&&i.style.fontWeight===(q3?'400':'750')&&underline.style.borderTopWidth==='0px'&&underline.style.borderBottomWidth==='1px'&&underline.style.borderBottomColor===expectedLine&&underline.style.backgroundColor==='rgb(255, 255, 255)';
+ const widthLimit=q3?288:208;
+ return pathsAllowed&&baseline&&underline.rect.width<=widthLimit+.1&&underline.rect.width>=100&&(!q3?numericContract(after):true);
 }
 const numericPairDOM=({qty,price,unit,invalid})=>`<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair"><div class="numeric-field"><label data-probe="qty-label">월 구매량</label><div class="input-unit" data-probe="qty-row" data-order-invalid="${invalid}"><input data-probe="qty-input" value="${qty}" aria-invalid="${invalid}" placeholder="0"><select class="ui-quantity-unit" data-probe="qty-unit"><option>${unit}</option></select></div></div><div class="numeric-field"><label data-probe="price-label">현재 구매가격</label><div class="input-unit" data-probe="price-row" data-order-invalid="${invalid}"><input data-probe="price-input" value="${price}" aria-invalid="${invalid}" placeholder="0"><span data-probe="price-unit">원/판</span></div></div></div></fieldset></div></div></main>`;
 let browser;
@@ -150,21 +169,23 @@ try{
     Math.abs(after.first.rect.x-before.first.rect.x)<=.1&&Math.abs(after.second.rect.x-before.second.rect.x)<=.1&&
     Math.abs(after.second.rect.width-after.first.rect.width)<=.1&&
     Math.abs(after.second.rect.x-(after.first.rect.x+after.first.rect.width+parseFloat(expectedGap)))<=.1&&
-    Math.abs(after.first.rect.height-69)<=.1&&Math.abs(after.second.rect.height-69)<=.1&&Math.abs(after.pair.rect.height-69)<=.1;
+    Math.abs(after.first.rect.height-(options.width<768?73.6:76.4))<=.1&&Math.abs(after.second.rect.height-after.first.rect.height)<=.1&&Math.abs(after.pair.rect.height-after.first.rect.height)<=.1;
 
   }
   if(numeric)accepted=delta.every(d=>numericAllow.has(d.path))&&numericContract(after);
+  const msg0526=msg0526FieldDelta(before,after,options,delta);
+  if(msg0526)accepted=true;
   const msg0521=delta.length>0&&msg0521ShellDelta(before,after,options,delta);
   if(msg0521)accepted=true;
-  const expectedClass=msg0521?'EXPECTED_MSG0521_COMMON_MODAL_INSET_GAP_FOOTER':numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT':null;
+  const expectedClass=msg0526?'EXPECTED_MSG0526_SHARED_INPUT_PRIMITIVE':msg0521?'EXPECTED_MSG0521_COMMON_MODAL_INSET_GAP_FOOTER':numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT':null;
   observations.push({id,...options,before,after,delta,classification:delta.length?(accepted?expectedClass:'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE'):'UNCHANGED'});
-  check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known,msg0517Numeric:numeric,msg0521CommonShell:msg0521});
+  check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known,msg0517Numeric:numeric,msg0521CommonShell:msg0521,msg0526SharedInput:msg0526});
   if(numeric)check(id+':NUMERIC_ROW_CONTRACT',numericContract(after));
   if(options.target&&['hover','active','focus-visible','disabled'].includes(options.state)){
    const key={'focus-visible':'focusVisible',hover:'hover',active:'active',disabled:'disabled'}[options.state];
    check(id+':STATE_ACTUALLY_ACTIVE',before[options.target].pseudo[key]&&after[options.target].pseudo[key]);
   }
-  if(options.kind==='input'&&options.invalid)check(id+':INVALID_SHADOW_NONE',before.input.style.boxShadow==='none'&&after.input.style.boxShadow==='none',{before:before.input.style.boxShadow,after:after.input.style.boxShadow});
+  if(options.kind==='input'&&options.invalid){const expected=options.owner==='q3'&&options.state==='focus-visible'?'rgb(217, 45, 72) 0px -1px 0px 0px inset':'none';check(id+':INVALID_FOCUS_OWNER',before.input.style.boxShadow==='none'&&after.input.style.boxShadow===expected,{before:before.input.style.boxShadow,after:after.input.style.boxShadow,expected});}
   if(options.kind==='month'){
    const control=after['month-control'],value=after['month-value'],arrow=after['month-arrow'];
    check(id+':ONE_ROW_CENTER',value.style.gridRowStart==='1'&&arrow.style.gridRowStart==='1'&&
@@ -182,7 +203,7 @@ try{
    const q=currentValues['qty-input'],p=currentValues['price-input'],qr=currentValues['qty-row'],pr=currentValues['price-row'],ql=currentValues['qty-label'],pl=currentValues['price-label'];
    const equal=keys=>keys.every(k=>q.style[k]===p.style[k]);
    check(id+':CONTROL_HEIGHT_BASELINE',Math.abs(qr.rect.height-45)<.1&&Math.abs(pr.rect.height-45)<.1&&Math.abs(q.rect.height-44)<.1&&Math.abs(p.rect.height-44)<.1&&Math.abs(q.rect.y-p.rect.y)<.1&&Math.abs(qr.rect.y+qr.rect.height-pr.rect.y-pr.rect.height)<.1&&equal(['fontFamily','fontSize','fontWeight','lineHeight','paddingTop','paddingBottom']));
-   check(id+':LABEL_SPACING_TARGET',Math.abs(qr.rect.y-ql.rect.y-ql.rect.height-6)<.1&&Math.abs(pr.rect.y-pl.rect.y-pl.rect.height-6)<.1&&currentValues['qty-unit'].rect.height>=44&&currentValues['qty-unit'].rect.width>=44);
+   check(id+':LABEL_SPACING_TARGET',Math.abs(qr.rect.y-ql.rect.y-ql.rect.height-10.4)<.1&&Math.abs(pr.rect.y-pl.rect.y-pl.rect.height-10.4)<.1&&currentValues['qty-unit'].rect.height>=44&&currentValues['qty-unit'].rect.width>=44);
    observations.push({id,width,value,unit,invalid,state,after:currentValues,classification:'MSG0517_CURRENT_NUMERIC_EQUALITY'});
   }
 

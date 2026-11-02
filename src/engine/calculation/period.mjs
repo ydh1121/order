@@ -1,5 +1,5 @@
 import { engineResult } from '../contracts/result.mjs';
-import { exact, multiply, divide, compare, toJSON } from './exact.mjs';
+import { exact, multiply, divide, compare, toJSON, round } from './exact.mjs';
 const result = (input, status, reasonCodes, normalized = null, evidence = {}) => engineResult({status, reasonCodes, raw: input, normalized, field: 'period', ruleVersion: 'period-1.0.0', dataVersion: 'gregorian-calendar-1', evidence});
 
 /** Expected quantities only; actual delivery scheduling is outside this module. */
@@ -40,15 +40,20 @@ export function monthlyDayIntent(input) {
 
 const positivePackage = value => {const number=exact(value);if(number.n<=0n||number.d!==1n)throw Error('INTEGER_PACKAGE_REQUIRED');return number;};
 const strictRange=value=>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['min','max'].includes(key)))throw Error('QUANTITY_RANGE_INVALID');return value;};
-const supportResult=(input,status,reasonCodes,normalized=null)=>{let raw=null;try{raw=structuredClone(input);JSON.stringify(raw);}catch{status='INVALID';reasonCodes=['SUPPORT_INPUT_NOT_SERIALIZABLE'];normalized=null;raw=null;}return engineResult({raw,status,reasonCodes,normalized,field:'deliverySupport',ruleVersion:'delivery-support-1.0.0',dataVersion:null,evidence:{interpretation:'NOMINAL_USER_PLAN',actualDeliverySchedule:false,storageCommitPerformed:false}});};
-/** Long-run average order frequency. It does not approve or round up actual visits. */
+const supportResult=(input,status,reasonCodes,normalized=null)=>{let raw=null;try{raw=structuredClone(input);JSON.stringify(raw);}catch{status='INVALID';reasonCodes=['SUPPORT_INPUT_NOT_SERIALIZABLE'];normalized=null;raw=null;}return engineResult({raw,status,reasonCodes,normalized,field:'deliverySupport',ruleVersion:'delivery-support-1.1.0',dataVersion:null,evidence:{interpretation:'NOMINAL_USER_PLAN',actualDeliverySchedule:false,storageCommitPerformed:false}});};
+/** Exact long-run ratios and an independent integer display projection; never scheduled visits. */
 export function demandFrequency(input){
   try{
     if(!input||Object.keys(input).some(key=>!['monthlyPlan','quantity','range'].includes(key)))throw Error('FREQUENCY_INPUT_INVALID');
     const monthly=positivePackage(input.monthlyPlan),quantity=positivePackage(input.quantity);
     let low=quantity,high=quantity;
     if(input.range!==undefined){strictRange(input.range);low=positivePackage(input.range.min);high=positivePackage(input.range.max);if(compare(low,high)>0||compare(quantity,low)<0||compare(quantity,high)>0)throw Error('QUANTITY_RANGE_INVALID');}
-    return supportResult(input,'VALID',[],{monthlyPlan:toJSON(monthly),quantity:toJSON(quantity),average:toJSON(divide(monthly,quantity)),low:toJSON(divide(monthly,high)),high:toJSON(divide(monthly,low)),range:input.range?{min:toJSON(low),max:toJSON(high)}:null,meaning:'LONG_TERM_MONTHLY_AVERAGE'});
+    const average=divide(monthly,quantity),lower=divide(monthly,high),upper=divide(monthly,low),variable=compare(low,high)<0;
+    const atLeastOne=value=>{const integer=BigInt(value);return (integer<1n?1n:integer).toString();};
+    const displayLow=atLeastOne(round(variable?lower:average,{scale:0,mode:variable?'FLOOR':'HALF_UP'}).decimal);
+    const roundedHigh=atLeastOne(round(variable?upper:average,{scale:0,mode:variable?'CEIL':'HALF_UP'}).decimal);
+    const displayHigh=BigInt(roundedHigh)<BigInt(displayLow)?displayLow:roundedHigh;
+    return supportResult(input,'VALID',[],{monthlyPlan:toJSON(monthly),quantity:toJSON(quantity),average:toJSON(average),low:toJSON(lower),high:toJSON(upper),range:input.range?{min:toJSON(low),max:toJSON(high)}:null,display:{low:displayLow,high:displayHigh,rounding:variable?'FLOOR_CEIL_MIN_1':'HALF_UP_MIN_1'},meaning:'LONG_TERM_MONTHLY_AVERAGE'});
   }catch(error){return supportResult(input,'INVALID',[error.message]);}
 }
 /** Integer package plan across an explicit number of visits; caller owns calendar context. */

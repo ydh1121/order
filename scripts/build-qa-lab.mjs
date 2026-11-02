@@ -63,8 +63,9 @@ const key='order_qa_lab_'+source.commitSha;
 export function createQaStorage(options={}){return createBrowserStorage({...options,localStorage:storage,sessionStorage,locks,key,lockName:key});}
 const writer=createQaStorage();
 const status=text=>{document.getElementById('qa-lab-status').textContent=text;};
-const seed=location.hash==='#qa-allocation-200';
-if(seed){const loaded=await writer.load();const applied=await writer.commit(allocationFixture(),{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'qa-explicit-fixture'});if(!applied.ok)throw Error('QA_FIXTURE_REJECTED:'+applied.status);}
+const comparisonSeed=typeof window.name==='string'&&window.name.startsWith('order-qa-seed:')?JSON.parse(window.name.slice(14)):null;
+const seed=location.hash==='#qa-allocation-200'||!!comparisonSeed;
+if(seed){const loaded=await writer.load();const applied=await writer.commit(comparisonSeed||allocationFixture(),{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'qa-explicit-fixture'});if(!applied.ok)throw Error('QA_FIXTURE_REJECTED:'+applied.status);}
 const dnsControl=document.getElementById('qa-lab-dns');
 const addressControl=document.getElementById('qa-lab-address'),addressServices=new Set();
 export function createQaAddressService(options={}){const service=createAddressSearchService({...options,origin:'https://qa-lab.invalid',fetcher:qaFetch});addressServices.add(service);return service;}
@@ -110,7 +111,7 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  const dirtySourceFiles=[];
  for(const [path,source]of sourceFiles){let committed=null;try{committed=execFileSync('git',['show',commitSha+':'+path],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']});}catch{}if(committed!==source)dirtySourceFiles.push(path);}
  if(dirtySourceFiles.length&&!allowDirty)throw Error('QA_UNCOMMITTED_SOURCE:'+dirtySourceFiles.join(','));
- const identity={schemaVersion:1,scope:'LOCAL_QA_LAB_SYNTHETIC_OFFLINE',repository:'ydh1121/order',commitSha,sourceState:dirtySourceFiles.length?'DIRTY_WORKTREE':'EXACT_GIT_COMMIT',dirtySourceFiles,
+ const identity={schemaVersion:1,builderImplementationSha256:hash(await readFile(fileURLToPath(import.meta.url))),scope:'LOCAL_QA_LAB_SYNTHETIC_OFFLINE',repository:'ydh1121/order',commitSha,sourceState:dirtySourceFiles.length?'DIRTY_WORKTREE':'EXACT_GIT_COMMIT',dirtySourceFiles,
   storage:'ISOLATED_MEMORY_ONLY',network:'NO_EXTERNAL_NETWORK_SYNTHETIC_OPT_IN',reference:{version:reference.manifest.version,sourceSha256:reference.manifest.sourceSha256},
   sourceFiles:[...sourceFiles].map(([path,source])=>({path,sha256:hash(source),bytes:Buffer.byteLength(source)})).sort((a,b)=>a.path.localeCompare(b.path)),
   substitutions:[...substitutions].map(([path,shim])=>({path,shim})),generatedAt:new Date(now).toISOString()};

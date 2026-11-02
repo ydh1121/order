@@ -44,7 +44,7 @@ export function allocationStateFromContext(context){
 function issueMessage(result){
  if(result.reasonCodes?.includes('MIXED_MODE_MONTHLY_POLICY_REQUIRED'))return '1회 납품과 월 사용량 배분을 함께 적용하는 기준을 확인해 주세요.';
  if(result.reasonCodes?.includes('MONTHLY_ALLOCATION_EXCEEDED'))return '사업장별 월 사용량 합계가 전체 월 사용량을 초과했습니다.';
- if(result.reasonCodes?.includes('MONTHLY_ALLOCATION_SHORT'))return '사업장별 월 사용량 합계를 전체 월 사용량에 맞춰 주세요.';
+ if(result.reasonCodes?.includes('MONTHLY_ALLOCATION_SHORT'))return '월 납품 수량이 부족합니다.';
  if(result.reasonCodes?.some(code=>/UNIT|POLICY|RATIONAL/.test(code)))return '월 사용량의 수량과 단위를 확인해 주세요.';
  return '사업장별 월 사용량을 확인해 주세요.';
 }

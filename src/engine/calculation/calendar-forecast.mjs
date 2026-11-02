@@ -2,7 +2,7 @@ import {engineResult} from '../contracts/result.mjs';
 import {fromRatio, exact, multiply, compare, toJSON} from './exact.mjs';
 import {monthlyDayIntent} from './period.mjs';
 
-export const CALENDAR_FORECAST_RULE_VERSION = 'calendar-forecast-1.0.0';
+export const CALENDAR_FORECAST_RULE_VERSION = 'calendar-forecast-1.1.0';
 const DATA_VERSION = 'proleptic-gregorian-calendar-1';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keysOnly = (value, keys) => Object.keys(value).every(key => keys.includes(key));
@@ -30,7 +30,9 @@ const validWeekdays = days => Array.isArray(days) && days.length <= 7 && days.ev
  * Exact nominal recurrence, independent of DOM, clock, timezone and holiday data.
  * quantity / range.min / range.max: exact decimal strings, safe integers, or JSON ratios.
  * schedule: WEEKLY {weekdays:[ISO day]}, CYCLE {weekPlans:[[ISO day]],anchorDate},
- * or MONTHLY {day:1..31|'last'}. CYCLE anchor is the Monday starting week 1 and
+ * INTERVAL_DAYS {intervalDays:14|21,anchorDate}, or MONTHLY {day:1..31|'last',
+ * shortMonthPolicy?:'CLAMP',anchorDate?}. CLAMP is an explicit policy; omitted
+ * short-month policy remains unresolved. CYCLE anchor is the Monday starting week 1 and
  * the earliest active date; 1..52 weekly plans repeat without projecting before it.
  * calendarPolicy:{kind:'UNADJUSTED'} explicitly requests no holiday/off-day shifts.
  * Unknown policies and count-only/FLEX/ONCE schedules produce no numerical forecast.
@@ -72,11 +74,26 @@ export function calendarForecast(input) {
     if (!record(schedule)) return unresolved('CALENDAR_SCHEDULE_REQUIRED', 'schedule');
     const dates = [];
     if (schedule.kind === 'MONTHLY') {
-      if (!keysOnly(schedule, ['kind', 'day'])) return unresolved('SCHEDULE_POLICY_CONFLICT', 'schedule');
+      if (!keysOnly(schedule, ['kind', 'day', 'shortMonthPolicy', 'anchorDate'])) return unresolved('SCHEDULE_POLICY_CONFLICT', 'schedule');
+      if (schedule.shortMonthPolicy !== undefined && schedule.shortMonthPolicy !== 'CLAMP') return unresolved('SHORT_MONTH_POLICY_UNSUPPORTED', 'schedule.shortMonthPolicy');
       const dayResult = monthlyDayIntent({year, month, day: schedule.day});
-      if (dayResult.status === 'POLICY_UNRESOLVED') return unresolved('SHORT_MONTH_POLICY_REQUIRED', 'schedule.day');
-      if (dayResult.status !== 'VALID') return finish('INVALID', ['MONTH_DAY_INVALID']);
-      dates.push(isoDate(year, month, dayResult.normalized.resolvedDay));
+      const clamp = dayResult.status === 'POLICY_UNRESOLVED' && schedule.shortMonthPolicy === 'CLAMP';
+      if (dayResult.status === 'POLICY_UNRESOLVED' && !clamp) return unresolved('SHORT_MONTH_POLICY_REQUIRED', 'schedule.day');
+      if (dayResult.status !== 'VALID' && !clamp) return finish('INVALID', ['MONTH_DAY_INVALID']);
+      const date = isoDate(year, month, clamp ? monthDays(year, month) : dayResult.normalized.resolvedDay);
+      const anchor = schedule.anchorDate ? parseDate(schedule.anchorDate) : null;
+      if (schedule.anchorDate !== undefined && schedule.anchorDate !== '' && !anchor) return finish('INVALID', ['MONTHLY_ANCHOR_INVALID']);
+      if (!anchor || date >= schedule.anchorDate) dates.push(date);
+    } else if (schedule.kind === 'INTERVAL_DAYS') {
+      if (!keysOnly(schedule, ['kind', 'intervalDays', 'anchorDate'])) return unresolved('SCHEDULE_POLICY_CONFLICT', 'schedule');
+      if (![14,21].includes(schedule.intervalDays)) return finish('INVALID', ['INTERVAL_DAYS_INVALID']);
+      if (schedule.anchorDate === undefined || schedule.anchorDate === null || schedule.anchorDate === '') return unresolved('INTERVAL_ANCHOR_REQUIRED', 'schedule.anchorDate');
+      const anchor = parseDate(schedule.anchorDate);
+      if (!anchor) return finish('INVALID', ['INTERVAL_ANCHOR_INVALID']);
+      for (let day = 1; day <= monthDays(year, month); day++) {
+        const distance = ordinal(year, month, day) - anchor.ordinal;
+        if (distance >= 0 && distance % schedule.intervalDays === 0) dates.push(isoDate(year, month, day));
+      }
     } else if (schedule.kind === 'WEEKLY' || schedule.kind === 'CYCLE') {
       let plans, anchor = null;
       if (schedule.kind === 'WEEKLY') {

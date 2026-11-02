@@ -32,7 +32,7 @@ const blankAllocation=(lineId,locationId)=>({id:ident('alloc'),lineId,locationId
 const locationById=id=>S.locations.find(l=>l.id===id);
 const allocationById=id=>S.allocations.find(a=>a.id===id);
 const siteName=loc=>loc?.name||loc?.road||'사업장';
-const deliveryLabel=a=>a.mode==='FIXED'?(()=>{const r=OrderRepeatContract.fromAllocation(a);return r.period==='매월'?'정기 납품 · 매월 '+(OrderRepeatContract.monthValue(r.date).valid?OrderRepeatContract.monthValue(r.date).display:'날짜 미입력'):'정기 납품 · '+r.period+' · 매주 '+r.frequency+(r.legacyReviewRequired?' (횟수 재확인)':'');})():a.mode==='ONCE'?'1회 납품':'소진 시 주문';
+const deliveryLabel=a=>a.mode==='FIXED'?(()=>{const r=OrderRepeatContract.fromAllocation(a);return r.cadence?.kind==='INTERVAL_DAYS'?'정기 납품 · '+r.period+'마다 1회':r.period==='매월'?'정기 납품 · 매월 '+(OrderRepeatContract.monthValue(r.date).valid?OrderRepeatContract.monthValue(r.date).display:'날짜 미입력'):'정기 납품 · '+r.period+' · 매주 '+r.frequency+(r.legacyReviewRequired?' (횟수 재확인)':'');})():a.mode==='ONCE'?'1회 납품':'소진 시 주문';
 
 // Q3 completeness means every SKU has an assigned, valid site; not merely 1 allocation.
 const addressComplete=()=>S.locations.length>0&&S.locations.every(siteValid);
@@ -963,7 +963,7 @@ function q4ReviewAllocationIssues(a,all=S.allocations){
    if(num(a.qty)&&num(a.qtyMin)&&+a.qty<+a.qtyMin)put('qty','회당 수량이 최소 수량보다 작습니다.');
    if(num(a.qty)&&num(a.qtyMax)&&+a.qty>+a.qtyMax)put('qty','회당 수량이 최대 수량보다 큽니다.');}
   const h=a.q4Review.activeHoliday;if(!h||!(h.days?.length||h.none||h.irregular))put('holiday-days','매장 정기 휴무일 또는 없음·일정하지 않음을 선택해 주세요.');
-  if(!h||['','선택 안 함',null,undefined].includes(h.conflict))put('holiday-conflict','휴무일 납품 충돌 시 대응을 선택해 주세요.');
+  if(a.mode==='FIXED'&&(!h||['','선택 안 함',null,undefined].includes(h.conflict)))put('holiday-conflict','휴무일 납품 충돌 시 대응을 선택해 주세요.');
  }
   if(a.mode==='FIXED'){
    const r=OrderRepeatContract.fromAllocation(a),contract=OrderRepeatContract.inspect(r);if(!contract.valid){if(contract.issue.kind==='weekdays'){for(const week of contract.week.filter(w=>!w.complete))put('weekdays-'+week.number,week.number+'주차 희망요일 개수를 확인해 주세요.');}else put(contract.issue.kind,contract.issue.message);}
