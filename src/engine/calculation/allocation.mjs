@@ -235,6 +235,10 @@ export function allocationInputLimit({state,lineId,draft,locationId}={}){
     target.quantity={raw:'',unit:line.monthlyPlanning.unit};target.source='derived';
     if(target.demandOrigin!=='known'){target.demand=null;target.demandOrigin='unknown';target.demandSource='manual';}
     const evaluation=evaluateAllocation({state,lineId,draft:projected}),row=evaluation.normalized?.sites?.find(site=>site.locationId===locationId);
+    // A known measured demand reserves D independently of the editable package
+    // plan P. Preserve its existing plan policy; ceil(D/size) is not a new hard
+    // maximum. Generic package-plan rows still share the finite SKU budget.
+    if(row?.demandOrigin==='known')return out('VALID',[],{locationId,min:'1',max:null,unit:line.monthlyPlanning.unit,draftRevision:draft?.revision??null},{evidence:{storageCommitPerformed:false,knownDemandPreserved:true,packagePlanHardMaximum:false}});
     if(!row?.currentMaximumPacks) return out('UNAVAILABLE',['MONTHLY_INPUT_LIMIT_UNRESOLVED'],null,{evaluation});
     const maximum=fromRatio(row.currentMaximumPacks);
     if(maximum.n<1n)return out('UNAVAILABLE',['MONTHLY_INPUT_NO_CAPACITY'],{locationId,min:'1',max:maximum.n.toString(),unit:line.monthlyPlanning.unit,draftRevision:draft?.revision??null});

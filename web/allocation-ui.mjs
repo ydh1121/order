@@ -115,7 +115,7 @@ export function createMonthlyAllocationDraft(context,{readCurrentContext=()=>con
   const requested=String(raw),limit=inputLimit(locationId);
   if(expectedRevision!==undefined&&expectedRevision!==session?.revision)return {...evaluate(),input:{requested,quantity:requested,changed:false,applied:false,reason:'DRAFT_REVISION_STALE',limit}};
   if(limit.reason==='ALLOCATION_SNAPSHOT_STALE')return {...evaluate(),input:{requested,quantity:requested,changed:false,applied:false,reason:limit.reason,limit}};
-  const quantity=complete&&!composing&&/^\d+$/.test(requested)&&limit.valid&&BigInt(requested)>BigInt(limit.max)?limit.max:requested;
+  const quantity=complete&&!composing&&/^\d+$/.test(requested)&&limit.valid&&limit.max!==null&&BigInt(requested)>BigInt(limit.max)?limit.max:requested;
   const entry=session?.entries.find(row=>row.locationId===locationId),result=apply({type:'set',locationId,quantity:{raw:quantity,unit:entry?.quantity.unit,composing,phase:'editing'}});
   if(result.status==='VALID'){refresh();if(quantity===''&&!composing)apply({type:'set',locationId,quantity:{raw:'',unit:entry?.quantity.unit,phase:'editing'}});}
   return {...evaluate(),input:{requested,quantity,changed:quantity!==requested,applied:result.status==='VALID',reason:quantity!==requested?'MONTHLY_INPUT_MAXIMUM':null,limit}};

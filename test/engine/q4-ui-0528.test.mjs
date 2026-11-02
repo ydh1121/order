@@ -23,6 +23,19 @@ test('C28 date adapter keeps raw partial drafts, then uses corrected engine cade
  q.storePreferredDate(0,{year:2026,month:12,day:5});assert.equal(q.state.cadence.preferredDate,'2026-12-10');assert.equal(q.state.startDateResults['common:L'].code,'RANGE');assert.equal(q.state.cadence.nominalAnchor,'2026-12-10');assert.equal(q.state.startDateReviews['common:L'].lifecycle,'NEW');assert.ok(q.state.startDateReviews['common:L'].holidayVersion);assert.deepEqual(plain(q.regularContext),before);
  q.completePreferredDates();assert.equal(q.state.startDateResults['common:L'].code,'RANGE','save does not erase correction explanation');
 });
+test('C28 blank optional day preserves separately completed year/month until the whole requested date is checked',()=>{
+ const q=harness();q.datePolicy.blank=()=>({year:2026,month:12,day:''});
+ // The real product starts a blank optional day with the current year/month.
+ // Each separate field blur is a completed field, not a complete date.
+ q.storePreferredDate(0,{...q.dateData(0),year:'2027'},{kind:'month',completed:false});q.storePreferredDate(0,q.dateData(0),{kind:'month'});
+ assert.deepEqual(plain(q.dateData(0)),{year:'2027',month:12,day:''});assert.equal(q.state.cadence.preferredDate,'');
+ q.storePreferredDate(0,{...q.dateData(0),month:'1'},{kind:'month',completed:false});q.storePreferredDate(0,q.dateData(0),{kind:'month'});
+ assert.deepEqual(plain(q.dateData(0)),{year:'2027',month:'1',day:''});assert.equal(q.state.cadence.preferredDate,'');
+ q.storePreferredDate(0,{...q.dateData(0),day:'31'},{kind:'date',completed:false});q.storePreferredDate(0,q.dateData(0),{kind:'date'});
+ assert.equal(q.state.cadence.preferredDate,'2027-01-29');assert.equal(q.state.startDateResults['common:L'].code,'RANGE');
+ assert.deepEqual(plain(q.dateData(0)),{year:2027,month:1,day:29});
+ q.storePreferredDate(0,{...q.dateData(0),day:''},{kind:'date'});assert.equal(q.state.cadence.preferredDate,'');assert.equal(q.state.cadence.nominalAnchor,'');assert.deepEqual(plain(q.dateData(0)),{year:2027,month:1,day:''});
+});
 test('C28 out-of-range raw monthly date cannot rewrite dayRule; a valid explicit calendar selection can',()=>{
  const q=harness({period:'매월'});q.storePreferredDate(0,{year:2030,month:1,day:20});assert.equal(q.state.cadence.dayRule,31);assert.equal(q.state.cadence.preferredDate,'2026-12-31');
  q.storePreferredDate(0,{year:2026,month:12,day:22});assert.equal(q.state.cadence.dayRule,22);assert.equal(q.state.cadence.preferredDate,'2026-12-22');

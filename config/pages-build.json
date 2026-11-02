@@ -37,7 +37,7 @@
     {
       "source": "web/allocation-ui.mjs",
       "output": "allocation-ui.mjs",
-      "sha256": "f067dcb1d1b49ae154509214a528cd3607fc27a98175ba8799f1ad89147a65a4"
+      "sha256": "322379bfbbaac0ebae2ea0e948d402905e3f79b94922b47416627f24f2dd25e4"
     },
     {
       "source": "web/app.mjs",
@@ -77,7 +77,7 @@
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "4cc4ca872ea18a0aded5c90fae77ce3cbc9e0136a988a8d1375d4c692a443db5"
+      "sha256": "0bf0fa54388e3b6b4ae5b6afb0f7b613a697ec9de230bc1965cb411676a97e97"
     },
     {
       "source": "web/quantity-contract.mjs",

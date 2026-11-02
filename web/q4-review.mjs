@@ -314,7 +314,9 @@ function startDateOptions(i,{selection=false,completed=true,adjust=false,cadence
 function dateBounds(i=state.calendarSite??0){if(!preferredDateActive(i))return {minYear:2000,maxYear:2100,minMonth:1,maxMonth:12,yearLocked:false};const range=startDateRange({...startDateOptions(i),cadence:null}),min=preferredParts(range.min),max=preferredParts(range.max),asOf=preferredParts(state.asOfLocalDate);return {minYear:min.year||asOf.year,maxYear:max.year||asOf.year,minMonth:min.month||asOf.month,maxMonth:max.month||asOf.month,yearLocked:false,range};}
 function dateInspection(i,value=dateData(i),{selection=false,completed=true,adjust=false}={}){if(!preferredDateActive(i))return datePolicy.validate(value);return inspectStartDate(value,startDateOptions(i,{selection,completed,adjust}));}
 function recordStartDateResult(i,result,{explicit=false}={}){const key=preferredKey(i),r=activeRepeat(i);state.startDateResults[key]=result;if(!result.valid)return result;if(result.cadence)r.cadence=result.cadence;
- if(result.empty){state.preferredDates[key]=datePolicy.blank();}else{state.preferredDates[key]=preferredParts(result.value);if(!result.preserved){const versions=result.range?.versions||{};state.startDateReviews[key]={version:'1.0.0',lifecycle:'NEW',asOfLocalDate:state.asOfLocalDate,...(versions.holidayVersion?{holidayVersion:versions.holidayVersion}:{}),...(versions.policyVersion?{policyVersion:versions.policyVersion}:{})};}}
+ // An optional empty day clears the selected cadence date, not the year/month
+ // the user is still composing in this private editor.
+ if(result.empty){state.preferredDates[key]??=datePolicy.blank();}else{state.preferredDates[key]=preferredParts(result.value);if(!result.preserved){const versions=result.range?.versions||{};state.startDateReviews[key]={version:'1.0.0',lifecycle:'NEW',asOfLocalDate:state.asOfLocalDate,...(versions.holidayVersion?{holidayVersion:versions.holidayVersion}:{}),...(versions.policyVersion?{policyVersion:versions.policyVersion}:{})};}}
  if(r.cadence?.kind==='MONTHLY')r.date=r.cadence.dayRule==='last'?'말일':r.cadence.dayRule?r.cadence.dayRule+'일':'';
  return result;
 }

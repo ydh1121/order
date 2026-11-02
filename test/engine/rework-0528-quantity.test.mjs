@@ -59,7 +59,8 @@ test('C28 N11 manualB400 stays400 and directA201 caps200 in the same snapshot',(
 });
 test('C28 N12 knownD2500+2500 retains84+84 while raw5000 and generic600 budget stay distinct',()=>{
  const c=context({total:'5000',unit:'each',rows:[['84','manual','FLEX','2500'],['84','manual','FIXED','2500']]}),d=createMonthlyAllocationDraft(c);
- assert.deepEqual(d.rows.map(r=>r.quantity.raw),['84','84']);assert.equal(d.inputLimit('site-0').max,'84');d.set('site-0','84',{complete:true});assert.equal(d.confirm().ok,true);assert.equal(d.evaluate().normalized.planSumPacks.numerator,'168');assert.equal(c.line.qty,'5000');
+ assert.deepEqual(d.rows.map(r=>r.quantity.raw),['84','84']);assert.equal(d.inputLimit('site-0').max,null);d.set('site-0','84',{complete:true});assert.equal(d.confirm().ok,true);assert.equal(d.evaluate().normalized.planSumPacks.numerator,'168');assert.equal(c.line.qty,'5000');
+ d.set('site-0','85',{complete:true});assert.deepEqual(d.rows.map(r=>r.quantity.raw),['85','84']);assert.equal(d.confirm().ok,true);assert.deepEqual(d.rows.map(r=>r.demand.raw),['2500','2500']);assert.equal(c.line.qty,'5000','manual package planning never rewrites measured demand or Q2');
  const plain=createMonthlyAllocationDraft(context({rows:[['200','manual'],['400','manual']]}));plain.set('site-1','401',{complete:true});assert.equal(plain.rows[1].quantity.raw,'400');
 });
 test('C28 N13 intermediate2 then29 never snaps to20; completed1 snaps to20 once',()=>{
