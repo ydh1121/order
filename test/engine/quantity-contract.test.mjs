@@ -53,7 +53,7 @@ test('F03 comma editing stays editable while invalid metadata never renders a fr
 
 test('F03 legacy fractional packages show exact base demand in summaries',()=>{
  const old={qty:'605/3',qtyUnit:'tray',pack:'30',price:'10000',qtyExact:{representation:'rational',conversionReviewed:true,numerator:'605',denominator:'3'}};
- assert.equal(quantityDisplayNote(old),'6,050개');
+ assert.equal(quantityDisplayNote(old),'낱개 기준 총 6,050개');
  assert.equal(exactDisplay({numerator:'12345',denominator:'100'}),'123.45');
  assert.equal(exactDisplay({numerator:'-1',denominator:'2'}),'-0.5');
 });

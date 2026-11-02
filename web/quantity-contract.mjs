@@ -37,7 +37,7 @@ export function quantityInputText(line){
 export function quantityDisplayNote(line){
   if(!validMonthlyQuantity(line))return '';
   const base=baseQuantity(line),packages=divide(base,exact(String(line.pack))),label=String(line.pack)==='30'?'판':'팩';
-  if(quantityDisplayUnit(line)!=='each')return `${exactDisplay(toJSON(base))}개`;
+  if(quantityDisplayUnit(line)!=='each')return `낱개 기준 총 ${exactDisplay(toJSON(base))}개`;
   const packs=round(packages,{scale:0,mode:'CEIL'}).decimal;
   const truncated=round(packages,{scale:1,mode:'DOWN'}).decimal;
   // Sub-package demand must never look like zero; the exact source stays untouched.

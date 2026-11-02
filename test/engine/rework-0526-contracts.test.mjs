@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {parse} from 'acorn';
-import {createCadence,inspectCadence,syncMonthlyPreferredDate} from '../../web/cadence-contract.mjs';
-import {validMonthlyQuantity} from '../../web/quantity-contract.mjs';
+import {createCadence,inspectCadence,syncMonthlyPreferredDate,inspectStartDate,holidayPolicyFromSelection,seoulDate} from '../../web/cadence-contract.mjs';
+import {inspectStoredOrderQuantity} from '../../web/q4-planning.mjs';
+import {validMonthlyQuantity,monthlyPlanSnapshot} from '../../web/quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/allocation-ui.mjs';
 import {addressStatus} from '../../web/address-contract.mjs';
 
@@ -23,15 +24,15 @@ function legacy(weeks=2){return {mode:'FIXED',modeExplicit:true,qty:'15',repeatS
 function fixture(mode='FLEX'){
  return {lines:[{id:'L',housing:'1',size:'왕란',pack:'30',qty:'67',qtyUnit:'tray',price:'10000'}],locations:[{id:'A',name:'합성 사업장',road:'합성시 가상로 10',postal:'08843',providerId:'1'.repeat(25),addressProvider:'JUSO',detail:'',dropoff:'',contactPhone:'01023456789',email:'test@example.com',storePhone:''}],allocations:[{id:'AL',lineId:'L',locationId:'A',mode,modeExplicit:true,qty:'15',monthlyDemandQty:'67',monthlyDemandUnit:'tray',advanced:{contactChannels:['phone']},q4Review:{version:'0460',activeHoliday:{days:[],none:true,irregular:false,conflict:'',request:''}}}]};
 }
-function rootOwner(source){
- const context=vm.createContext({S:structuredClone(source),validMonthlyQuantity,inspectMonthlyAllocations,inspectOnceAllocations,addressStatus,structuredClone,JSON,createCadence,inspectCadence,window:{},
+function rootOwner(source,{asOfLocalDate='2026-11-03'}={}){
+ const context=vm.createContext({S:structuredClone(source),validMonthlyQuantity,monthlyPlanSnapshot,inspectStoredOrderQuantity,inspectStartDate,holidayPolicyFromSelection,seoulDate:()=>Object.fromEntries(['year','month','day'].map((key,i)=>[key,Number(asOfLocalDate.split('-')[i])])),inspectMonthlyAllocations,inspectOnceAllocations,addressStatus,structuredClone,JSON,createCadence,inspectCadence,window:{},
   OrderPhone:{parse:value=>({valid:/^0\d{9,10}$/.test(value||'')})},OrderEmail:{parse:value=>({valid:/^[^@]+@[^@]+\.[^@]+$/.test(value||'')})},
   OrderEmailDomain:{status:()=>({state:'VALID'}),isHard:()=>false,isSuccess:proof=>proof.state==='VALID'},
   q4ValidAmount:value=>/^\d+$/.test(String(value))&&Number(value)>0,valid:value=>Number(value)>0});
  vm.runInContext(`${assignment('OrderRepeatContract')};const OrderRepeatContract=window.OrderRepeatContract;
  ${assignment('OrderDatePolicy')};${assignment('OrderSiteContract')};const OrderSiteContract=window.OrderSiteContract;
  ${variable('common','CODE1_ORDER_VALIDATION')}
- ${['q4ReviewIssue','q4ReviewAllocationIssues','monthlyIssues','q4ReviewVerdict'].map(fn).join('\n')}
+ ${['q4ReviewIssue','quantityBoundIssue','q4ReviewAllocationIssues','monthlyIssues','q4ReviewVerdict'].map(fn).join('\n')}
  const lineById=id=>S.lines.find(line=>line.id===id),locationById=id=>S.locations.find(site=>site.id===id),siteValid=site=>OrderSiteContract.valid(site);
  ${variable('app','allocationValid')}
  globalThis.subject={verdict:()=>q4ReviewVerdict(S),legacyVerdict:()=>CODE1_ORDER_VALIDATION.validateOrderDraft(S),allocationIssues:()=>q4ReviewAllocationIssues(S.allocations[0]),complete:()=>allocationValid(S.allocations[0]),source:()=>structuredClone(S)};`,context);
@@ -39,7 +40,7 @@ function rootOwner(source){
 }
 function fixedFixture(period='2주',preferredDate=''){
  const source=fixture('FIXED'),owner=repeatOwner(),repeat={period:'매주',frequency:'2회',date:'',weeklyCheck:false,weekdays:{}};
- owner.resetPeriod(repeat,period);if(preferredDate)repeat.cadence.preferredDate=preferredDate;
+ owner.resetPeriod(repeat,period);if(preferredDate){repeat.cadence.preferredDate=preferredDate;repeat.cadence.nominalAnchor=preferredDate;}
  Object.assign(source.allocations[0],plain(owner.serialize(repeat).value));
  source.allocations[0].q4Review.activeRepeat=plain(owner.snapshot(repeat));source.allocations[0].q4Review.activeHoliday.conflict='앞당김';return source;
 }
@@ -57,7 +58,7 @@ test('C26 explicit same-period choice creates 14/21-day cadence while retaining 
  const owner=repeatOwner();
  for(const [weeks,days] of [[2,14],[3,21]]){
   const allocation=legacy(weeks),before=structuredClone(allocation),repeat=owner.fromAllocation(allocation),original=plain(repeat.legacyOriginal);
-  assert.equal(owner.resetPeriod(repeat,weeks+'주'),true);assert.equal(repeat.frequency,'1회');assert.equal(repeat.weeklyCheck,false);assert.deepEqual(plain(repeat.weekdays),{});assert.deepEqual(plain(repeat.cadence),{version:'2.0.0',preferredDate:'',kind:'INTERVAL_DAYS',intervalDays:days});assert.deepEqual(plain(repeat.legacyOriginal),original);
+  assert.equal(owner.resetPeriod(repeat,weeks+'주'),true);assert.equal(repeat.frequency,'1회');assert.equal(repeat.weeklyCheck,false);assert.deepEqual(plain(repeat.weekdays),{});assert.deepEqual(plain(repeat.cadence),{version:'2.1.0',preferredDate:'',nominalAnchor:'',kind:'INTERVAL_DAYS',intervalDays:days});assert.deepEqual(plain(repeat.legacyOriginal),original);
   assert.equal(owner.resetPeriod(repeat,weeks+'주'),false,'same new cadence is not a new semantic transition');
   const serialized=owner.serialize(repeat);assert.equal(serialized.ok,true);assert.equal(serialized.value.cycleCount,1);assert.equal(serialized.value.frequencyPerWeek,null);assert.deepEqual(plain(serialized.value.weekPlans),[]);assert.deepEqual(allocation,before,'pure UI draft does not mutate saved allocation/manual quantity');
  }
@@ -68,7 +69,7 @@ test('C26 cadence survives snapshot/allocation roundtrip without inventing a req
  const owner=repeatOwner(),repeat=owner.fromAllocation(legacy(2));owner.resetPeriod(repeat,'2주');
  const snapshot=owner.snapshot(repeat),packed=owner.serialize(snapshot);assert.equal(packed.ok,true);assert.equal(packed.value.cadence.preferredDate,'');
  const restored=owner.fromAllocation({...legacy(2),...plain(packed.value),q4Review:{activeRepeat:plain(snapshot)}});
- assert.equal(owner.inspect(restored).valid,true);assert.deepEqual(plain(restored.cadence),{version:'2.0.0',preferredDate:'',kind:'INTERVAL_DAYS',intervalDays:14});assert.equal(restored.frequency,'1회');assert.equal(restored.semantics,'cadence-v2');assert.equal(restored.legacyReviewRequired,false);
+ assert.equal(owner.inspect(restored).valid,true);assert.deepEqual(plain(restored.cadence),{version:'2.1.0',preferredDate:'',nominalAnchor:'',kind:'INTERVAL_DAYS',intervalDays:14});assert.equal(restored.frequency,'1회');assert.equal(restored.semantics,'cadence-v2');assert.equal(restored.legacyReviewRequired,false);
  snapshot.cadence.preferredDate='2026-11-03';assert.equal(repeat.cadence.preferredDate,'','snapshot is independent');
 });
 
@@ -88,7 +89,7 @@ test('C26 monthly 31 and last remain separate through production serialization, 
  for(const [rule,label] of [[31,'31일'],['last','말일']]){
   const repeat={period:'매주',frequency:'2회',date:'',weeklyCheck:false,weekdays:{}};owner.resetPeriod(repeat,'매월');assert.equal(owner.inspect(repeat).valid,false);
   repeat.cadence=syncMonthlyPreferredDate(repeat.cadence,{kind:'rule',dayRule:rule}).value;repeat.date=label;assert.equal(repeat.cadence.preferredDate,'');assert.equal(owner.inspect(repeat).valid,true);
-  repeat.cadence={...repeat.cadence,preferredDate:'2028-01-31'};repeat.cadence=syncMonthlyPreferredDate(repeat.cadence,{kind:'month',year:2028,month:2}).value;
+  repeat.cadence={...repeat.cadence,preferredDate:'2028-01-31',nominalAnchor:'2028-01-31'};repeat.cadence=syncMonthlyPreferredDate(repeat.cadence,{kind:'month',year:2028,month:2}).value;
   assert.equal(repeat.cadence.preferredDate,'2028-02-29');assert.equal(owner.serialize(repeat).value.monthDay,String(rule));
   repeat.cadence=syncMonthlyPreferredDate(repeat.cadence,{kind:'clear'}).value;assert.equal(owner.inspect(repeat).valid,true);assert.equal(owner.serialize(repeat).value.monthDay,String(rule));assert.equal(owner.serialize(repeat).value.cadence.preferredDate,'');
  }
@@ -120,4 +121,18 @@ test('C26 stored past repeat anchors remain valid; malformed cadence and ONCE da
  const source=fixedFixture('2주','2020-01-01');assert.equal(rootOwner(source).verdict().valid,true);
  source.allocations[0].cadence.intervalDays=28;assert.equal(rootOwner(source).verdict().valid,false);assert.ok(rootOwner(source).allocationIssues().some(issue=>issue.fieldKey==='preferred-date'));
  const once=fixture('ONCE');once.allocations[0].q4Review.deliveryDate={year:3000,month:20,day:1};assert.ok(rootOwner(once).allocationIssues().some(issue=>issue.fieldKey==='desired-date'));
+});
+
+test('C28 production final gate rechecks NEW/future legacy without mutating dates or rejecting optional empty',()=>{
+ const source=fixedFixture('2주','2026-11-06'),a=source.allocations[0];a.q4Review.startDateReview={version:'1.0.0',lifecycle:'NEW',asOfLocalDate:'2026-11-02'};
+ const before=structuredClone(source),subject=rootOwner(source,{asOfLocalDate:'2026-11-03'});assert.ok(subject.allocationIssues().some(x=>x.fieldKey==='repeat-preferred'));assert.deepEqual(subject.source(),before);assert.equal(subject.complete(),false);
+ delete a.q4Review.startDateReview;assert.ok(rootOwner(source,{asOfLocalDate:'2026-11-03'}).allocationIssues().some(x=>x.fieldKey==='repeat-preferred'));
+ a.q4Review.startDateReview={version:'1.0.0',lifecycle:'STARTED',asOfLocalDate:'2026-11-02'};assert.equal(rootOwner(source,{asOfLocalDate:'2026-11-03'}).allocationIssues().some(x=>x.fieldKey==='repeat-preferred'),false);
+ const empty=fixedFixture('2주');assert.equal(rootOwner(empty,{asOfLocalDate:'2028-01-03'}).allocationIssues().some(x=>x.fieldKey==='repeat-preferred'),false,'optional empty does not become required when references are unavailable');
+});
+test('C28 production final gate accepts shifted actual date with nominal monthly31 and blocks uncovered NEW dates',()=>{
+ const source=fixedFixture('2주'),a=source.allocations[0],cadence=inspectStartDate('2027-01-31',{asOfLocalDate:'2027-01-04',cadence:{...createCadence('매월'),dayRule:31},holidayPolicy:{weekend:'NEXT',holiday:'NEXT',substitute:'NEXT'}}).cadence;
+ const repeat=repeatOwner().fromAllocation(a);repeatOwner().resetPeriod(repeat,'매월');repeat.cadence=cadence;repeat.date='31일';Object.assign(a,plain(repeatOwner().serialize(repeat).value));a.q4Review.activeRepeat=plain(repeatOwner().snapshot(repeat));a.q4Review.activeHoliday.weekend='휴무 다음날 희망';a.q4Review.activeHoliday.holiday='휴무 다음날 희망';a.q4Review.activeHoliday.subholiday='휴무 다음날 희망';a.q4Review.startDateReview={version:'1.0.0',lifecycle:'NEW',asOfLocalDate:'2027-01-04'};
+ const subject=rootOwner(source,{asOfLocalDate:'2027-01-04'});assert.equal(subject.allocationIssues().some(x=>x.fieldKey==='repeat-preferred'),false);assert.equal(subject.source().allocations[0].cadence.nominalAnchor,'2027-01-31');assert.equal(subject.source().allocations[0].cadence.preferredDate,'2027-02-01');
+ const uncovered=fixedFixture('2주','2028-01-06');uncovered.allocations[0].q4Review.startDateReview={version:'1.0.0',lifecycle:'NEW',asOfLocalDate:'2027-12-23'};assert.ok(rootOwner(uncovered,{asOfLocalDate:'2027-12-23'}).allocationIssues().some(x=>x.fieldKey==='repeat-preferred'&&x.message==='날짜를 확인할 수 없습니다. 다시 시도해 주세요.'));
 });

@@ -16,14 +16,14 @@ const envelope=(schemaVersion,data)=>JSON.stringify({schemaVersion,generation:'h
 const interval=(preferredDate='')=>({version:'2.0.0',kind:'INTERVAL_DAYS',intervalDays:14,preferredDate});
 const monthly=(dayRule,preferredDate='')=>({version:'2.0.0',kind:'MONTHLY',dayRule,preferredDate});
 
-test('C26 legacy schemas1–4 preserve2/3/4-week patterns byte-for-byte; explicit commit alone upgrades schema5',async()=>{
- assert.equal(STORAGE_SCHEMA_VERSION,5);
+test('C26 legacy schemas1–4 preserve2/3/4-week patterns byte-for-byte; explicit commit alone upgrades current schema',async()=>{
+ assert.equal(STORAGE_SCHEMA_VERSION,6);
  for(const schema of [1,2,3,4])for(const weeks of [2,3,4]){
   const source=legacy(weeks),raw=envelope(schema,source),env=setup(new MemoryStorage({[STORAGE_KEY]:raw})),read=await env.api.load();
   assert.equal(read.status,'LOADED');assert.deepEqual(read.data,source);assert.equal(env.local.writes,0);assert.equal(env.local.getItem(STORAGE_KEY),raw);
   const unrelated=structuredClone(read.data);unrelated.locations[0].name='합성 A 수정';
   const saved=await env.api.commit(unrelated,options(read));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);
-  assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,5);assert.equal(saved.data.allocations[0].cadence,undefined);assert.equal(saved.data.allocations[0].intervalWeeks,weeks);assert.equal(saved.data.allocations[0].cycleCount,weeks*2);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');assert.equal(saved.data.locations[0].postal,'08843');
+  assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,6);assert.equal(saved.data.allocations[0].cadence,undefined);assert.equal(saved.data.allocations[0].intervalWeeks,weeks);assert.equal(saved.data.allocations[0].cycleCount,weeks*2);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');assert.equal(saved.data.locations[0].postal,'08843');
  }
 });
 test('C26 explicit new cadence keeps legacy fields recoverable and commits once, without touching source on failure',async()=>{
@@ -55,9 +55,9 @@ test('C26 new cadence concurrent edits conflict, reset blocks resurrection, canc
  assert.equal(env.local.writes,0);const results=await Promise.all([env.api.commit(one,options(a,'a')),tabB.commit(two,options(b,'b'))]);assert.deepEqual(results.map(r=>r.status).sort(),['COMMITTED','CONFLICT']);assert.equal(env.local.writes,1);
  const current=await env.api.load();await env.api.reset(options(current,'reset'));assert.equal((await tabB.commit(two,options(b,'late'))).status,'CONFLICT');assert.equal((await env.api.load()).status,'RESET');
 });
-test('C26 FLEX frequency integer display matches independent required boundaries',()=>{
- for(const [m,q,a,b,expected] of [['67','15','12','20','월 약3~6회'],['67','15','12','200','월 약1~6회'],['60','15','15','20','월 약3~4회'],['5','15','12','20','월 약1회'],['60','15','15','15','월 약4회']])assert.equal(frequencyText({monthlyPlan:m,quantity:q,variable:true,min:a,max:b}),expected);
- for(const [m,q,expected]of [['60','15','월 약4회'],['67','15','월 약4회'],['50','20','월 약3회'],['5','15','월 약1회']])assert.equal(frequencyText({monthlyPlan:m,quantity:q}),expected);
+test('C28 representative display supersedes C26 range wording while preserving stored quantities',()=>{
+ for(const [m,q,a,b,expected] of [['67','15','12','20','월 약4회'],['67','15','12','200','월 약4회'],['60','15','15','20','월 약4회'],['5','15','12','20','월 약1회'],['60','15','15','15','월 4회']])assert.equal(frequencyText({monthlyPlan:m,quantity:q,variable:true,min:a,max:b}),expected);
+ for(const [m,q,expected]of [['60','15','월 4회'],['67','15','월 약4회'],['50','20','월 약3회'],['5','15','월 약1회']])assert.equal(frequencyText({monthlyPlan:m,quantity:q}),expected);
  for(const patch of [{monthlyPlan:''},{quantity:'0'},{quantity:'10가20'},{variable:true,min:'16',max:'20'},{variable:true,min:'12',max:'14'}])assert.equal(frequencyText({monthlyPlan:'67',quantity:'15',...patch}),'—');
 });
 test('C26 optional absent anchor is unresolved projection, never a fabricated fixed calendar',()=>{

@@ -172,18 +172,26 @@ jobs:
           sudo apt-get install -y fonts-noto-cjk
           fc-match ':lang=ko'
       - run: npm run build
-      - name: MSG0526 exact baseline versus current Q4 and shared input/modal contracts
+      - name: MSG0528 actual Q1–Q4, checkpoint, quantities and calendar boundaries
+        run: node test/browser/q1-q4-0528.smoke.mjs
+      - name: Preserved MSG0526 compatible regressions with explicit superseded contracts
+        if: always()
+        env:
+          ORDER_QA_CONTRACT: MSG0528
+          ORDER_0526_FUNCTIONAL_ONLY: '1'
         run: node test/browser/canonical-q4-0526.smoke.mjs
       - name: Single offline comparison HTML from both fixed Git graphs
         if: always()
         run: |
-          git worktree add --detach "$RUNNER_TEMP/order-before-0526" 6768f95e759652bdaadbd15fab406e0deebf0393
-          node scripts/build-qa-comparison.mjs --baseline "$RUNNER_TEMP/order-before-0526" --out browser-evidence/q4-0526/order-before-after.html
-          node test/browser/qa-comparison.smoke.mjs browser-evidence/q4-0526/order-before-after.html
-      - name: Preserve fresh MSG0526 observations separately from historical passes
+          git worktree add --detach "$RUNNER_TEMP/order-before-0528" a1cdfb61a4b908a0ae93ee32d03e8f657623e182
+          node scripts/build-qa-comparison.mjs --message MSG0528 --baseline "$RUNNER_TEMP/order-before-0528" --out browser-evidence/q1-q4-0528/order-before-after.html
+          node test/browser/qa-comparison.smoke.mjs browser-evidence/q1-q4-0528/order-before-after.html
+      - name: Preserve MSG0528 observations separately from preserved regressions
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: chromium-canonical-q4-observations-${{ github.run_id }}
-          path: browser-evidence/q4-0526/
+          path: |
+            browser-evidence/q1-q4-0528/
+            browser-evidence/q4-0526/
           retention-days: 14

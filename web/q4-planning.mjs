@@ -1,23 +1,31 @@
 import {calendarForecast,demandFrequency,fixedQuantityPlan} from '../src/browser/engine.mjs';
 import {fromRatio,exact,multiply,add,toJSON} from '../src/engine/calculation/exact.mjs';
+export {orderQuantityInput,orderQuantityBounds,orderMonthContext,inspectStoredOrderQuantity} from '../src/engine/calculation/period.mjs';
 const integer=value=>/^[1-9]\d*$/.test(String(value??''));
 const days=['월','화','수','목','금','토','일'];
-export function frequencyText({monthlyPlan,quantity,variable=false,min='',max=''}){
- const result=demandFrequency({monthlyPlan,quantity,...(variable?{range:{min,max}}:{})});
- if(result.status!=='VALID')return '—';
- const {low,high}=result.normalized.display;return `월 약${low===high?low:low+'~'+high}회`;
+export function frequencyPresentation({monthlyPlan,quantity,variable=false,min='',max='',asOfLocalDate}){
+ const result=demandFrequency({monthlyPlan,quantity,...(variable?{range:{min,max}}:{}),...(asOfLocalDate===undefined?{}:{asOfLocalDate})});
+ if(result.status!=='VALID')return {valid:false,text:'—',basisText:'',result};
+ const {count,kind,month}=result.normalized.representative;
+ const text=kind==='DAILY'?'매일 납품':kind==='APPROX'?`월 약${BigInt(count).toLocaleString('ko-KR')}회`:`월 ${BigInt(count).toLocaleString('ko-KR')}회`;
+ const basisText=month?`(${String(month.year).slice(-2)}년 ${month.month}월 기준)`:'';
+ return {valid:true,text,basisText,result};
+}
+export function frequencyText(input){
+ const {text,basisText}=frequencyPresentation(input);return basisText?`${text} ${basisText}`:text;
 }
 /** A nominal planning projection; never writes calendarPolicy or invents holidays. */
 export function repeatVisitPlan(repeat,reference,count=''){
  if(!reference||!Number.isInteger(Number(reference.year))||!Number.isInteger(Number(reference.month))||Number(reference.year)<1||Number(reference.year)>9999||Number(reference.month)<1||Number(reference.month)>12)return {resolved:false,reason:'PROJECTION_MONTH_UNSPECIFIED',message:''};
  const common={year:Number(reference.year),month:Number(reference.month),mode:'FIXED',quantity:'1',calendarPolicy:{kind:'UNADJUSTED'}};
  let schedule;
- if(repeat.cadence?.version==='2.0.0'){
+ if(['2.0.0','2.1.0'].includes(repeat.cadence?.version)){
   const cadence=repeat.cadence;
+  const anchor=cadence.nominalAnchor||cadence.preferredDate;
   if(cadence.kind==='INTERVAL_DAYS'){
-   if(!cadence.preferredDate)return {resolved:false,reason:'OPTIONAL_ANCHOR_UNSELECTED',message:''};
-   schedule={kind:'INTERVAL_DAYS',intervalDays:cadence.intervalDays,anchorDate:cadence.preferredDate};
-  }else if(cadence.kind==='MONTHLY')schedule={kind:'MONTHLY',day:cadence.dayRule,shortMonthPolicy:'CLAMP',...(cadence.preferredDate?{anchorDate:cadence.preferredDate}:{})};
+   if(!anchor)return {resolved:false,reason:'OPTIONAL_ANCHOR_UNSELECTED',message:''};
+   schedule={kind:'INTERVAL_DAYS',intervalDays:cadence.intervalDays,anchorDate:anchor};
+  }else if(cadence.kind==='MONTHLY')schedule={kind:'MONTHLY',day:cadence.dayRule,shortMonthPolicy:'CLAMP',...(anchor?{anchorDate:anchor}:{})};
   else if(cadence.kind==='WEEKLY'){
    if(!repeat.weeklyCheck)return {resolved:false,reason:'WEEKDAYS_UNSELECTED',message:''};
    const selected=days.flatMap((day,d)=>repeat.weekdays?.['1:'+day]?[d+1]:[]),frequency=Number.parseInt(repeat.frequency,10);
