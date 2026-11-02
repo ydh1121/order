@@ -76,6 +76,15 @@ test('C26 monthly rule and explicit optional date form one transaction and prese
  assert.deepEqual(createCadence('2주'),{version:'2.0.0',preferredDate:'',kind:'INTERVAL_DAYS',intervalDays:14});
  assert.equal(inspectCadence({...createCadence('2주'),intervalDays:7}).valid,false);assert.equal(inspectCadence(null).valid,false);
 });
+test('C26 direct February31 clamps the first date while preserving requested31, unlike an explicit calendar28 choice',()=>{
+ const before={version:'2.0.0',kind:'MONTHLY',dayRule:15,preferredDate:''};
+ const typed=syncMonthlyPreferredDate(before,{kind:'date',value:{year:'2027',month:'2',day:'31'}});
+ assert.equal(typed.valid,true);assert.equal(typed.value.preferredDate,'2027-02-28');assert.equal(typed.value.dayRule,31);assert.equal(inspectCadence(typed.value).valid,true);
+ const leap=syncMonthlyPreferredDate(before,{kind:'date',value:{year:2028,month:2,day:31}});assert.equal(leap.value.preferredDate,'2028-02-29');assert.equal(leap.value.dayRule,31);
+ const clicked=syncMonthlyPreferredDate(typed.value,{kind:'date',value:'2027-02-28'});assert.equal(clicked.value.dayRule,28);
+ const last=syncMonthlyPreferredDate({...before,dayRule:'last'},{kind:'date',value:{year:2027,month:2,day:28}});assert.equal(last.value.dayRule,'last');
+ assert.deepEqual(before,{version:'2.0.0',kind:'MONTHLY',dayRule:15,preferredDate:''});
+});
 test('C26 14/21-day recurrences use actual Gregorian intervals, with optional-anchor unresolved distinct from legacy cycles',()=>{
  const input={year:2026,month:11,mode:'FIXED',quantity:'1',calendarPolicy:{kind:'UNADJUSTED'}};
  assert.deepEqual(calendarForecast({...input,schedule:{kind:'INTERVAL_DAYS',intervalDays:14,anchorDate:'2026-11-01'}}).normalized.dates,['2026-11-01','2026-11-15','2026-11-29']);

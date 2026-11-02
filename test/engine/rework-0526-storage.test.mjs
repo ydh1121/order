@@ -90,3 +90,13 @@ test('C26 dormant cadence metadata cannot block FLEX, while each original owner 
  const projected=projectStoredPayload(data);assert.equal(projected.allocations[0].cadence.intervalDays,14);assert.equal(projected.allocations[0].q4Review.activeRepeat.cadence.intervalDays,21);
  data.allocations[0].mode='FIXED';assert.throws(()=>projectStoredPayload(data));
 });
+test('C26 clearing monthly rule retains chosen anchor in inactive FLEX/ONCE drafts without blocking save',async()=>{
+ for(const mode of ['FLEX','ONCE']){
+  const data=legacy(),cadence=monthly('','2026-11-30');data.allocations[0].mode=mode;data.allocations[0].q4Review={version:'0460',draft:{mode:'FIXED',repeat:{period:'매월',date:'',cadence}},common:{repeat:{period:'매월',date:'',cadence}}};
+  const original=structuredClone(data),projected=projectStoredPayload(data);assert.deepEqual(projected,data);assert.deepEqual(data,original);
+  const env=setup(),saved=await env.api.commit(projected,options(await env.api.load()));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);assert.deepEqual((await setup(env.local,env.lock).api.load()).data,projected);
+  assert.equal(saved.data.allocations[0].q4Review.draft.repeat.cadence.dayRule,'');assert.equal(saved.data.allocations[0].q4Review.draft.repeat.cadence.preferredDate,'2026-11-30');
+  const active=structuredClone(data);active.allocations[0].mode='FIXED';active.allocations[0].cadence=cadence;assert.throws(()=>projectStoredPayload(active));
+  for(const invalidDate of ['2026-02-30','2026-20-01','not-a-date',20261130]){const invalid=structuredClone(data);invalid.allocations[0].q4Review.draft.repeat.cadence.preferredDate=invalidDate;assert.throws(()=>projectStoredPayload(invalid));}
+ }
+});

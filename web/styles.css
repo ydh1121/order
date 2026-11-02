@@ -642,7 +642,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 @media(prefers-reduced-motion:reduce){.q4-regular-dialog,.q4-advanced details::details-content,.q4-regular-dialog .q4-fold-icon,.q4-regular-dialog .q4-combo-menu,.q4-regular-dialog .q4-check-icon{transition:none!important;animation:none!important}.q4-regular-dialog .q4-week-body{animation:none!important}}
 
 /* Narrow legacy field feedback: only targeted visible inputs/groups, no accordion shake. */
-#q2-lines input[aria-invalid=true],#site-editor button[aria-invalid=true],#site-editor input[aria-invalid=true]{border-color:var(--ui-danger);box-shadow:none}
+#q2-lines input[aria-invalid=true],#site-editor button[aria-invalid=true],#site-editor input[aria-invalid=true]{border-color:var(--ui-danger)}
 .legacy-error-shake{animation:q4-field-shake .25s ease-in-out 1}
 @media(prefers-reduced-motion:reduce){.legacy-error-shake{animation:none!important}}
 
@@ -1239,7 +1239,7 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 @keyframes qaShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-3px)}40%,80%{transform:translateX(3px)}}
 @media (prefers-reduced-motion:reduce){.q4-regular-dialog .qa-shake{animation:none!important}
 .q4-regular-dialog .qa-site-parent,.q4-regular-dialog .qa-site-child,.q4-regular-dialog .qa-site-parent .t-acc-chevron,.q4-regular-dialog .qa-site-child .t-acc-chevron{transition:none!important}}
-@media (max-width:359px){.q4-regular-dialog .qa-var-range{grid-template-columns:1fr}
+@media (max-width:359px){.q4-regular-dialog .qa-var-range:not(.ui-field-pair){grid-template-columns:1fr}
 .q4-regular-dialog .qa-site-parent-body{padding:0 7px 9px}
 .q4-regular-dialog .qa-site-child-body{padding:1px 10px 12px}}
 .q4-regular-dialog .qa-form-section{display:grid;min-width:0;gap:var(--ui-field-control-gap);}
@@ -1254,9 +1254,9 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-field>input,.q4-regular-dialog .qa-field>textarea{height:44px;min-width:0;width:100%;border:1px solid #d3dce5;border-radius:9px;padding:9px 11px;font:inherit;background:#fff;color:var(--ink)}
 .q4-regular-dialog .qa-field>textarea{height:88px;resize:vertical}
 .q4-regular-dialog .qa-field>.qa-help-inline{margin:0;font-weight:var(--type-weight-body);}
-.q4-regular-dialog .qa-quantity-support{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-gap-dependent) var(--ui-field-nested-gap);min-width:0;margin:0;color:var(--text-secondary);font-size:var(--type-meta);font-weight:var(--type-weight-body);line-height:var(--info-line-height)}
+.q4-regular-dialog .qa-quantity-support{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-gap-dependent);min-width:0;margin:0;color:var(--text-secondary);font-size:var(--type-meta);font-weight:var(--type-weight-body);line-height:var(--info-line-height)}
 .q4-regular-dialog .qa-quantity-support strong{font-weight:var(--type-weight-field)}
-.q4-regular-dialog .qa-quantity-support span{font-weight:var(--type-weight-body)}
+.q4-regular-dialog .qa-quantity-support span{font-weight:var(--type-weight-body);white-space:nowrap}
 .q4-regular-dialog .qa-inline-pair:has(>.qa-frequency-field){align-items:end}
 .q4-regular-dialog .qa-field>.qa-readonly-control{background:var(--gray);font-size:var(--ui-input-type);line-height:var(--ui-input-leading);font-weight:var(--type-weight-body);font-variant-numeric:tabular-nums}
 .q4-regular-dialog .qa-planning-reference,.q4-regular-dialog .qa-delivery-proposal{display:grid;min-width:0;gap:var(--ui-gap-dependent)}
@@ -1295,7 +1295,7 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-close-hint[hidden]{display:none}
 .q4-regular-dialog .qa-form-section .ui-accordion__body{min-width:0}
 .q4-regular-dialog .qa-site-form .qa-var-range .qa-number{min-width:0}
-@media (max-width:340px){.q4-regular-dialog .qa-inline-pair,.q4-regular-dialog .qa-site-child .qa-var-range{grid-template-columns:1fr}
+@media (max-width:340px){.q4-regular-dialog .qa-inline-pair:not(.ui-field-pair),.q4-regular-dialog .qa-site-child .qa-var-range:not(.ui-field-pair){grid-template-columns:1fr}
 .q4-regular-dialog .qa-checks{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .q4-regular-dialog .qa-form-section{gap:var(--ui-field-control-gap);}
 .q4-regular-dialog .qa-site-form,.q4-regular-dialog .qa-site-child-body .qa-site-form{gap:var(--q1-control-gap)}
@@ -1619,7 +1619,8 @@ button,input,select,textarea{font-family:inherit}
    Semantic widths are stable across edits; long text gets the wide variant. */
 :root{--ui-input-row-height:2.75rem;--ui-input-number-size:var(--type-brand);--ui-input-field-width:13rem}
 :is(.numeric-field,.ui-input-field){--ui-field-preferred:var(--ui-input-field-width);display:grid;gap:var(--ui-field-control-gap);min-width:0;width:min(100%,var(--ui-field-preferred));align-content:start}
-:is(.numeric-field,.ui-input-field)>:is(label,.ui-field-title,.qa-label,.qa-site-label){display:block;margin:0;font-size:var(--ui-field-title-size);font-weight:var(--type-weight-field);line-height:1.4;color:var(--ui-title-color);overflow-wrap:anywhere}
+:is(.numeric-field,.ui-input-field)>:is(label,.ui-field-title,span.qa-label,.qa-site-label){display:block;margin:0;font-size:var(--ui-field-title-size);font-weight:var(--type-weight-field);line-height:1.4;color:var(--ui-title-color);overflow-wrap:anywhere}
+:is(.numeric-field,.ui-input-field)>.ui-field-title--dependent{font-weight:var(--type-weight-body)}
 .ui-input-field[data-field-size="short"]{--ui-field-preferred:9rem}
 .ui-input-field[data-field-size="date"]{--ui-field-preferred:18rem}
 .ui-input-field[data-field-size="name"]{--ui-field-preferred:18rem}
@@ -1627,8 +1628,10 @@ button,input,select,textarea{font-family:inherit}
 .ui-input-field[data-field-size="phone"]{--ui-field-preferred:18rem}
 .ui-input-field[data-field-size="wide"]{--ui-field-preferred:100%}
 :is(.ui-field-pair,.qa-inline-pair,.qa-var-range){align-items:start}
-.ui-field-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-field-nested-gap);min-width:0;width:min(100%,calc(2 * var(--ui-input-field-width) + var(--ui-field-nested-gap)))}
+.ui-field-pair{display:grid;align-items:end;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-field-nested-gap);min-width:0;width:min(100%,calc(2 * var(--ui-input-field-width) + var(--ui-field-nested-gap)))}
 .ui-field-pair>.ui-input-field{width:100%}
+.ui-input-field:has(>.ui-field-support){width:100%}
+.ui-input-field:has(>.ui-field-support)>.input-unit{width:min(100%,var(--ui-field-preferred))}
 :is(.input-unit,.ui-input-control,.ui-input-field .qa-combo-trigger,.ui-input-field .qa-date-anchor,.ui-input-field .ui-phone-shell){box-sizing:border-box;min-width:0;max-width:100%;min-height:calc(var(--ui-input-row-height) + 1px);border:0;border-bottom:1px solid var(--ui-border);border-radius:0;background:#fff;padding:0;box-shadow:none;color:var(--text-primary);font-size:var(--ui-input-type);line-height:var(--ui-input-leading)}
 .input-unit{display:flex;align-items:center;gap:.375rem;width:100%}
 .input-unit>:is(input,.ui-input-value){display:block;flex:1;min-width:0;width:100%;height:var(--ui-input-row-height);margin:0;padding:0;border:0;border-radius:0;background:transparent;outline:none;box-shadow:none;font-size:var(--ui-input-number-size);font-weight:750;line-height:1.5;letter-spacing:-.045em;color:var(--ink);font-variant-numeric:tabular-nums;appearance:textfield}
@@ -1641,14 +1644,14 @@ textarea.ui-input-control{min-height:5.5rem;resize:vertical;padding-block:.5rem}
 :is(.input-unit,.ui-input-control,.ui-input-field .qa-combo-trigger,.ui-input-field .qa-date-anchor,.ui-input-field .ui-phone-shell):is(:focus,:focus-within){border-bottom-color:var(--ui-input-focus);outline:0;box-shadow:inset 0 -1px 0 var(--ui-input-focus)}
 :is(.input-unit,.ui-input-field .qa-date-anchor,.ui-input-field .ui-phone-shell) input:focus{border:0;outline:none;box-shadow:none;background:transparent}
 :is(.input-unit,.ui-input-control,.ui-input-field .qa-combo-trigger,.ui-input-field .qa-date-anchor,.ui-input-field .ui-phone-shell):is([aria-invalid="true"],[data-order-invalid="true"],[data-date-error="true"]),.input-unit:has(input[aria-invalid="true"]){border-bottom-color:var(--ui-danger)}
-:is(.input-unit,.ui-input-control,.ui-input-field .qa-combo-trigger,.ui-input-field .qa-date-anchor,.ui-input-field .ui-phone-shell):is([aria-invalid="true"],[data-order-invalid="true"],[data-date-error="true"]):is(:focus,:focus-within),.input-unit:has(input[aria-invalid="true"]):focus-within{box-shadow:inset 0 -1px 0 var(--ui-danger)}
-:is(.numeric-field,.ui-input-field):is([data-order-invalid="true"],[data-error="true"])>:is(label,.ui-field-title,.qa-label,.qa-site-label){color:var(--ui-danger)}
+:is(.input-unit,.ui-input-control,.ui-input-field .qa-combo-trigger,.ui-input-field .qa-date-anchor,.ui-input-field .ui-phone-shell):is([aria-invalid="true"],[data-order-invalid="true"],[data-date-error="true"]):is(:focus,:focus-within),.input-unit:has(input[aria-invalid="true"]):focus-within{border-bottom-color:var(--ui-danger);box-shadow:inset 0 -1px 0 var(--ui-danger)}
+:is(.numeric-field,.ui-input-field):is([data-order-invalid="true"],[data-error="true"])>:is(label,.ui-field-title,span.qa-label,.qa-site-label){color:var(--ui-danger)}
 .ui-input-field .ui-phone-shell{padding-inline:0}
 .ui-input-field .qa-date-anchor{gap:var(--ui-action-gap)}
 .ui-input-field .qa-date-anchor .qa-date-segments{flex:1;min-width:0}
 .ui-input-field .qa-combo-trigger{padding-inline:.375rem}
 .ui-input-field .qa-readonly-control{background:transparent;color:var(--text-primary);opacity:1}
-@media(max-width:340px){.ui-field-pair{grid-template-columns:1fr}}
+
 
 @media(min-width:768px){:is(.numeric-field,.ui-input-field){--ui-field-title-size:var(--type-label)}}
 

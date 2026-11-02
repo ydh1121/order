@@ -388,7 +388,7 @@ window.OrderModalShell=Object.freeze((()=>{
   // Keep every native top-layer/backdrop and the page lock alive until both
   // presentation animations finish. Nested release still leaves its parent.
   if(immediate||less()){finish();return;}
-  fade(dialog,rec,Number(opacity)||1,0,time('--ui-modal-fade-close',150)).then(finish,()=>{});
+  const from=Number(opacity);fade(dialog,rec,Number.isFinite(from)?Math.max(0,Math.min(1,from)):1,0,time('--ui-modal-fade-close',150)).then(finish,()=>{});
  }
  let resizeFrame=0;const resizeViewport=()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{entries.forEach((r,d)=>{if(d.open&&!r.closing){viewport(d);if(r.variant==='editor')resize(d,null,{animate:false});else revealFocusedControl(d);}});});};
  window.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('resize',resizeViewport);window.visualViewport?.addEventListener('scroll',resizeViewport);

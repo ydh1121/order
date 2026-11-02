@@ -81,9 +81,13 @@ export function syncMonthlyPreferredDate(cadence,action){
   if(action.value==='')return syncMonthlyPreferredDate(next,{kind:'clear'});
   const selected=clampPreferredDate(action.value);
   if(!selected.valid)return failure('CADENCE_DATE_INVALID');
+  const requested=preferredDateParts(action.value);
   next.preferredDate=selected.value;
   const end=daysInMonth(selected.parts.year,selected.parts.month);
-  next.dayRule=next.dayRule==='last'&&selected.parts.day===end?'last':selected.parts.day;
+  // Directly typing 31 in February expresses a 31st-of-month rule even
+  // though the first visible date clamps to 28/29. A calendar click passes
+  // its actual valid day, so choosing another day still changes the rule.
+  next.dayRule=next.dayRule==='last'&&selected.parts.day===end?'last':Number(requested.day);
   return {valid:true,code:'VALID',value:next};
  }else if(action?.kind==='month'){
   if(!next.preferredDate)return {valid:true,code:'VALID',value:next};

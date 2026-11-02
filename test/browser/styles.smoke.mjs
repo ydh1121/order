@@ -90,7 +90,7 @@ function msg0521ShellDelta(before,after,options,delta){
 }
 // MSG0526 replaces box borders/padding with the existing Q2 underline owner.
 // Only geometry and these declared primitive properties may differ from c024.
-const fieldStyleDelta=new Set(['display','backgroundColor','borderTopColor','borderTopWidth','borderTopStyle','borderBottomColor','borderBottomWidth','borderBottomStyle','borderRadius','boxShadow','outlineColor','outlineStyle','outlineWidth','outlineOffset','fontSize','fontWeight','lineHeight','letterSpacing','paddingTop','paddingRight','paddingBottom','paddingLeft','marginTop','marginRight','marginBottom','marginLeft','columnGap','rowGap','gridTemplateColumns','gridTemplateRows','alignItems','minHeight','maxWidth']);
+const fieldStyleDelta=new Set(['display','color','backgroundColor','borderTopColor','borderTopWidth','borderTopStyle','borderBottomColor','borderBottomWidth','borderBottomStyle','borderRadius','boxShadow','outlineColor','outlineStyle','outlineWidth','outlineOffset','fontSize','fontWeight','lineHeight','letterSpacing','paddingTop','paddingRight','paddingBottom','paddingLeft','marginTop','marginRight','marginBottom','marginLeft','columnGap','rowGap','gridTemplateColumns','gridTemplateRows','alignItems','minHeight','maxWidth']);
 function msg0526FieldDelta(before,after,options,delta){
  if(options.kind!=='input')return false;
  const i=after.input,p=after['input-parent'],q3=options.owner==='q3';
@@ -103,7 +103,7 @@ function msg0526FieldDelta(before,after,options,delta){
  });
  const underline=q3?i:p;
  const expectedFocus=options.state==='focus-visible',expectedLine=options.invalid?'rgb(217, 45, 72)':expectedFocus?'rgb(49, 93, 222)':'rgb(203, 213, 220)';
- const baseline=near(i.rect.height,q3?45:44)&&i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&i.style.borderRadius==='0px'&&i.style.fontSize===(q3?'16px':'19px')&&i.style.fontWeight===(q3?'400':'750')&&underline.style.borderTopWidth==='0px'&&underline.style.borderBottomWidth==='1px'&&underline.style.borderBottomColor===expectedLine&&underline.style.backgroundColor==='rgb(255, 255, 255)';
+ const baseline=i.style.color==='rgb(32, 39, 42)'&&near(i.rect.height,q3?45:44)&&i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&i.style.borderRadius==='0px'&&i.style.fontSize===(q3?'16px':'19px')&&i.style.fontWeight===(q3?'400':'750')&&underline.style.borderTopWidth==='0px'&&underline.style.borderBottomWidth==='1px'&&underline.style.borderBottomColor===expectedLine&&underline.style.backgroundColor==='rgb(255, 255, 255)';
  const widthLimit=q3?288:208;
  return pathsAllowed&&baseline&&underline.rect.width<=widthLimit+.1&&underline.rect.width>=100&&(!q3?numericContract(after):true);
 }

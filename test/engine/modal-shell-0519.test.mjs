@@ -58,6 +58,11 @@ test('C26-01 desktop and mobile close wait for dialog AND native backdrop motion
  }
 });
 
+test('C26-01 rapid close preserves an opening opacity of zero instead of flashing fully visible',()=>{
+ const h=harness(),d=h.dialog('rapid');const computed=h.context.getComputedStyle;h.context.getComputedStyle=(el,pseudo)=>({...computed(el,pseudo),opacity:'0'});
+ h.shell.open(d);h.shell.close(d);for(const motion of h.animations.slice(-2))assert.equal(motion.keyframes[0].opacity,0);
+});
+
 test('C26-02 modal geometry role is independent of content motion variant',()=>{
  const h=harness({reduced:true}),compact=h.dialog('confirm'),selection=h.dialog('selection'),editor=h.dialog('editor');compact.classList.add('ui-compact-confirm');
  h.shell.open(compact);h.shell.open(selection,{variant:'copy'});h.shell.open(editor,{variant:'compact',role:'editor'});
