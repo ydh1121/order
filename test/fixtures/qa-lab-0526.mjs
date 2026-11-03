@@ -16,7 +16,7 @@ export function q4ComparisonFixture(kind='200'){
   return f;
  }
  if(kind==='legacy'){
-  f.allocations.forEach((a,i)=>{a.mode='FIXED';a.q4Review.profile='MIXED';const repeat={...a.q4Review.common.repeat,period:i?'4주':'2주',frequency:'2회',weeklyCheck:true,weekdays:{1:['월','목'],2:['화','금'],3:['월','목'],4:['화','금']},semantics:'per-week-v1'};a.q4Review.activeRepeat=structuredClone(repeat);a.q4Review.draft={mode:'FIXED',repeat:structuredClone(repeat),values:{base:'15'},process:'contact'};a.qty='15';});
+  f.allocations.forEach((a,i)=>{a.mode='FIXED';a.q4Review.profile='MIXED';const repeat={...a.q4Review.common.repeat,period:i?'4주':'2주',frequency:'2회',weeklyCheck:true,weekdays:{'1:월':true,'1:목':true,'2:화':true,'2:금':true,'3:월':true,'3:목':true,'4:화':true,'4:금':true},semantics:'per-week-v1'};a.q4Review.activeRepeat=structuredClone(repeat);a.q4Review.draft={mode:'FIXED',repeat:structuredClone(repeat),values:{base:'15'},process:'contact'};a.qty='15';});
   return f;
  }
  throw Error('QA_COMPARISON_FIXTURE_UNKNOWN');

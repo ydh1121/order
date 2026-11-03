@@ -11,10 +11,19 @@ import {buildQaLab,collectQaModules} from '../../scripts/build-qa-lab.mjs';
 import {buildQaComparison} from '../../scripts/build-qa-comparison.mjs';
 import {allocationFixture,syntheticDns,syntheticAddressResult} from '../fixtures/qa-lab.mjs';
 import {createAddressSearchService} from '../../web/address-service.mjs';
+import {projectStoredPayload} from '../../web/storage.mjs';
+import {q4ComparisonFixture} from '../fixtures/qa-lab-0526.mjs';
+import {quantityCases0528,dateCases0528,quantityFixture0528,dateFixture0528,contactFixture0528} from '../fixtures/qa-lab-0528.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const sha=source=>createHash('sha256').update(source).digest('hex');
 const decode=data=>Buffer.from(data.split(',')[1],'base64').toString('utf8');
+
+test('C28 every comparison seed satisfies the actual strict product schema without silently discarding legacy weekdays',()=>{
+ const inputs=[...['200','5000','known','legacy'].map(id=>[id,q4ComparisonFixture(id)]),...quantityCases0528.map(c=>[c.id,quantityFixture0528(c.id)]),...dateCases0528.map(c=>[c.id,dateFixture0528(c.id)]),['contacts20',contactFixture0528(20)]];
+ for(const [id,data]of inputs){const expected=structuredClone(data);for(const site of expected.locations){delete site.status;delete site.mailboxVerified;}assert.deepEqual(projectStoredPayload(data),expected,id+' must seed the actual storage adapter; volatile validation flags are deliberately omitted');}
+ const legacy=q4ComparisonFixture('legacy');assert.equal(legacy.allocations[0].q4Review.activeRepeat.period,'2주');assert.equal(legacy.allocations[1].q4Review.activeRepeat.period,'4주');assert.equal(legacy.allocations[0].q4Review.activeRepeat.weekdays['1:월'],true);assert.equal(legacy.allocations[0].q4Review.activeRepeat.semantics,'per-week-v1');
+});
 
 test('S05 local LAB reuses a fixed Git product graph and isolates every controlled dependency',async t=>{
  const directory=await mkdtemp(resolve(tmpdir(),'order-qa-lab-test-'));
@@ -41,6 +50,7 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
    assert.equal(decode(imports['order-qa/source/'+path]),expected,path);
   }
   for(const source of Object.values(imports))parse(decode(source),{ecmaVersion:2024,sourceType:'module'});
+  for(const match of result.html.matchAll(/<script>([\s\S]*?)<\/script>/g))parse(match[1],{ecmaVersion:2024,sourceType:'script'});
  });
 
  await t.test('LAB runtime uses the actual storage adapter with memory only, one-shot failure and revision conflict',async()=>{
@@ -74,6 +84,9 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   element('qa-lab-address').value='empty';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'EMPTY','mode change clears previous synthetic cache');
   element('qa-lab-address').value='unavailable';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'UNAVAILABLE');address.close();
   await element('qa-lab-restart').listeners.click();assert.equal(location.hash,'');assert.equal(reloads,1);
+  const seedWindow={name:'frame-before',__orderQaEnvelope:{state:allocationFixture(),caseId:'200',seedGeneration:2}};
+  const seeded=await new AsyncFunction('createBrowserStorage','createAddressSearchService','allocationFixture','syntheticDns','syntheticAddressResult','document','location','crypto','window',source+'\nreturn {createQaStorage};')(createBrowserStorage,createAddressSearchService,allocationFixture,syntheticDns,syntheticAddressResult,document,location,webcrypto,seedWindow);
+  assert.deepEqual((await seeded.createQaStorage().load()).data,projectStoredPayload(seedWindow.__orderQaEnvelope.state),'explicit iframe envelope seeds the real storage even when Chrome retains a different window.name');
  });
 
  await t.test('comparison keeps two exact graphs, explicit identical fixtures and isolated memory',async()=>{
@@ -83,7 +96,8 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   assert.equal(compared.identity.storage,'TWO_ISOLATED_MEMORY_STORES');
   assert.equal(compared.identity.network,'NO_EXTERNAL_NETWORK');
   assert.match(compared.html,/id="frame-before"/);assert.match(compared.html,/id="frame-after"/);
-  assert.match(compared.html,/order-qa-seed:/);assert.match(compared.html,/connect-src 'none'/);
+  assert.match(compared.html,/order-qa-envelope:/);assert.match(compared.html,/connect-src 'none'/);
+  for(const match of compared.html.matchAll(/<script>([\s\S]*?)<\/script>/g))parse(match[1],{ecmaVersion:2024,sourceType:'script'});
   assert.doesNotMatch(compared.html,/<script[^>]+src=|<link[^>]+href=/i);
   await assert.rejects(()=>buildQaComparison({root:directory,baselineRoot:directory,now,outputPath:resolve(directory,'dist/compare.html')}),/QA_OUTPUT_MUST_NOT_BE_DIST/);
  });

@@ -40,11 +40,18 @@ export function monthlyDayIntent(input) {
 
 const positivePackage = value => {const number=exact(value);if(number.n<=0n||number.d!==1n)throw Error('INTEGER_PACKAGE_REQUIRED');return number;};
 const strictRange=value=>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['min','max'].includes(key)))throw Error('QUANTITY_RANGE_INVALID');return value;};
-const supportResult=(input,status,reasonCodes,normalized=null)=>{let raw=null;try{raw=structuredClone(input);JSON.stringify(raw);}catch{status='INVALID';reasonCodes=['SUPPORT_INPUT_NOT_SERIALIZABLE'];normalized=null;raw=null;}return engineResult({raw,status,reasonCodes,normalized,field:'deliverySupport',ruleVersion:'delivery-support-1.1.0',dataVersion:null,evidence:{interpretation:'NOMINAL_USER_PLAN',actualDeliverySchedule:false,storageCommitPerformed:false}});};
+const supportResult=(input,status,reasonCodes,normalized=null)=>{let raw=null;try{raw=structuredClone(input);JSON.stringify(raw);}catch{status='INVALID';reasonCodes=['SUPPORT_INPUT_NOT_SERIALIZABLE'];normalized=null;raw=null;}return engineResult({raw,status,reasonCodes,normalized,field:'deliverySupport',ruleVersion:'delivery-support-1.2.0',dataVersion:null,evidence:{interpretation:'NOMINAL_USER_PLAN',actualDeliverySchedule:false,storageCommitPerformed:false}});};
+/** Injected Seoul civil date: no clock, timezone guessing or nominal 30-day month. */
+export function orderMonthContext(asOfLocalDate){
+  if(typeof asOfLocalDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(asOfLocalDate))return null;
+  const [year,month,day]=asOfLocalDate.split('-').map(Number),last=monthlyDayIntent({year,month,day:'last'});
+  if(last.status!=='VALID'||day<1||day>last.normalized.resolvedDay)return null;
+  return {asOfLocalDate,year,month,daysInMonth:last.normalized.resolvedDay};
+}
 /** Exact long-run ratios and an independent integer display projection; never scheduled visits. */
 export function demandFrequency(input){
   try{
-    if(!input||Object.keys(input).some(key=>!['monthlyPlan','quantity','range'].includes(key)))throw Error('FREQUENCY_INPUT_INVALID');
+    if(!input||Object.keys(input).some(key=>!['monthlyPlan','quantity','range','asOfLocalDate'].includes(key)))throw Error('FREQUENCY_INPUT_INVALID');
     const monthly=positivePackage(input.monthlyPlan),quantity=positivePackage(input.quantity);
     let low=quantity,high=quantity;
     if(input.range!==undefined){strictRange(input.range);low=positivePackage(input.range.min);high=positivePackage(input.range.max);if(compare(low,high)>0||compare(quantity,low)<0||compare(quantity,high)>0)throw Error('QUANTITY_RANGE_INVALID');}
@@ -53,8 +60,57 @@ export function demandFrequency(input){
     const displayLow=atLeastOne(round(variable?lower:average,{scale:0,mode:variable?'FLOOR':'HALF_UP'}).decimal);
     const roundedHigh=atLeastOne(round(variable?upper:average,{scale:0,mode:variable?'CEIL':'HALF_UP'}).decimal);
     const displayHigh=BigInt(roundedHigh)<BigInt(displayLow)?displayLow:roundedHigh;
-    return supportResult(input,'VALID',[],{monthlyPlan:toJSON(monthly),quantity:toJSON(quantity),average:toJSON(average),low:toJSON(lower),high:toJSON(upper),range:input.range?{min:toJSON(low),max:toJSON(high)}:null,display:{low:displayLow,high:displayHigh,rounding:variable?'FLOOR_CEIL_MIN_1':'HALF_UP_MIN_1'},meaning:'LONG_TERM_MONTHLY_AVERAGE'});
+    const month=input.asOfLocalDate===undefined?null:orderMonthContext(input.asOfLocalDate);
+    if(input.asOfLocalDate!==undefined&&!month)throw Error('AS_OF_LOCAL_DATE_INVALID');
+    const representativeCount=atLeastOne(round(average,{scale:0,mode:'HALF_UP'}).decimal);
+    const daily=!!month&&!variable&&compare(average,exact(month.daysInMonth))===0;
+    const representative={exact:toJSON(average),count:representativeCount,kind:daily?'DAILY':variable||average.d!==1n?'APPROX':'EXACT',variable,month};
+    // low/high remain a diagnostic range. Only representative M/Q owns the
+    // customer frequency; display rounding never changes Q, a/b or a calendar.
+    return supportResult(input,'VALID',[],{monthlyPlan:toJSON(monthly),quantity:toJSON(quantity),average:toJSON(average),low:toJSON(lower),high:toJSON(upper),range:input.range?{min:toJSON(low),max:toJSON(high)}:null,display:{low:displayLow,high:displayHigh,rounding:variable?'FLOOR_CEIL_MIN_1':'HALF_UP_MIN_1'},representative,meaning:'LONG_TERM_MONTHLY_AVERAGE'});
   }catch(error){return supportResult(input,'INVALID',[error.message]);}
+}
+/** Current transaction bounds. FLEX limits its representative frequency to D;
+ * FIXED has no daily-frequency floor. This is never a bound on variable max b. */
+export function orderQuantityBounds(input){
+  try{
+    if(!input||Object.keys(input).some(key=>!['mode','monthlyPlan','asOfLocalDate'].includes(key))||!['FLEX','FIXED'].includes(input.mode))throw Error('ORDER_QUANTITY_MODE_INVALID');
+    const monthly=positivePackage(input.monthlyPlan),month=orderMonthContext(input.asOfLocalDate);
+    if(!month)throw Error('AS_OF_LOCAL_DATE_INVALID');
+    const minimum=input.mode==='FLEX'?round(divide(monthly,exact(month.daysInMonth)),{scale:0,mode:'CEIL'}).decimal:'1';
+    return supportResult(input,'VALID',[],{min:minimum,max:monthly.n.toString(),mode:input.mode,month});
+  }catch(error){return supportResult(input,'INVALID',[error.message]);}
+}
+/** Reconcile only the directly edited per-order field. Draft refresh/restore
+ * may inspect bounds but cannot rewrite quantities or schedule semantics. */
+export function orderQuantityInput(input={}){
+  const {mode,monthlyPlan,quantity,asOfLocalDate,phase='input',direct=true,composing=false}=input;
+  const raw=String(quantity??''),bounds=orderQuantityBounds({mode,monthlyPlan,asOfLocalDate});
+  const base={valid:false,quantity:raw,min:bounds.normalized?.min??null,max:bounds.normalized?.max??null,changed:false,forceMonthly:false,withinBounds:false,month:bounds.normalized?.month??null,reason:null};
+  if(bounds.status!=='VALID')return {...base,reason:bounds.reasonCodes[0]};
+  if(composing||raw==='')return {...base,reason:'QUANTITY_EDITING'};
+  if(!/^\d+$/.test(raw)||!['input','complete','commit'].includes(phase))return {...base,reason:'INTEGER_PACKAGE_REQUIRED'};
+  const parsed=BigInt(raw),minimum=BigInt(base.min),maximum=BigInt(base.max),over=parsed>maximum,under=parsed<minimum;
+  let value=parsed,reason=null;
+  if(direct&&over){value=maximum;reason='ORDER_QUANTITY_MAXIMUM';}
+  else if(under&&(direct&&phase==='complete'||phase==='commit')){value=minimum;reason='ORDER_QUANTITY_MINIMUM';}
+  const withinBounds=value>=minimum&&value<=maximum;
+  return {...base,valid:withinBounds,quantity:value===parsed?raw:value.toString(),changed:value!==parsed,forceMonthly:direct&&mode==='FIXED'&&over,withinBounds,reason:reason??(!withinBounds?'ORDER_QUANTITY_OUTSIDE_BOUNDS':null)};
+}
+/** Read-only restoration/completion gate. Historical records without an input
+ * month still have Q<=M, but cannot acquire an invented month-dependent floor.
+ * The stored month, not today's wall clock, owns a reviewed record's floor. */
+export function inspectStoredOrderQuantity(input={}){
+  const {mode,monthlyPlan,quantity,asOfLocalDate}=input;
+  const base={valid:false,quantity:String(quantity??''),min:null,max:null,month:null,lowerBasis:'UNSPECIFIED',changed:false,forceMonthly:false,reason:null};
+  try{
+    if(!['FLEX','FIXED'].includes(mode))throw Error('ORDER_QUANTITY_MODE_INVALID');
+    const monthly=positivePackage(monthlyPlan),value=positivePackage(quantity);
+    let minimum='1',month=null;
+    if(asOfLocalDate!==undefined){const bound=orderQuantityBounds({mode,monthlyPlan,asOfLocalDate});if(bound.status!=='VALID')throw Error(bound.reasonCodes[0]);minimum=bound.normalized.min;month=bound.normalized.month;}
+    const over=value.n>monthly.n,under=value.n<BigInt(minimum);
+    return {...base,valid:!over&&!under,min:minimum,max:monthly.n.toString(),month,lowerBasis:mode==='FIXED'?'POSITIVE_INTEGER':month?'STORED_INPUT_MONTH':'UNSPECIFIED',reason:over?'ORDER_QUANTITY_MAXIMUM':under?'ORDER_QUANTITY_MINIMUM':null};
+  }catch(error){return {...base,reason:error.message};}
 }
 /** Integer package plan across an explicit number of visits; caller owns calendar context. */
 export function fixedQuantityPlan(input){

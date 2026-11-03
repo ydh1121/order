@@ -15,6 +15,7 @@ const key='order_q1_q4_v1';
 const checks=[],pageErrors=[],network=[],externalBlocked=[],transportErrors=[];
 const report={schemaVersion:1,classification:'ACTUAL_CHROMIUM_LOCAL_HTTP_PRODUCT_DOM_WITH_SYNTHETIC_DNS_AND_TEST_CONTACTS',
   browser:null,build:null,checks,pageErrors,network,externalBlocked,transportErrors,
+  supersededExpectations:[{id:'P08',by:'MSG0528 C28-13/14',before:'Direct B150 after A60 retains 210 and blocks confirmation',current:'Completed direct B input is bounded to140; draft/cancel writes remain0. Already stored manual excess is preserved and blocked separately by N15.'}],
   notCovered:['LIVE_DNS','REAL_ADDRESS_PROVIDER','MAILBOX_OWNERSHIP','REAL_PRICE','ORDER_OR_PAYMENT','WINDOWS','IPHONE','CANONICAL_HTTPS_DEPLOYMENT'],status:'RUNNING'};
 let server,browser,page,base;
 const mime={'.html':'text/html; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml'};
@@ -142,15 +143,16 @@ try{
   await page.locator('[data-combo="date"]').click();await page.locator('[data-combo-choice="date"][data-value="말일"]').click();assert.equal(await date.inputValue(),'말일');
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
  });
- await check('P08_Q4_MULTISITE_DERIVED_REMAINDER_EXCESS_CANCEL',async()=>{
+ await check('P08_C28_Q4_MULTISITE_DERIVED_REMAINDER_DIRECT_CAP_CANCEL',async()=>{
   const fixture=multiSiteFixture();await seedDurable(fixture);await page.reload();await emailReady();
   const prior=(await persisted()).allocations;await editAllocation();
   assert.equal(await page.locator('[data-qty="0:monthly"]').inputValue(),'50');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'150');
   assert.equal(await page.locator('[data-field-group="1-monthly"]').getAttribute('data-quantity-source'),'derived');
   assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/남은 수량 :.*150판/);assert.match(await page.locator('[data-monthly-feedback="0"]').innerText(),/전체 수량 :.*총200판/);
   await allocationSite(0);await page.locator('[data-qty="0:monthly"]').fill('60');assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140');assert.deepEqual((await persisted()).allocations,prior);
-  await allocationSite(1);await page.locator('[data-qty="1:monthly"]').fill('150');await page.locator('#q4-regular-save').click();
-  assert.equal(await page.locator('#q4-regular-dialog').evaluate(el=>el.open),true,'210 package plans cannot overwrite a 200-package plan when both demands are unknown');assert.deepEqual((await persisted()).allocations,prior);
+  await allocationSite(1);await page.locator('[data-qty="1:monthly"]').fill('150');
+  assert.equal(await page.locator('[data-qty="1:monthly"]').inputValue(),'140','MSG0528 bounds direct B input by the same 200-package budget less manual A60');
+  assert.deepEqual(await page.evaluate(()=>OrderQ4Review.draft.values.map(v=>v.monthly)),['60','140']);assert.equal(await page.locator('#q4-regular-dialog').evaluate(el=>el.open),true);assert.deepEqual((await persisted()).allocations,prior,'upper correction remains an unconfirmed parent draft');
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
  });
  await check('P09_Q4_MULTISITE_CONFIRM_DERIVED_SAVE_RELOAD',async()=>{

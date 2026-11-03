@@ -322,6 +322,66 @@
           "durableWrites": 1
         }
       ]
+    },
+    {
+      "id": "MSG0528_Q1_Q4_REWORK",
+      "route": "/#/form",
+      "contract": "STORAGE_V6_CADENCE_V2_1_START_DATE_V1",
+      "supersedes": [
+        "MSG0526 non-egg input appearance",
+        "MSG0526 preferred-date year window",
+        "MSG0526 frequency range presentation"
+      ],
+      "actions": [
+        {
+          "id": "save-checkpoint",
+          "type": "body-progress-checkpoint",
+          "requires": "same durable owner/revision/lock/receipt; incomplete body permitted; private popup excluded; final gate unchanged",
+          "durableWrites": "1; duplicate verified receipt 0; conflict/cancel 0"
+        },
+        {
+          "id": "add-line/cancel-sku",
+          "type": "new-sku-private-draft",
+          "requires": "new SKU explicit cancellation closes without discard dialog; existing edit protection remains",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-contact-copy/data-copy-apply",
+          "type": "contact-select-review-confirm",
+          "requires": "editor role; stable target snapshots; select/review/cancel 0, final confirm 1; address untouched",
+          "durableWrites": "0/1"
+        },
+        {
+          "id": "q4-assignment-next",
+          "type": "confirm-parent-connection-draft",
+          "requires": "confirm role; no nested site edit; parent cancel restores selection",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-qty",
+          "type": "shared-package-budget-and-exact-quantity",
+          "requires": "canonical digit string separate from grouped display; FLEX/FIXED common SKU budget; ONCE excluded; direct intent and Undo distinguished",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-frequency-output",
+          "type": "readonly-representative-estimate",
+          "requires": "exact M/Q; HALF_UP presentation; exact D and no variable width alone means daily; fixed editing asOf",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-date-part/data-calendar-day",
+          "type": "optional-new-start-estimate",
+          "requires": "3 complete preparation business days then eligible candidate through next-month last eligible day; official 2026/2027 snapshot; nominal rule distinct from actual first date; unverified years unavailable",
+          "durableWrites": 0
+        },
+        {
+          "id": "q4-regular-save",
+          "type": "confirm-current-parent-draft",
+          "requires": "same quantity/date/schema contract, latest draft check and stale guard; manual min/max preserved",
+          "durableWrites": "1; duplicate/stale/cancel 0"
+        }
+      ]
     }
   ]
 }

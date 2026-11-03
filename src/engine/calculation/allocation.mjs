@@ -1,7 +1,7 @@
 import {engineResult} from '../contracts/result.mjs';
 import {exact,fromRatio,add,subtract,multiply,divide,compare,toJSON,round} from './exact.mjs';
 
-export const ALLOCATION_RULE_VERSION='monthly-allocation-2.1.0';
+export const ALLOCATION_RULE_VERSION='monthly-allocation-2.2.0';
 const zero=()=>exact(0);
 const id=value=>typeof value==='string'&&value.length>0&&value.length<=200;
 const copy=value=>structuredClone(value);
@@ -218,6 +218,31 @@ export function evaluateAllocation({state,lineId,draft}={}){
     const reasonCodes=residual.n<0n?['MONTHLY_ALLOCATION_EXCEEDED']:minFailures.length?['LOCATION_MINIMUM_UNSATISFIED']:proposals.length?['DERIVED_PROPOSAL_AWAITING_CONFIRMATION']:unfilled.length?['MONTHLY_ALLOCATION_INCOMPLETE']:projectedResidual.n>0n?['MONTHLY_ALLOCATION_SHORT']:[];
     const status=residual.n<0n||minFailures.length?'INVALID':reasonCodes.length?'INCOMPLETE':'VALID';
     return out(status,reasonCodes,{lineId,specVersion:line.specVersion,totalRaw:copy(line.total),baseUnit:line.unitTable.baseUnit,totalBase:toJSON(total.base),fixedSum:toJSON(fixedSum),residualBeforeSuggestions:toJSON(residual),proposals,projectedResidual:toJSON(projectedResidual),excess:toJSON(residual.n<0n?subtract(zero(),residual):zero()),sites,projectedComplete,storedComplete,canConfirm:projectedComplete},{dataVersion:line.unitTable.version,evidence:{storageCommitPerformed:false,scope,monthlyOnly:true,deliveryQuantityModified:false}});
+  }catch(error){return out('INVALID',[error.message]);}
+}
+
+/** Bound the directly edited package plan using the same M/D/P projection as
+ * the residual. The target's unfinished text cannot poison its own bound;
+ * another site's invalid/IME text still makes the bound unavailable. Derived
+ * residuals remain proposals, and known D keeps its independent ceil(D/size). */
+export function allocationInputLimit({state,lineId,draft,locationId}={}){
+  try{
+    const line=shape(state,lineId),checked=draftShape(draft,line);
+    if(!packagePolicy(line)||!checked.scope.includes(locationId))fail('PACKAGE_INPUT_SCOPE_REQUIRED');
+    const projected={scope:copy(checked.scope),entries:copy(checked.entries)};
+    const target=projected.entries.find(row=>row.locationId===locationId);
+    if(!target||target.mode==='ONCE')fail('MONTHLY_INPUT_NOT_APPLICABLE');
+    target.quantity={raw:'',unit:line.monthlyPlanning.unit};target.source='derived';
+    if(target.demandOrigin!=='known'){target.demand=null;target.demandOrigin='unknown';target.demandSource='manual';}
+    const evaluation=evaluateAllocation({state,lineId,draft:projected}),row=evaluation.normalized?.sites?.find(site=>site.locationId===locationId);
+    // A known measured demand reserves D independently of the editable package
+    // plan P. Preserve its existing plan policy; ceil(D/size) is not a new hard
+    // maximum. Generic package-plan rows still share the finite SKU budget.
+    if(row?.demandOrigin==='known')return out('VALID',[],{locationId,min:'1',max:null,unit:line.monthlyPlanning.unit,draftRevision:draft?.revision??null},{evidence:{storageCommitPerformed:false,knownDemandPreserved:true,packagePlanHardMaximum:false}});
+    if(!row?.currentMaximumPacks) return out('UNAVAILABLE',['MONTHLY_INPUT_LIMIT_UNRESOLVED'],null,{evaluation});
+    const maximum=fromRatio(row.currentMaximumPacks);
+    if(maximum.n<1n)return out('UNAVAILABLE',['MONTHLY_INPUT_NO_CAPACITY'],{locationId,min:'1',max:maximum.n.toString(),unit:line.monthlyPlanning.unit,draftRevision:draft?.revision??null});
+    return out('VALID',[],{locationId,min:'1',max:maximum.n.toString(),unit:line.monthlyPlanning.unit,draftRevision:draft?.revision??null},{evidence:{storageCommitPerformed:false,knownDemandPreserved:true,derivedReservationsExcluded:true}});
   }catch(error){return out('INVALID',[error.message]);}
 }
 

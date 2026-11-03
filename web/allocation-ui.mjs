@@ -2,6 +2,7 @@ import {quantityUnit as monthlyQuantityUnit,baseQuantity,quantityFactor,exactDis
 import {exact,fromRatio,multiply,toJSON,divide,round} from '../src/engine/calculation/exact.mjs';
 export {monthlyQuantityUnit};
 import {evaluateAllocation,beginAllocationEdit,editAllocation,confirmAllocation,cancelAllocation,evaluateOnceAllocation} from '../src/browser/engine.mjs';
+import {allocationInputLimit} from '../src/engine/calculation/allocation.mjs';
 
 // The UI owns display and persistence. This adapter only projects stable IDs into
 // the shared exact engine and returns a private, confirmable working copy.
@@ -80,6 +81,11 @@ export function createMonthlyAllocationDraft(context,{readCurrentContext=()=>con
  let session=opened.session,closed=false,confirmed=null,cachedEvaluation=null;
  const apply=operation=>{if(closed||!session)return {status:'INVALID',reasonCodes:['ALLOCATION_SESSION_INVALID']};const result=editAllocation(state,session,operation);if(result.status==='VALID'){session=result.session;confirmed=null;cachedEvaluation=null;}return result;};
  const evaluate=()=>{if(!cachedEvaluation)cachedEvaluation=session?withIssues(evaluateAllocation({state,lineId:initial.line.id,draft:session})):withIssues(opened);return clone(cachedEvaluation);};
+ function inputLimit(locationId){
+  if(closed||!session||canonical(readCurrentContext())!==baseline)return {valid:false,min:null,max:null,revision:session?.revision??null,reason:'ALLOCATION_SNAPSHOT_STALE'};
+  const result=allocationInputLimit({state,lineId:initial.line.id,draft:session,locationId});
+  return {valid:result.status==='VALID',min:result.normalized?.min??null,max:result.normalized?.max??null,revision:session.revision,reason:result.reasonCodes[0]??null,result};
+ }
  function refresh(){
   if(session&&!session.entries.some(entry=>entry.quantity.composing===true))apply({type:'refreshDerived'});
   return evaluate();
@@ -105,7 +111,15 @@ export function createMonthlyAllocationDraft(context,{readCurrentContext=()=>con
   confirmed={ok:true,allocations:committed,result,payload};return clone(confirmed);
  }
  refresh();
- return Object.freeze({evaluate,refresh,serialize,confirm,setMode(locationId,mode){const result=apply({type:'setMode',locationId,mode});if(result.status==='VALID')refresh();return result;},set(locationId,raw,{composing=false}={}){const entry=session?.entries.find(row=>row.locationId===locationId);const result=apply({type:'set',locationId,quantity:{raw:String(raw),unit:entry?.quantity.unit,composing,phase:'editing'}});if(result.status==='VALID'){refresh();if(String(raw)===''&&!composing)apply({type:'set',locationId,quantity:{raw:'',unit:entry?.quantity.unit,phase:'editing'}});}return evaluate();},clone(from,targets){const result=apply({type:'clone',from,targets});if(result.status==='VALID')refresh();return result;},cancel(){closed=true;return session?cancelAllocation(state,session):opened;},get rows(){return clone(session?.entries||[]);},get session(){return clone(session);},get closed(){return closed;}});
+ return Object.freeze({evaluate,refresh,serialize,confirm,inputLimit,setMode(locationId,mode){const result=apply({type:'setMode',locationId,mode});if(result.status==='VALID')refresh();return result;},set(locationId,raw,{composing=false,complete=false,expectedRevision}={}){
+  const requested=String(raw),limit=inputLimit(locationId);
+  if(expectedRevision!==undefined&&expectedRevision!==session?.revision)return {...evaluate(),input:{requested,quantity:requested,changed:false,applied:false,reason:'DRAFT_REVISION_STALE',limit}};
+  if(limit.reason==='ALLOCATION_SNAPSHOT_STALE')return {...evaluate(),input:{requested,quantity:requested,changed:false,applied:false,reason:limit.reason,limit}};
+  const quantity=complete&&!composing&&/^\d+$/.test(requested)&&limit.valid&&limit.max!==null&&BigInt(requested)>BigInt(limit.max)?limit.max:requested;
+  const entry=session?.entries.find(row=>row.locationId===locationId),result=apply({type:'set',locationId,quantity:{raw:quantity,unit:entry?.quantity.unit,composing,phase:'editing'}});
+  if(result.status==='VALID'){refresh();if(quantity===''&&!composing)apply({type:'set',locationId,quantity:{raw:'',unit:entry?.quantity.unit,phase:'editing'}});}
+  return {...evaluate(),input:{requested,quantity,changed:quantity!==requested,applied:result.status==='VALID',reason:quantity!==requested?'MONTHLY_INPUT_MAXIMUM':null,limit}};
+ },clone(from,targets){const result=apply({type:'clone',from,targets});if(result.status==='VALID')refresh();return result;},cancel(){closed=true;return session?cancelAllocation(state,session):opened;},get rows(){return clone(session?.entries||[]);},get session(){return clone(session);},get closed(){return closed;}});
 }
 
 // Engine quantities stay exact; display formatting never feeds back into an obligation.

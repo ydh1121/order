@@ -31,7 +31,7 @@ function harness({reduced=false,mobile=false,withHistory=false}={}){
   panel.natural=natural;panel.querySelector=()=>scroll;panel.getBoundingClientRect=()=>({height:Math.min(parseFloat(panel.style.getPropertyValue('--ui-modal-editor-session-block'))||panel.natural,parseFloat(d.style.getPropertyValue('--ui-modal-max-block'))||Infinity)});panel.animate=(k,o)=>animate(panel,k,o);
   d.panel=panel;d.scroll=scroll;d.children=[];d.querySelector=()=>panel;d.querySelectorAll=()=>d.children;d.contains=el=>d.children.includes(el);d.getBoundingClientRect=()=>({left:100,right:500,top:100,bottom:500});d.animate=(k,o)=>animate(d,k,o);d.showModal=()=>{d.open=true;};d.close=()=>{d.open=false;d.fire('close');};focus(d);return d;
  }
- document.createElement=()=>{const d=dialog(''),keep=focus(element()),discard=focus(element());d.children=[keep,discard];d.querySelector=selector=>selector==='[data-discard-continue]'?keep:selector==='[data-discard-confirm]'?discard:d.panel;return d;};
+ document.createElement=()=>{const d=dialog(''),keep=focus(element()),discard=focus(element()),title=element(),description=element();d.children=[keep,discard];d.querySelector=selector=>selector==='[data-discard-continue]'?keep:selector==='[data-discard-confirm]'?discard:selector==='#order-discard-title'?title:selector==='#order-discard-description'?description:d.panel;return d;};
  body.append=d=>{created.push(d);d.isConnected=true;};
  vm.runInNewContext(script,context);
  return {shell:window.OrderModalShell,root,body,window,document,context,dialog,focus,animations,scrolls,historyStack,get discardDialog(){return created.find(d=>d.id==='order-discard-dialog');},get historyIndex(){return historyIndex;},get historyBacks(){return historyBacks;},stepHistory(){const move=historyQueue.shift();if(move===undefined)return false;const next=historyIndex+move;if(next<0||next>=historyStack.length)return false;historyIndex=next;window.location.href=historyStack[next].url;window.fire('popstate',{state:historyStack[next].state,stopImmediatePropagation(){this.immediateStopped=true;}});return true;},flush(){const pending=[...frames.values()];frames.clear();pending.forEach(f=>f());}};
@@ -210,4 +210,23 @@ test('R02 inner popup dismissal precedes dirty guard and keeps browser history a
  h.shell.bind(d,()=>disposals++,{editable:true,isDirty:()=>true,beforeClose:()=>{if(inner){inner=false;return false;}}});h.shell.open(d,{history:true});
  h.window.history.back();settleHistory(h);assert.equal(inner,false);assert.equal(d.open,true);assert.equal(h.discardDialog,undefined);assert.equal(h.historyIndex,1);
  h.window.history.back();h.stepHistory();assert.equal(h.discardDialog.open,true);assert.equal(disposals,0);
+});
+
+
+test('C28-25 reusable popup role comes from each call or its original declaration, never its previous use',()=>{
+ const h=harness({reduced:true}),d=h.dialog('reused');
+ h.shell.open(d,{variant:'compact',role:'confirm'});assert.equal(d.dataset.modalRole,'confirm');h.shell.close(d);
+ h.shell.open(d,{variant:'copy'});assert.equal(d.dataset.modalRole,'selection');h.shell.close(d);
+ h.shell.open(d,{variant:'copy',role:'editor'});assert.equal(d.dataset.modalRole,'editor');h.shell.close(d);
+ const declared=h.dialog('declared');declared.dataset.modalRole='editor';h.shell.open(declared,{role:'confirm'});assert.equal(declared.dataset.modalRole,'confirm');h.shell.close(declared);h.shell.open(declared);assert.equal(declared.dataset.modalRole,'editor');
+});
+
+test('C28-07 new-site discard wording is per owner and resets before an existing-editor guard',()=>{
+ const h=harness({reduced:true}),d=h.dialog('site');let mode='new',disposed=0;
+ h.shell.bind(d,()=>disposed++,{editable:true,isDirty:()=>true,discardCopy:()=>mode==='new'?{title:'입력을 취소할까요?',description:'입력한 내용이 저장되지 않습니다.',confirmLabel:'입력 취소'}:null});h.shell.open(d);
+ h.shell.requestClose(d,'cancel');const prompt=h.discardDialog;
+ assert.equal(prompt.querySelector('#order-discard-title').textContent,'입력을 취소할까요?');assert.equal(prompt.querySelector('#order-discard-description').textContent,'입력한 내용이 저장되지 않습니다.');assert.equal(prompt.querySelector('[data-discard-confirm]').textContent,'입력 취소');
+ prompt.querySelector('[data-discard-continue]').fire('click');assert.equal(disposed,0);mode='edit';h.shell.requestClose(d,'escape');
+ assert.equal(prompt.querySelector('#order-discard-title').textContent,'변경 내용을 취소할까요?');assert.equal(prompt.querySelector('#order-discard-description').textContent,'확인하지 않은 변경 내용이 취소됩니다.');assert.equal(prompt.querySelector('[data-discard-confirm]').textContent,'변경 취소');assert.equal(disposed,0);
+ prompt.querySelector('[data-discard-confirm]').fire('click');assert.equal(disposed,1);
 });

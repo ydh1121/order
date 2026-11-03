@@ -1,29 +1,12 @@
 import {engineResult} from '../contracts/result.mjs';
 import {fromRatio, exact, multiply, compare, toJSON} from './exact.mjs';
 import {monthlyDayIntent} from './period.mjs';
+import {monthDays,validMonth,ordinal,weekday,isoDate,parseDate} from './civil-date.mjs';
 
 export const CALENDAR_FORECAST_RULE_VERSION = 'calendar-forecast-1.1.0';
 const DATA_VERSION = 'proleptic-gregorian-calendar-1';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keysOnly = (value, keys) => Object.keys(value).every(key => keys.includes(key));
-const leap = year => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-const monthDays = (year, month) => [31, leap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
-const validMonth = (year, month) => Number.isInteger(year) && year >= 1 && year <= 9999 && Number.isInteger(month) && month >= 1 && month <= 12;
-// Civil Gregorian arithmetic avoids local time, DST, and Date's special years 0–99.
-function ordinal(year, month, day) {
-  const before = year - 1;
-  let result = before * 365 + Math.floor(before / 4) - Math.floor(before / 100) + Math.floor(before / 400) + day;
-  for (let m = 1; m < month; m++) result += monthDays(year, m);
-  return result;
-}
-const weekday = day => (day - 1) % 7 + 1; // ISO: Monday=1 ... Sunday=7.
-const isoDate = (year, month, day) => `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-function parseDate(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const [year, month, day] = value.split('-').map(Number);
-  if (!validMonth(year, month) || day < 1 || day > monthDays(year, month)) return null;
-  return {year, month, day, ordinal: ordinal(year, month, day)};
-}
 const validWeekdays = days => Array.isArray(days) && days.length <= 7 && days.every(day => Number.isInteger(day) && day >= 1 && day <= 7) && new Set(days).size === days.length;
 
 /**

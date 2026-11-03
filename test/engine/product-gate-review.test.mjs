@@ -4,9 +4,10 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {parse} from 'acorn';
 import {webcrypto} from 'node:crypto';
-import {validMonthlyQuantity,convertMonthlyUnit} from '../../web/quantity-contract.mjs';
+import {validMonthlyQuantity,convertMonthlyUnit,monthlyPlanSnapshot} from '../../web/quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/allocation-ui.mjs';
-import {createBrowserStorage,projectStoredPayload} from '../../web/storage.mjs';
+import {inspectStoredOrderQuantity} from '../../web/q4-planning.mjs';
+import {createBrowserStorage,emptyStoredPayload,projectStoredPayload} from '../../web/storage.mjs';
 
 // Execute the production gate functions, extracted by AST, without booting a DOM.
 // Contact/address/date checks are deliberately out of scope and supplied as valid.
@@ -27,12 +28,12 @@ function find(node, predicate) {
 }
 const declaration = find(commonAst, node => node.type === 'VariableDeclaration' && node.declarations.some(row => row.id.name === 'CODE1_ORDER_VALIDATION'));
 assert.ok(declaration, 'Production common validation declaration exists');
-const functions = ['q4ReviewIssue', 'q4ReviewAllocationIssues', 'monthlyIssues', 'q4ReviewVerdict'].map(name => {
+const functions = ['q4ReviewIssue', 'quantityBoundIssue', 'q4ReviewAllocationIssues', 'monthlyIssues', 'q4ReviewVerdict'].map(name => {
   const node = find(appAst, node => node.type === 'FunctionDeclaration' && node.id.name === name);
   assert.ok(node, `Production ${name} exists`); return app.slice(node.start, node.end);
 });
 const gate = vm.runInNewContext(common.slice(declaration.start, declaration.end) + '\n' + functions.join('\n') + '\nq4ReviewVerdict', {
-  validMonthlyQuantity, inspectMonthlyAllocations, inspectOnceAllocations,
+  validMonthlyQuantity, inspectMonthlyAllocations, inspectOnceAllocations, monthlyPlanSnapshot, inspectStoredOrderQuantity,
   window: {OrderDatePolicy: {validate: () => ({valid: true})}}, OrderSiteContract: {issues: () => []}
 });
 function restored(mode = 'ONCE') {
@@ -99,6 +100,14 @@ function productionFunction(source, ast, name) {
   assert.ok(node, `Production ${name} exists`);
   return source.slice(node.start, node.end);
 }
+function productionVariable(source, ast, name) {
+  const node = find(ast, value => value.type === 'VariableDeclaration' && value.declarations.some(row => row.id.name === name));
+  assert.ok(node, `Production variable ${name} exists`); return source.slice(node.start, node.end);
+}
+function productionHandler(source, ast, id) {
+  const node = find(ast, value => value.type === 'ExpressionStatement' && value.expression.type === 'AssignmentExpression' && value.expression.left.type === 'MemberExpression' && value.expression.left.property.name === 'onclick' && value.expression.left.object.type === 'CallExpression' && value.expression.left.object.callee.name === '$' && value.expression.left.object.arguments[0]?.value === id);
+  assert.ok(node, `Production click handler ${id} exists`); return source.slice(node.start, node.end);
+}
 function deferred() {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
@@ -111,7 +120,7 @@ function q4CommitHarness() {
   const pending = [], errors = [];
   let writes = 0, closes = 0;
   const context = vm.createContext({
-    JSON, structuredClone,
+    JSON, structuredClone, localDateISO: () => '2026-12-04', dateIssue: () => ({valid: true}),
     validateForSave: () => true,
     showCommitError: result => { errors.push(result); },
     window: {OrderRegularQ4Bridge: {commit: (patches, confirmation, canCommit) => {
@@ -126,7 +135,7 @@ function q4CommitHarness() {
     recordClose: () => { closes++; }
   });
   vm.runInContext(`
-    let committing = false, commitEpoch = 0, commitAttempt = 0, numericValid = true, state = {dialogClosed: false};
+    let committing = false, commitEpoch = 0, commitAttempt = 0, numericValid = true, state = {dialogClosed: false, asOfLocalDate: '2026-12-04', count: 1, preferredDates: {}};
     const q4Numeric = {inspect: () => ({valid: numericValid})}, numericComposing = new Set();
     let regularContext = {id: 'original'};
     let patches = [{id: 'A', monthlyDemandQty: '50', qty: '3'}];
@@ -271,7 +280,7 @@ test('R05 current transaction email proof reaches site and final gates without p
   assert.equal(context.OrderEmailDomain.status(email).state, 'UNKNOWN');
 });
 
-async function coordinatorHarness() {
+async function coordinatorHarness(seed = restored('FLEX')) {
   const records = new Map(), nodes = new Map();
   const local = {writes: 0, failWrite: false, loseReadback: false, throwRead: false,
     getItem(key) {if (this.throwRead) {this.throwRead = false; throw Error('readback unavailable');} return records.get(key) ?? null;},
@@ -288,14 +297,16 @@ async function coordinatorHarness() {
   }};
   const storage = createBrowserStorage({localStorage: local, sessionStorage: {getItem: () => null}, locks, crypto: webcrypto});
   const empty = await storage.load();
-  const loaded = await storage.commit(restored('FLEX'), {expectedRevision: empty.revision, expectedToken: empty.versionToken, transactionId: 'seed'});
+  const loaded = await storage.commit(seed, {expectedRevision: empty.revision, expectedToken: empty.versionToken, transactionId: 'seed'});
   assert.equal(loaded.ok, true);
-  const $ = id => {if (!nodes.has(id)) nodes.set(id, {textContent: '', hidden: true}); return nodes.get(id);};
+  const $ = id => {if (!nodes.has(id)) nodes.set(id, {textContent: '', hidden: true, dataset: {}, classList: {remove() {}}, setAttribute() {}}); return nodes.get(id);};
   let nextId = 0;
   const context = vm.createContext({
-    initial: loaded, storage, projectStoredPayload, structuredClone, JSON, Promise,
-    document: {documentElement: {dataset: {}}}, $, ident: () => 'review-save-' + (++nextId),
-    storagePaint: () => {}, storageFeedback: () => {},
+    // Clone across VM realms so the real storage strict plain-object validator
+    // sees the same realm it receives from the actual browser coordinator.
+    initial: loaded, storage: {commit: (data, options) => storage.commit(structuredClone(data), options)}, projectStoredPayload: value => projectStoredPayload(structuredClone(value)), structuredClone, JSON, Promise,
+    document: {documentElement: {dataset: {}}, querySelector: () => null}, $, ident: () => 'review-save-' + (++nextId),
+    refreshCompletionBadges: () => {},
     window: {OrderEmailLifecycle: {reconcile() {}}},
     err: (id, message) => {$(id).textContent = message;},
     q4ReviewVerdict: () => ({valid: true, confirmations: []}),
@@ -307,10 +318,22 @@ async function coordinatorHarness() {
     let storageRevision = initial.revision, storageToken = initial.versionToken;
     let storageReady = true, storagePending = 0, storageFailure = null, storageEpoch = 0;
     let uncertainWrite = null, storageTail = Promise.resolve(), inlineDraft = false, storageMessage = '';
+    let checkpointAttempt = null, checkpointReceipt = null;
+    let siteEditing = null, deliveryDraft = null, q4AssignmentDraft = null;
+    let editorMode = S.lines.length ? null : 'initial';
+    let editing = {id: 'initial-choice', housing: '', size: '', pack: ''};
+    ${productionVariable(app, appAst, 'storageText')}
+    ${['storagePaint','storageFeedback','bodyCheckpoint','checkpointSignature','clearCheckpointStatus','showCheckpointReceipt'].map(name => productionFunction(app, appAst, name)).join('\n')}
     ${productionFunction(app, appAst, 'save')}
     ${productionFunction(app, appAst, 'complete')}
+    ${productionHandler(app, appAst, 'save-checkpoint')}
     globalThis.subject = {
       save(candidate, options) {return save(candidate ?? S, options);},
+      checkpoint() {return $('save-checkpoint').onclick();},
+      select(field, value) {editing[field] = value;},
+      popup(value) {siteEditing = value;},
+      get checkpointStatus() {return structuredClone($('checkpoint-status').dataset);},
+      get checkpointReceipt() {return structuredClone(checkpointReceipt);},
       input(raw) {S.lines[0].qty = raw; inlineDraft = true; return save(S, {publish: false});},
       get state() {return structuredClone(S);},
       get committed() {return structuredClone(lastCommitted);},
@@ -416,4 +439,66 @@ test('production coordinator stops stale-tab confirmation and preserves both dur
   assert.equal(h.local.writes, 2);
   assert.equal(h.subject.failure.status, 'CONFLICT');
   assert.equal(h.subject.complete(), false);
+});
+
+test('C28 production checkpoint keeps initial body selection, suppresses pending duplicate and replays receipt with zero extra write', async () => {
+  const h = await coordinatorHarness(emptyStoredPayload());
+  h.subject.select('housing', '4');
+  await Promise.all([h.subject.checkpoint(), h.subject.checkpoint()]);
+  const saved = await h.storage.load(), receipt = h.subject.checkpointReceipt;
+  assert.equal(h.local.writes, 2, 'Seed and one explicit checkpoint');
+  assert.equal(saved.data.lines.length, 0);
+  assert.deepEqual(saved.data.bodyCheckpoint, {version: '1.0.0', q1Selection: {id: 'initial-choice', housing: '4', size: '', pack: ''}});
+  assert.equal(h.subject.checkpointStatus.state, 'saved');
+  assert.equal(h.subject.checkpointStatus.transaction, receipt.transactionId);
+  await h.subject.checkpoint();
+  assert.equal(h.local.writes, 2, 'Receipt replay verifies under the adapter lock, without incrementing revision');
+  assert.equal(h.subject.revision, saved.revision);
+  assert.equal(h.subject.checkpointStatus.transaction, receipt.transactionId);
+  h.subject.popup({name: 'private unsaved popup'});
+  await h.subject.checkpoint();
+  assert.equal(h.local.writes, 2, 'Private popup cannot enter the body checkpoint');
+  assert.equal((await h.storage.load()).data.locations.length, 0);
+});
+
+test('C28 production checkpoint replay observes another tab reset/write and never reuses a stale success', async () => {
+  for (const operation of ['reset', 'write']) {
+    const h = await coordinatorHarness();
+    await h.subject.checkpoint();
+    const prior = await h.storage.load(), original = h.subject.state;
+    const options = {expectedRevision: prior.revision, expectedToken: prior.versionToken, transactionId: 'other-' + operation};
+    const winner = structuredClone(prior.data); winner.locations[0].name = 'other tab confirmed name';
+    const external = operation === 'reset' ? await h.storage.reset(options) : await h.storage.commit(winner, options);
+    assert.equal(external.ok, true);
+    const writes = h.local.writes;
+    await h.subject.checkpoint();
+    assert.equal(h.subject.checkpointStatus.state, 'conflict');
+    assert.equal(h.subject.checkpointStatus.transaction, undefined);
+    assert.equal(h.local.writes, writes, 'Stale receipt cannot resurrect or overwrite the winner');
+    assert.deepEqual(h.subject.state, original, 'Local body remains available for conflict recovery');
+    const restored = await h.storage.load();
+    assert.equal(restored.status, operation === 'reset' ? 'RESET' : 'LOADED');
+    if (operation === 'write') assert.equal(restored.data.locations[0].name, 'other tab confirmed name');
+    assert.equal(h.subject.failure.status, 'CONFLICT');
+  }
+});
+
+test('C28 production checkpoint uncertain readback retry shows the actual original durable transaction receipt', async () => {
+  const h = await coordinatorHarness();
+  h.local.loseReadback = true;
+  await h.subject.checkpoint();
+  assert.equal(h.subject.checkpointStatus.state, 'failed');
+  assert.equal(h.subject.failure.uncertain, true);
+  assert.equal(h.local.writes, 2);
+  const originalTransaction = JSON.parse(h.local.getItem('order_q1_q4_v1')).receipts.at(-1).transactionId;
+  await h.subject.checkpoint();
+  assert.equal(h.subject.checkpointStatus.state, 'saved');
+  assert.equal(h.local.writes, 2, 'Recovery reads the original receipt instead of writing the new attempt');
+  assert.equal(originalTransaction, 'review-save-1');
+  assert.equal(h.subject.checkpointStatus.transaction, originalTransaction, 'Second attempt ID must not masquerade as the durable transaction');
+  assert.equal(h.subject.checkpointReceipt.transactionId, originalTransaction);
+  assert.equal(h.subject.failure, null);
+  const saved = await h.storage.load();
+  assert.equal(h.subject.checkpointStatus.revision, String(saved.revision));
+  assert.equal(h.subject.checkpointReceipt.data.allocationRevision, saved.data.allocationRevision);
 });

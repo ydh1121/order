@@ -52,18 +52,19 @@ const stop=event=>{event.stopImmediatePropagation?.();};
  * the DOM. This is an input history, not a persistence or transaction history. */
 export function bindNumericInputs(root,{selector='[data-numeric-input]',options=()=>({})}={}){
  const prior=bindings.get(root);if(prior){prior.refresh();return prior;}
- const states=new WeakMap(),listeners=[];
+ const states=new WeakMap(),listeners=[];let historySequence=0;
+ const historyEntry=(value,mark,key=++historySequence)=>({value,mark:{...mark},key});
  const opts=input=>typeof options==='function'?options(input)||{}:options||{};
  const target=event=>{const input=event.target;return input?.matches?.(selector)&&!input.disabled&&!input.readOnly?input:null;};
- function state(input){let s=states.get(input);if(!s){const mark=selection(input);s={value:String(input.value??''),mark,history:[{value:String(input.value??''),mark}],at:0,composing:false,composition:null,afterComposition:null,before:null,emitting:false};states.set(input,s);}return s;}
- function syncExternal(input,s){if(!s.composing&&String(input.value)!==s.value){s.value=String(input.value);s.mark=selection(input);s.history=[{value:s.value,mark:{...s.mark}}];s.at=0;}}
+ function state(input){let s=states.get(input);if(!s){const mark=selection(input);s={value:String(input.value??''),mark,history:[historyEntry(String(input.value??''),mark)],at:0,composing:false,composition:null,afterComposition:null,before:null,emitting:false};states.set(input,s);}return s;}
+ function syncExternal(input,s){if(!s.composing&&String(input.value)!==s.value){s.value=String(input.value);s.mark=selection(input);s.history=[historyEntry(s.value,s.mark)];s.at=0;}}
  function snapshot(input,s){syncExternal(input,s);s.before={value:s.value,mark:selection(input)};return s.before;}
  function restore(input,s,mark=s.before){if(!mark)return;input.value=mark.value;s.value=mark.value;s.mark={...mark.mark};place(input,s.mark);}
  function packet(event,value){try{Object.defineProperty(event,'orderNumeric',{value,configurable:true});}catch{event.orderNumeric=value;}}
- function reflect(input,s=states.get(input)){if(input.dataset)input.dataset.numericState=s?.composing?'composing':parseNumericText(input.value,opts(input)).valid?'valid':'invalid';}
+ function reflect(input,s=states.get(input)){if(input.closest?.('.ui-egg-number'))input.style?.setProperty('--ui-number-ch',String(String(input.value).length));if(input.dataset)input.dataset.numericState=s?.composing?'composing':parseNumericText(input.value,opts(input)).valid?'valid':'invalid';}
  function stateChanged(input){reflect(input);const E=input.ownerDocument?.defaultView?.Event||Event;input.dispatchEvent(new E('numericstatechange',{bubbles:true}));}
  function emit(input,s,data){const E=input.ownerDocument?.defaultView?.Event||Event,event=new E('input',{bubbles:true});packet(event,data);s.emitting=true;try{input.dispatchEvent(event);}finally{s.emitting=false;}}
- function remember(s){const last=s.history[s.at];if(last?.value===s.value){last.mark={...s.mark};return;}s.history.splice(++s.at);s.history.push({value:s.value,mark:{...s.mark}});if(s.history.length>100){s.history.shift();s.at--;}}
+ function remember(s){const last=s.history[s.at];if(last?.value===s.value){last.mark={...s.mark};return;}s.history.splice(++s.at);s.history.push(historyEntry(s.value,s.mark));if(s.history.length>100){s.history.shift();s.at--;}}
  function repairAllowed(s,candidate,type,data){const old=parseNumericText(s.before?.value??s.value,opts(s.input));return !old.valid&&(/^delete/.test(type)||type==='insertText'&&/^[0-9]*$/.test(data??''))&&candidate.length<=(s.before?.value??s.value).length+String(data??'').length;}
  function inspectCandidate(input,s,raw,event){
   const config=opts(input);let p=parseNumericText(raw,config);
@@ -79,22 +80,24 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
   if(!p.valid){
    const repair=repairAllowed(s,raw,event.inputType||s.before?.inputType||'',event.data??s.before?.data);
    if(repair){s.value=raw;s.mark=selection(input);remember(s);}else restore(input,s,before);
-   const value=parseNumericText(s.value,opts(input));const info={...value,accepted:false,changed:false,phase};packet(event,info);if(phase==='input')stop(event);s.before=null;stateChanged(input);return info;
+   const value=parseNumericText(s.value,opts(input));const info={...value,accepted:false,changed:false,phase};packet(event,info);if(phase!=='compositionend')stop(event);else s.afterComposition={value:s.value};s.before=null;stateChanged(input);return info;
   }
   const mark=selection(input),formatted=formatNumericText(p.value,opts(input));
   const nextMark=formatted===raw?mark:{start:caretAt(formatted,digitCount(raw.slice(0,mark.start))),end:caretAt(formatted,digitCount(raw.slice(0,mark.end))),direction:mark.direction};
   if(input.value!==formatted)input.value=formatted;place(input,nextMark);s.value=formatted;s.mark=nextMark;remember(s);s.before=null;reflect(input,s);
-  const explicit=phase==='input'||phase==='compositionend'&&String(event.data??'')!=='';
-  const info={valid:true,value:p.value,raw,accepted:true,changed:oldValue!==formatted||explicit,explicit,phase};packet(event,info);
-  if(phase==='compositionend')stateChanged(input);
+  const explicit=['input','paste','drop'].includes(phase)||phase==='compositionend'&&String(event.data??'')!=='';
+  const info={valid:true,value:p.value,raw,accepted:true,changed:oldValue!==formatted||explicit,explicit,completed:['paste','drop','compositionend'].includes(phase),phase};packet(event,info);
+  // Publish the trailing-event guard before a consumer can correct this value
+  // and replace/transfer the field while handling the accepted composition.
+  if(phase==='compositionend'){s.afterComposition={value:s.value};stateChanged(input);}
   if(notify&&info.changed)emit(input,s,info);
   return info;
  }
  function history(input,s,direction,event){
   event.preventDefault?.();stop(event);if(s.composing)return;
   const next=Math.max(0,Math.min(s.history.length-1,s.at+direction));if(next===s.at)return;
-  s.at=next;const item=s.history[next];input.value=item.value;s.value=item.value;s.mark={...item.mark};s.before=null;place(input,s.mark);
-  const p=parseNumericText(s.value,opts(input));if(p.valid)emit(input,s,{...p,accepted:true,changed:true,phase:direction<0?'undo':'redo'});stateChanged(input);
+  const fromHistoryKey=s.history[s.at].key;s.at=next;const item=s.history[next];input.value=item.value;s.value=item.value;s.mark={...item.mark};s.before=null;place(input,s.mark);
+  const p=parseNumericText(s.value,opts(input));if(p.valid)emit(input,s,{...p,accepted:true,changed:true,phase:direction<0?'undo':'redo',fromHistoryKey,historyKey:item.key});stateChanged(input);
  }
  function steppingOptions(input){
   const config={...opts(input)};
@@ -111,14 +114,15 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
   const endpoint=position=>position===previous.length?formatted.length:caretAt(formatted,digitCount(previous.slice(0,position)));
   input.value=formatted;s.value=formatted;s.mark={start:endpoint(mark.start),end:endpoint(mark.end),direction:mark.direction};place(input,s.mark);
   s.before=null;s.afterComposition=null;remember(s);reflect(input,s);
-  emit(input,s,{...result,accepted:true,explicit:true,phase});
+  emit(input,s,{...result,accepted:true,explicit:true,completed:true,phase});
  }
  function on(type,fn,extra={}){const settings={capture:true,...extra};root.addEventListener(type,fn,settings);listeners.push([type,fn,settings]);}
- on('focusin',event=>{const input=target(event);if(!input)return;const s=state(input);s.input=input;if(!s.composing&&input.value!==s.value){s.value=String(input.value);s.mark=selection(input);s.history=[{value:s.value,mark:{...s.mark}}];s.at=0;}else s.mark=selection(input);});
+ on('focusin',event=>{const input=target(event);if(!input)return;const s=state(input);s.input=input;syncExternal(input,s);s.mark=selection(input);});
  on('beforeinput',event=>{
   const input=target(event);if(!input)return;const s=state(input);s.input=input;
   if(s.composing||event.isComposing)return;
   if(event.inputType!=='insertCompositionText')s.afterComposition=null;
+  if(event.inputType&&!['insertFromPaste','insertFromDrop'].includes(event.inputType))s.transfer=null;
   if(event.inputType==='historyUndo'||event.inputType==='historyRedo'){history(input,s,event.inputType==='historyUndo'?-1:1,event);return;}
   const mark=snapshot(input,s);mark.inputType=event.inputType;mark.data=event.data;
   if(event.inputType?.startsWith('insert')&&event.data!==null&&event.data!==undefined){
@@ -128,12 +132,12 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
  });
  for(const type of ['paste','drop'])on(type,event=>{
   const input=target(event);if(!input)return;const s=state(input);s.input=input;if(s.composing)return;s.afterComposition=null;
-  const text=(event.clipboardData||event.dataTransfer)?.getData('text/plain')??'',p=parseNumericText(text,opts(input));snapshot(input,s);
+  const text=(event.clipboardData||event.dataTransfer)?.getData('text/plain')??'',p=parseNumericText(text,opts(input));snapshot(input,s);s.transfer=p.valid?type:null;
   if(!p.valid){event.preventDefault();restore(input,s);stop(event);}
  });
- on('input',event=>{const input=target(event);if(!input)return;const s=state(input);s.input=input;if(s.emitting)return;if(s.composing||event.isComposing){stop(event);return;}if(s.afterComposition&&input.value===s.afterComposition.value){s.afterComposition=null;stop(event);return;}s.afterComposition=null;accept(input,s,event);});
+ on('input',event=>{const input=target(event);if(!input)return;const s=state(input);s.input=input;if(s.emitting)return;if(s.composing||event.isComposing){stop(event);return;}if(s.afterComposition&&input.value===s.afterComposition.value){s.afterComposition=null;stop(event);return;}s.afterComposition=null;const phase=event.inputType==='insertFromPaste'?'paste':event.inputType==='insertFromDrop'?'drop':s.transfer||'input';s.transfer=null;accept(input,s,event,{phase});});
  on('compositionstart',event=>{const input=target(event);if(!input)return;const s=state(input);s.input=input;syncExternal(input,s);s.composing=true;s.composition={value:s.value,mark:selection(input)};s.before=s.composition;stateChanged(input);});
- on('compositionend',event=>{const input=target(event);if(!input)return;const s=state(input);s.input=input;s.composing=false;s.before=s.composition||{value:s.value,mark:s.mark};s.composition=null;accept(input,s,event,{phase:'compositionend',notify:true});s.afterComposition={value:s.value};});
+ on('compositionend',event=>{const input=target(event);if(!input)return;const s=state(input);s.input=input;s.composing=false;s.before=s.composition||{value:s.value,mark:s.mark};s.composition=null;accept(input,s,event,{phase:'compositionend',notify:true});});
  on('pointerdown',event=>{const input=target(event);if(input)state(input).afterComposition=null;});
  on('keydown',event=>{const input=target(event);if(!input)return;const s=state(input);s.afterComposition=null;
   if(event.key==='ArrowUp'||event.key==='ArrowDown'){step(input,s,event.key==='ArrowUp'?1:-1,event,'step-key');return;}
@@ -143,6 +147,35 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
   const rect=input.getBoundingClientRect?.();if(!rect||!Number.isFinite(event.clientX)||!Number.isFinite(event.clientY)||event.clientX<rect.left||event.clientX>=rect.right||event.clientY<rect.top||event.clientY>=rect.bottom)return;
   step(input,state(input),event.deltaY<0?1:-1,event,'step-wheel');
  },{passive:false});
- const api={refresh(){root.querySelectorAll(selector).forEach(input=>{const s=state(input);s.input=input;syncExternal(input,s);reflect(input,s);});return api;},read(input){return parseNumericText(input.value,opts(input));},inspect(){let invalidCount=0,composingCount=0;root.querySelectorAll(selector).forEach(input=>{if(input.disabled||input.readOnly)return;reflect(input);if(states.get(input)?.composing)composingCount++;else if(!parseNumericText(input.value,opts(input)).valid)invalidCount++;});return {valid:invalidCount===0&&composingCount===0,invalidCount,composingCount};},destroy(){listeners.forEach(([type,fn,settings])=>root.removeEventListener(type,fn,settings));bindings.delete(root);}};
+ function replace(input,raw,{notify=false,history:historyMode='replace',phase='correction'}={}){
+  if(!input?.matches?.(selector)||!['replace','append'].includes(historyMode))return {valid:false,accepted:false,changed:false,reason:'TARGET'};
+  const s=state(input);s.input=input;if(s.composing)return {valid:false,accepted:false,changed:false,reason:'COMPOSING'};
+  const parsed=parseNumericText(raw,opts(input));if(!parsed.valid)return {...parsed,accepted:false,changed:false};
+  const previous=String(input.value),previousState=s.value,mark=selection(input),formatted=formatNumericText(parsed.value,opts(input));
+  const endpoint=position=>position===previous.length?formatted.length:caretAt(formatted,digitCount(previous.slice(0,position)));
+  input.value=formatted;s.value=formatted;s.mark={start:endpoint(mark.start),end:endpoint(mark.end),direction:mark.direction};place(input,s.mark);
+  s.before=null;s.afterComposition=s.emitting&&s.afterComposition?{value:s.value}:null;s.transfer=null;
+  if(previous!==formatted||previousState!==formatted){if(historyMode==='append')remember(s);else{s.history.splice(s.at+1);s.history[s.at]=historyEntry(s.value,s.mark,s.history[s.at].key);}}
+  reflect(input,s);const info={...parsed,accepted:true,changed:previous!==formatted,explicit:false,completed:true,phase};
+  if(notify&&info.changed)emit(input,s,info);return info;
+ }
+ // A caller may replace a field while applying a coupled draft transaction
+ // (quantity + cadence). Move its editing history to that field's replacement;
+ // rendering itself must neither publish an edit nor erase undo/caret state.
+ function transfer(from,to){
+  const rejected=reason=>({valid:false,accepted:false,changed:false,reason});
+  if(!from?.matches?.(selector)||!to?.matches?.(selector))return rejected('TARGET');
+  const s=states.get(from);if(!s)return rejected('SOURCE');
+  if(s.composing||states.get(to)?.composing)return rejected('COMPOSING');
+  if(String(from.value)!==s.value)return rejected('EXTERNAL_CHANGE');
+  const config=opts(to),parsed=parseNumericText(s.value,config);
+  if(!parsed.valid)return {...parsed,accepted:false,changed:false};
+  // Do not reinterpret history across roles with different grouping or bounds.
+  if(s.history.some(item=>{const previous=parseNumericText(item.value,opts(from)),next=parseNumericText(item.value,config);return previous.valid!==next.valid||previous.value!==next.value||next.valid&&formatNumericText(next.value,config)!==item.value;}))return rejected('FORMAT');
+  const mark=selection(from),next={...s,input:to,mark:{...mark},history:s.history.map(item=>historyEntry(item.value,item.mark,item.key)),before:null,composition:null,afterComposition:s.afterComposition?{value:s.value}:null,transfer:null,emitting:false};
+  next.history[next.at].mark={...mark};to.value=next.value;place(to,mark);states.set(to,next);if(from!==to)states.delete(from);reflect(to,next);
+  return {...parsed,accepted:true,changed:false,phase:'transfer'};
+ }
+ const api={replace,transfer,inspectHistory(input){const s=states.get(input);return s?{key:s.history[s.at].key,previousKey:s.history[s.at-1]?.key??null,nextKey:s.history[s.at+1]?.key??null,keys:s.history.map(item=>item.key)}:null;},refresh(){root.querySelectorAll(selector).forEach(input=>{if(!input.matches?.(selector))return;const s=state(input);s.input=input;syncExternal(input,s);if(!s.composing){const parsed=parseNumericText(input.value,opts(input));if(parsed.valid&&input.value!==formatNumericText(parsed.value,opts(input)))replace(input,parsed.value,{phase:'refresh'});}reflect(input,s);});return api;},read(input){return parseNumericText(input.value,opts(input));},inspect(){let invalidCount=0,composingCount=0;root.querySelectorAll(selector).forEach(input=>{if(input.disabled||input.readOnly)return;reflect(input);if(states.get(input)?.composing)composingCount++;else if(!parseNumericText(input.value,opts(input)).valid)invalidCount++;});return {valid:invalidCount===0&&composingCount===0,invalidCount,composingCount};},destroy(){listeners.forEach(([type,fn,settings])=>root.removeEventListener(type,fn,settings));bindings.delete(root);}};
  bindings.set(root,api);return api.refresh();
 }

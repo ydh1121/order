@@ -37,17 +37,17 @@
     {
       "source": "web/allocation-ui.mjs",
       "output": "allocation-ui.mjs",
-      "sha256": "cb98296debb6d245d3ba44d7c181891436f2308a0b82bcba802cea3412c685ba"
+      "sha256": "322379bfbbaac0ebae2ea0e948d402905e3f79b94922b47416627f24f2dd25e4"
     },
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "1f25e88ef4c52e5a93ef4b94fdb68d684cd53220756ac68c1df794581431868c"
+      "sha256": "f5555483b0f33d419bad3398abdee1241f84a366ebec0ccf33d309866bfdf4b0"
     },
     {
       "source": "web/common-ui.mjs",
       "output": "common-ui.mjs",
-      "sha256": "ae14e59ace5664854c2590d4ab5188b9a17887938b6c03088a5cbf7311045d7d"
+      "sha256": "3e3cfec0c92b510ca2ad4a148d805f56be6a907de3b9af724602779e01e68f21"
     },
     {
       "source": "web/contact-ui.mjs",
@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "6b66d1434a084368cd8a3ed176ae1c771a191dc1587639725f12102245122698"
+      "sha256": "b61cab12fa4c606a12b36bf1917bb2d66970b78dea5f2624bc2b0cf175365856"
     },
     {
       "source": "web/main.mjs",
@@ -67,37 +67,37 @@
     {
       "source": "web/numeric-input.mjs",
       "output": "numeric-input.mjs",
-      "sha256": "2ba9cf9f43a4bbecec31ea9d4d8249d9fb81aba03ffbd7961b6599ae718bb2b6"
+      "sha256": "486d97303c94a7eca5b249363b7439169b5b79a40a73009197d71977126442ed"
     },
     {
       "source": "web/q4-planning.mjs",
       "output": "q4-planning.mjs",
-      "sha256": "37f8b3aa43ae1a8b3e948e53941f8d0803ed2b6320572256b0482c9202a71ec2"
+      "sha256": "2f67ab05a8cd9a0b7e283feadf670cdf75988e42af0c34f68a7479cf4a584550"
     },
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "ac8c02e86a04ce0602e036b010a43217436268af07be239813be4a30f8182980"
+      "sha256": "0bf0fa54388e3b6b4ae5b6afb0f7b613a697ec9de230bc1965cb411676a97e97"
     },
     {
       "source": "web/quantity-contract.mjs",
       "output": "quantity-contract.mjs",
-      "sha256": "17e2af0d1445365d3e2de4b91cd91d42596ebca857732eb9e26e73fea5fcd2d8"
+      "sha256": "43ff2ac6861b68b54094823099245a22dbbd0db994767993e41faedbc3e91286"
     },
     {
       "source": "web/storage.mjs",
       "output": "storage.mjs",
-      "sha256": "eb86d33d96c319c46616a68026ddb71162f414efafcc8fad6cc1a60aac41068e"
+      "sha256": "6a7983e5d352a70752cfc8f6e1b036ff501e187f9e5681c4fe6c0cc2ff8ce1d0"
     },
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "86279c0710fbed53f9acc7da8abc8010a87921dec478a2db158de087609e6eba"
+      "sha256": "2ee15f0873f3d646eb64b2b4b23472db220404ed107fbaee994b64e2612d1ea8"
     },
     {
       "source": "web/cadence-contract.mjs",
       "output": "cadence-contract.mjs",
-      "sha256": "65344a2c937c279922d40653e9152d3476a193a875a1c7ebf9e86ae3fa539ee0"
+      "sha256": "d7e0fc2f05c68b38e259343475ea4bc2d5fdbb814c7ddf434f6ef32e35924f89"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

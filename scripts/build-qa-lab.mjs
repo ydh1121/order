@@ -19,7 +19,8 @@ const substitutions=new Map([
  ['src/engine/adapters/iana-browser.mjs','order-qa/virtual/iana.mjs'],
  ['src/engine/adapters/email-browser.mjs','order-qa/virtual/email.mjs'],
 ]);
-const allowed=path=>/^(?:web\/|src\/(?:engine|browser)\/)[a-zA-Z0-9_./-]+\.mjs$/.test(path)||path===fixturePath;
+const extraQaPaths=new Set(['test/fixtures/qa-lab-0528.mjs','test/fixtures/qa-run-0528.mjs']);
+const allowed=path=>/^(?:web\/|src\/(?:engine|browser)\/)[a-zA-Z0-9_./-]+\.mjs$/.test(path)||path===fixturePath||extraQaPaths.has(path);
 
 async function readSource(root,path){
  if(path.startsWith('/')||path.includes('\\')||path.split('/').some(part=>!part||part==='.'||part==='..'))throw Error('QA_PATH_FORBIDDEN:'+path);
@@ -35,8 +36,9 @@ function moduleImports(source,path){
   for(const value of Object.values(node))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);
  };walk(ast);return imports;
 }
-export async function collectQaModules(root=repositoryRoot){
- const files=new Map(),pending=['web/main.mjs',fixturePath];
+export async function collectQaModules(root=repositoryRoot,{extraEntries=[]}={}){
+ if(extraEntries.some(path=>!extraQaPaths.has(path)))throw Error('QA_EXTRA_ENTRY_NOT_ALLOWED');
+ const files=new Map(),pending=['web/main.mjs',fixturePath,...extraEntries];
  while(pending.length){
   const path=pending.pop();if(files.has(path))continue;if(!allowed(path))throw Error('QA_MODULE_OUTSIDE_PRODUCT:'+path);
   const source=await readSource(root,path),imports=moduleImports(source,path).map(node=>{
@@ -63,7 +65,7 @@ const key='order_qa_lab_'+source.commitSha;
 export function createQaStorage(options={}){return createBrowserStorage({...options,localStorage:storage,sessionStorage,locks,key,lockName:key});}
 const writer=createQaStorage();
 const status=text=>{document.getElementById('qa-lab-status').textContent=text;};
-const comparisonSeed=typeof window.name==='string'&&window.name.startsWith('order-qa-seed:')?JSON.parse(window.name.slice(14)):null;
+const comparisonSeed=window.__orderQaEnvelope?.state??(typeof window.name==='string'&&window.name.startsWith('order-qa-seed:')?JSON.parse(window.name.slice(14)):typeof window.name==='string'&&window.name.startsWith('order-qa-envelope:')?JSON.parse(window.name.slice(18)).state:null);
 const seed=location.hash==='#qa-allocation-200'||!!comparisonSeed;
 if(seed){const loaded=await writer.load();const applied=await writer.commit(comparisonSeed||allocationFixture(),{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'qa-explicit-fixture'});if(!applied.ok)throw Error('QA_FIXTURE_REJECTED:'+applied.status);}
 const dnsControl=document.getElementById('qa-lab-dns');
@@ -97,14 +99,14 @@ status(seed?'명시적으로 선택한 합성 200 / A50 / B제안 fixture입니�
 }
 
 /** Builds a local, offline, single-file derivative of the current product graph. */
-export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.qa-lab/order-qa-lab.html'),allowDirty=false,write=true,now=Date.now()}={}){
+export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.qa-lab/order-qa-lab.html'),allowDirty=false,write=true,now=Date.now(),qaEntry=null}={}){
  root=resolve(root);const output=resolve(outputPath),dist=resolve(root,'dist');
  if(output===dist||output.startsWith(dist+sep))throw Error('QA_OUTPUT_MUST_NOT_BE_DIST');
  if(!output.endsWith('.html'))throw Error('QA_OUTPUT_MUST_BE_HTML');
  for(let cursor=output;cursor!==dirname(cursor);cursor=dirname(cursor)){try{if((await lstat(cursor)).isSymbolicLink())throw Error('QA_OUTPUT_SYMLINK_FORBIDDEN');}catch(error){if(error.code!=='ENOENT')throw error;}}
  const commitSha=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
  if(!/^[a-f0-9]{40}$/.test(commitSha))throw Error('QA_COMMIT_INVALID');
- const modules=await collectQaModules(root),html=await readSource(root,'web/index.html'),css=await readSource(root,'web/styles.css');
+ const modules=await collectQaModules(root,{extraEntries:qaEntry?[qaEntry]:[]}),html=await readSource(root,'web/index.html'),css=await readSource(root,'web/styles.css');
  const reference=await buildBrowserReference({directory:pathToFileURL(resolve(root,'src/engine/reference')+sep),now});
  const sourceFiles=new Map([...modules].map(([path,file])=>[path,file.source]));
  for(const path of ['web/index.html','web/styles.css',...buildSourcePaths,'src/engine/reference/iana-manifest.json','src/engine/reference/'+reference.manifest.rawFile])sourceFiles.set(path,await readSource(root,path));
@@ -112,7 +114,7 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  for(const [path,source]of sourceFiles){let committed=null;try{committed=execFileSync('git',['show',commitSha+':'+path],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']});}catch{}if(committed!==source)dirtySourceFiles.push(path);}
  if(dirtySourceFiles.length&&!allowDirty)throw Error('QA_UNCOMMITTED_SOURCE:'+dirtySourceFiles.join(','));
  const identity={schemaVersion:1,builderImplementationSha256:hash(await readFile(fileURLToPath(import.meta.url))),scope:'LOCAL_QA_LAB_SYNTHETIC_OFFLINE',repository:'ydh1121/order',commitSha,sourceState:dirtySourceFiles.length?'DIRTY_WORKTREE':'EXACT_GIT_COMMIT',dirtySourceFiles,
-  storage:'ISOLATED_MEMORY_ONLY',network:'NO_EXTERNAL_NETWORK_SYNTHETIC_OPT_IN',reference:{version:reference.manifest.version,sourceSha256:reference.manifest.sourceSha256},
+  storage:'ISOLATED_MEMORY_ONLY',network:'NO_EXTERNAL_NETWORK_SYNTHETIC_OPT_IN',extraQaEntry:qaEntry,reference:{version:reference.manifest.version,sourceSha256:reference.manifest.sourceSha256},
   sourceFiles:[...sourceFiles].map(([path,source])=>({path,sha256:hash(source),bytes:Buffer.byteLength(source)})).sort((a,b)=>a.path.localeCompare(b.path)),
   substitutions:[...substitutions].map(([path,shim])=>({path,shim})),generatedAt:new Date(now).toISOString()};
  const imports={},transformed=[];
@@ -134,7 +136,7 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  const policy=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
  let outputHtml=html.replace(styleTag,policy+'<style>'+css.replace(/<\/style/gi,'<\\/style')+'\n'+qaStyles+'</style>')
   .replace('<body>','<body>'+banner)
-  .replace(entryTag,`<script type="application/json" id="qa-lab-identity">${json(identity)}</script><script type="importmap">${json({imports})}</script><script type="module">import ${json(moduleKey('web/main.mjs'))};document.documentElement.dataset.qaLabReady='true';</script>`);
+  .replace(entryTag,`<script type="application/json" id="qa-lab-identity">${json(identity)}</script><script type="importmap">${json({imports})}</script><script>{const raw=window.frameElement?.getAttribute('data-qa-envelope');const meta=raw?JSON.parse(raw):window.name.startsWith('order-qa-envelope:')?JSON.parse(window.name.slice(18)):null;if(meta){window.__orderQaEnvelope=meta;document.documentElement.dataset.qaSeedGeneration=String(meta.seedGeneration??'');document.documentElement.dataset.qaSeedCase=String(meta.caseId??'');if(meta.asOf){const OriginalDate=Date,at=OriginalDate.parse(meta.asOf+'T03:00:00Z');if(Number.isFinite(at)){window.Date=class extends OriginalDate{constructor(...args){super(...(args.length?args:[at]));}static now(){return at;}};document.documentElement.dataset.qaClock=meta.asOf;}}}}</script><script type="module">import ${json(moduleKey('web/main.mjs'))};${qaEntry?`import * as cases from ${json(moduleKey(qaEntry))};window.OrderQa0528=cases;`:''}document.documentElement.dataset.qaLabReady='true';</script>`);
  if(!outputHtml.includes(banner))throw Error('QA_BODY_CONTRACT_CHANGED');
  if(write){await mkdir(dirname(output),{recursive:true});await writeFile(output,outputHtml);}
  return {identity,html:outputHtml,outputPath:output,bytes:Buffer.byteLength(outputHtml),sha256:hash(outputHtml)};

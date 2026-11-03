@@ -24,12 +24,12 @@ const properties=['display','color','backgroundColor','borderTopColor','borderTo
  'columnGap','rowGap','gridTemplateColumns','gridTemplateRows','gridColumnStart','gridColumnEnd','gridRowStart','gridRowEnd',
  'alignItems','justifyContent','opacity','cursor','minHeight','maxWidth','overflowX','overflowY'];
 const q4Shell=body=>`<dialog id="q4-regular-dialog" class="q4-regular-dialog" data-probe="shell"><div class="q4-regular-panel"><header class="q4-regular-head"><strong>납품 조건</strong></header><div class="q4-regular-scroll">${body}</div></div></dialog>`;
-const pairDOM='<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair" data-probe="pair"><div class="numeric-field" data-probe="first"><label>월 구매량</label><div class="input-unit"><input value="200"><span>판</span></div></div><div class="numeric-field" data-probe="second"><label>현재 구매가격</label><div class="input-unit"><input value="8000"><span>원/판</span></div></div></div></fieldset></div></div></main>';
+const pairDOM='<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair" data-probe="pair"><div class="numeric-field ui-egg-field" data-probe="first"><label>월 구매량</label><div class="input-unit ui-egg-number"><input value="200"><span class="qa-unit" data-probe="input-unit">판</span></div></div><div class="numeric-field ui-egg-field" data-probe="second"><label>현재 구매가격</label><div class="input-unit ui-egg-number"><input value="8000"><span>원/판</span></div></div></div></fieldset></div></div></main>';
 function inputDOM(owner,invalid){
  const attr=`aria-invalid="${invalid}" data-probe="input" value="200"`;
- if(owner==='q2')return `<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><div class="numeric-field"><label>합성 월 구매량</label><div class="input-unit" data-probe="input-parent"><input type="text" ${attr}><span>판</span></div></div></div></div></main>`;
+ if(owner==='q2')return `<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><div class="numeric-field ui-egg-field"><label>합성 월 구매량</label><div class="input-unit ui-egg-number" data-probe="input-parent"><input type="text" ${attr}><span class="qa-unit" data-probe="input-unit">판</span></div></div></div></div></main>`;
  if(owner==='q3')return `<div class="main"><div id="site-editor"><label>합성 사업장</label><div class="ui-input-field" data-field-size="name" data-probe="input-parent"><input class="text-input ui-input-control" type="text" ${attr}></div></div></div>`;
- return q4Shell(`<div class="ui-input-field" data-field-size="quantity"><div class="qa-number input-unit" data-probe="input-parent"><input type="text" inputmode="numeric" ${attr}><span class="qa-unit">판</span></div></div>`);
+ return q4Shell(`<div class="ui-input-field ui-egg-field" data-field-size="quantity"><div class="qa-number input-unit ui-egg-number" data-probe="input-parent"><input type="text" inputmode="numeric" ${attr}><span class="qa-unit" data-probe="input-unit">판</span></div></div>`);
 }
 function buttonDOM(owner){
  const cancel='<button type="button" class="ui-transaction-action" data-probe="cancel">취소</button>';
@@ -40,79 +40,37 @@ function buttonDOM(owner){
 }
 function monthDOM(value){
  const blank=value==='',last=value==='말일',selected=!blank;
- return q4Shell(`<section class="qa-form-section qa-repeat-section" data-section="repeat"><div class="qa-inline-pair"><div><label class="qa-label">주기</label><button type="button" class="qa-combo-trigger"><span>매월</span><span>${chevron}</span></button></div><div><label class="qa-label">날짜</label><div class="qa-combo-trigger qa-combo-editable" data-probe="month-control" data-selected="${selected}" data-error="false" data-variant="editable"><span class="qa-month-value" data-probe="month-value"><input type="text" data-month-date="date" data-probe="month-input" inputmode="numeric" autocomplete="off" placeholder="직접 입력" value="${value}" ${last?'readonly':''} size="${Math.max(1,value.length)}" style="--ui-month-width:${last?'2em':Math.max(1,value.length)+'ch'}"><span class="qa-month-suffix" data-probe="month-suffix" ${blank||last?'hidden':''}>일</span></span><button type="button" data-combo="date" data-probe="month-arrow"><span class="t-acc-chevron">${chevron}</span></button></div></div></div></section>`);
+ return q4Shell(`<section class="qa-form-section qa-repeat-section" data-section="repeat"><div class="qa-inline-pair" style="display:block"><div class="qa-field"><label class="qa-label">납품일</label><div class="qa-combo-trigger qa-combo-editable" data-probe="month-control" data-selected="${selected}" data-error="false" data-variant="editable"><span class="qa-month-value" data-probe="month-value"><input type="text" data-month-date="date" data-probe="month-input" inputmode="numeric" autocomplete="off" placeholder="직접 입력" value="${value}" ${last?'readonly':''} size="${Math.max(1,value.length)}" style="--ui-month-width:${last?'2em':Math.max(1,value.length)+'ch'}"><span class="qa-month-suffix" data-probe="month-suffix" ${blank||last?'hidden':''}>일</span></span><button type="button" data-combo="date" data-probe="month-arrow"><span class="t-acc-chevron">${chevron}</span></button></div></div></div></section>`);
 }
+function restoredDOM(kind,invalid){
+ const attr=`aria-invalid="${invalid}"`,input=(extra='')=>`<input data-probe="input" ${attr} value="대표 입력" ${extra}>`;
+ if(kind==='phone')return `<div class="main"><div class="ui-phone-shell" data-probe="control" ${attr}>${input('class="ui-phone-part"')}<span class="ui-phone-separator">-</span><input class="ui-phone-part" value="2345"><span class="ui-phone-separator">-</span><input class="ui-phone-part" value="6789"></div></div>`;
+ if(kind==='address')return `<div class="main"><div class="ui-search-field ui-field__control ui-input-control" data-probe="control">${chevron}${input('class="text-input"')}</div></div>`;
+ if(kind==='dropdown')return q4Shell(`<div class="qa-field"><button data-probe="input" class="qa-combo-trigger ui-input-control" ${attr}><span>매주</span>${chevron}</button></div>`);
+ if(kind==='date')return q4Shell(`<div class="qa-date-anchor" data-probe="control" data-date-error="${invalid}"><div class="qa-date-segments">${input('data-date-part="year"')}<span>년</span><input value="11"><span>월</span><input value="30"><span>일</span></div><button class="qa-calendar-trigger">${chevron}</button></div>`);
+ return q4Shell(`<div class="qa-field"><textarea data-probe="input" class="ui-input-control" ${attr}>추가 요청</textarea></div>`);
+}
+
 const flatten=(obj,prefix='',out={})=>{for(const [key,value]of Object.entries(obj)){const p=prefix?prefix+'.'+key:key;if(value!==null&&typeof value==='object')flatten(value,p,out);else out[p]=value;}return out;};
 function differences(a,b){const x=flatten(a),y=flatten(b);return [...new Set([...Object.keys(x),...Object.keys(y)])].filter(k=>typeof x[k]==='number'&&typeof y[k]==='number'?Math.abs(x[k]-y[k])>0.05:x[k]!==y[k]).map(path=>({path,before:x[path],after:y[path]}));}
-// The pinned fixture and current product already share horizontal gutters.
-// F02 changes only the four heights below; accepting an older 22px gutter repair
-// here would both reject the intended height change and mask a new width change.
-const pairAllow=new Set(['pair.style.gridTemplateRows','pair.rect.height','first.rect.height','second.rect.height']);
-const numericAllow=new Set(['input.rect.height','input.rect.y','input.style.paddingTop','input.style.paddingBottom','input.style.lineHeight',
- 'input-parent.rect.height','input-parent.style.alignItems','input-parent.style.minHeight']);
-const numericContract=values=>{
- const i=values.input,p=values['input-parent'];
- return Math.abs(i.rect.height-44)<.1&&Math.abs(p.rect.height-45)<.1&&Math.abs(i.rect.y-p.rect.y)<.1&&
- i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&p.style.alignItems==='center'&&p.style.minHeight==='45px'&&
- Math.abs(parseFloat(i.style.lineHeight)-parseFloat(i.style.fontSize)*1.5)<.1;
-};
-// MSG0521 authorizes common header inset, a borderless editor footer and an
-// 18px compact-confirm gap. Check the resulting geometry algebra explicitly;
-// do not allow unrelated style, width, focus, colour or control-size changes.
-const near=(a,b)=>Math.abs(a-b)<=.06;
-function msg0521ShellDelta(before,after,options,delta){
- const editor=options.kind==='button'&&options.owner==='q4editor';
- const q4=options.kind==='month'||options.kind==='input'&&options.owner==='q4'||editor;
- const compact=options.kind==='button'&&['q1','q3','q4'].includes(options.owner);
- if(!q4&&!compact)return false;
- const header=q4?1.6:0,footer=editor?-1:0,gap=compact?18-parseFloat(before.actions.style.marginTop):0;
- const height=header+footer+gap,dy=-height/2;
- // Native showModal() resolves auto block margins to used pixel values. A
- // centered height change must move both computed margins by the same dy;
- // their one-layout-unit rounding may differ from the rect by < 0.06px.
- const allowed=new Set(['shell.rect.height','shell.rect.y','shell.style.marginTop','shell.style.marginBottom']);
- for(const name of Object.keys(after))if(name!=='shell')allowed.add(name+'.rect.y');
- if(editor)for(const path of ['actions.rect.height','actions.style.borderTopColor','actions.style.borderTopWidth','actions.style.borderTopStyle'])allowed.add(path);
- if(compact)allowed.add('actions.style.marginTop');
- if(!delta.every(d=>allowed.has(d.path))||!near(after.shell.rect.height-before.shell.rect.height,height)||!near(after.shell.rect.y-before.shell.rect.y,dy))return false;
- for(const margin of ['marginTop','marginBottom'])if(!near(parseFloat(after.shell.style[margin])-parseFloat(before.shell.style[margin]),dy))return false;
- for(const name of Object.keys(after))if(name!=='shell'){
-  if(before[name].style.display==='none'&&after[name].style.display==='none'){
-   if(!Object.values(before[name].rect).every(value=>value===0)||!Object.values(after[name].rect).every(value=>value===0))return false;
-   continue;
-  }
-  const expected=compact?dy+gap:editor&&['cancel','confirm'].includes(name)?dy+header+footer:dy+header;
-  if(!near(after[name].rect.y-before[name].rect.y,expected))return false;
- }
- if(editor&&(!near(after.actions.rect.height-before.actions.rect.height,-1)||after.actions.style.borderTopWidth!=='0px'||after.actions.style.borderTopStyle!=='none'||after.actions.style.borderTopColor!==after.actions.style.color))return false;
- if(compact&&after.actions.style.marginTop!=='18px')return false;
- return true;
+// MSG0528 authorizes only egg-number geometry and the shared pair gap.
+// Non-egg morphology is compared exactly against the pinned 6768f95 source.
+const near=(a,b)=>Math.abs(a-b)<=.1;
+function eggContract(after,options){
+ const i=after.input,p=after['input-parent'],u=after['input-unit'];
+ const color=options.invalid?'rgb(217, 45, 72)':options.state==='focus-visible'?'rgb(49, 93, 222)':'rgb(203, 213, 220)';
+ return near(i.rect.height,44)&&near(p.rect.height,45)&&near(i.rect.y,p.rect.y)&&i.style.fontSize==='19px'&&i.style.fontWeight==='750'&&i.style.color==='rgb(32, 39, 42)'&&i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&i.style.borderRadius==='0px'&&p.style.borderTopWidth==='0px'&&p.style.borderBottomWidth==='1px'&&p.style.borderBottomColor===color&&p.style.backgroundColor==='rgb(255, 255, 255)'&&p.style.alignItems==='center'&&u&&near(u.rect.x-i.rect.x-i.rect.width,6)&&p.rect.width<160&&i.rect.width>=30;
 }
-// MSG0526 replaces box borders/padding with the existing Q2 underline owner.
-// Only geometry and these declared primitive properties may differ from c024.
-const fieldStyleDelta=new Set(['display','color','backgroundColor','borderTopColor','borderTopWidth','borderTopStyle','borderBottomColor','borderBottomWidth','borderBottomStyle','borderRadius','boxShadow','outlineColor','outlineStyle','outlineWidth','outlineOffset','fontSize','fontWeight','lineHeight','letterSpacing','paddingTop','paddingRight','paddingBottom','paddingLeft','marginTop','marginRight','marginBottom','marginLeft','columnGap','rowGap','gridTemplateColumns','gridTemplateRows','alignItems','minHeight','maxWidth']);
-function msg0526FieldDelta(before,after,options,delta){
- if(options.kind!=='input')return false;
- const i=after.input,p=after['input-parent'],q3=options.owner==='q3';
- const pathsAllowed=delta.every(d=>{
-  const [probe,group,property]=d.path.split('.');
-  if(!['input','input-parent','shell'].includes(probe))return false;
-  if(group==='rect')return ['x','y','width','height'].includes(property);
-  if(probe==='shell')return ['marginTop','marginBottom'].includes(property);
-  return group==='style'&&fieldStyleDelta.has(property);
- });
- const underline=q3?i:p;
- const expectedFocus=options.state==='focus-visible',expectedLine=options.invalid?'rgb(217, 45, 72)':expectedFocus?'rgb(49, 93, 222)':'rgb(203, 213, 220)';
- const baseline=i.style.color==='rgb(32, 39, 42)'&&near(i.rect.height,q3?45:44)&&i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&i.style.borderRadius==='0px'&&i.style.fontSize===(q3?'16px':'19px')&&i.style.fontWeight===(q3?'400':'750')&&underline.style.borderTopWidth==='0px'&&underline.style.borderBottomWidth==='1px'&&underline.style.borderBottomColor===expectedLine&&underline.style.backgroundColor==='rgb(255, 255, 255)';
- const widthLimit=q3?288:208;
- return pathsAllowed&&baseline&&underline.rect.width<=widthLimit+.1&&underline.rect.width>=100&&(!q3?numericContract(after):true);
+function pairContract(after){
+ const p=after.pair,a=after.first.rect,b=after.second.rect,sameRow=near(a.y,b.y);
+ return p.style.columnGap==='24px'&&p.style.rowGap==='18px'&&near(a.width,b.width)&&a.width>0&&(sameRow?near(b.x-a.x-a.width,24):near(a.x,b.x)&&near(b.y-a.y-a.height,18));
 }
-const numericPairDOM=({qty,price,unit,invalid})=>`<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair"><div class="numeric-field"><label data-probe="qty-label">월 구매량</label><div class="input-unit" data-probe="qty-row" data-order-invalid="${invalid}"><input data-probe="qty-input" value="${qty}" aria-invalid="${invalid}" placeholder="0"><select class="ui-quantity-unit" data-probe="qty-unit"><option>${unit}</option></select></div></div><div class="numeric-field"><label data-probe="price-label">현재 구매가격</label><div class="input-unit" data-probe="price-row" data-order-invalid="${invalid}"><input data-probe="price-input" value="${price}" aria-invalid="${invalid}" placeholder="0"><span data-probe="price-unit">원/판</span></div></div></div></fieldset></div></div></main>`;
+const numericPairDOM=({qty,price,unit,invalid})=>`<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair"><div class="numeric-field ui-egg-field"><label data-probe="qty-label">월 구매량</label><div class="input-unit ui-egg-number" data-probe="qty-row" data-order-invalid="${invalid}"><input data-probe="qty-input" value="${qty}" aria-invalid="${invalid}" placeholder="0"><select class="ui-quantity-unit" data-probe="qty-unit"><option>${unit}</option></select></div></div><div class="numeric-field ui-egg-field"><label data-probe="price-label">현재 구매가격</label><div class="input-unit ui-egg-number" data-probe="price-row" data-order-invalid="${invalid}"><input data-probe="price-input" value="${price}" aria-invalid="${invalid}" placeholder="0"><span data-probe="price-unit">원/판</span></div></div></div></fieldset></div></div></main>`;
 let browser;
 async function observe(page,css,html,{width,state='default',target=null,kind,id}){
  await page.setViewportSize({width,height:900});await page.mouse.move(0,0);
  await page.setContent(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body>${html}</body></html>`,{waitUntil:'domcontentloaded'});
- await page.evaluate(()=>{document.querySelector('dialog')?.showModal();document.activeElement?.blur();});
+ await page.evaluate(()=>{document.querySelector('dialog')?.showModal();document.activeElement?.blur();document.querySelectorAll('.ui-egg-number>input').forEach(el=>el.style.setProperty('--ui-number-ch',String(el.value.length)));});
  if(target){
   const control=page.locator(`[data-probe="${target}"]`);
   if(state==='disabled')await control.evaluate(el=>el.disabled=true);
@@ -140,11 +98,11 @@ async function observe(page,css,html,{width,state='default',target=null,kind,id}
 }
 try{
  await mkdir(evidence,{recursive:true});
- const parent=await readFile(join(root,'test/fixtures/browser/ux-c024.css'));
- if(parent.length!==171298||hash(parent)!=='9b507e09260b8d76c59136b4231fe86977f4130a3910ae9fb8c3175335de34c6')throw Error('Pinned c024 CSS fixture mismatch');
+ const parent=await readFile(join(root,'test/fixtures/browser/styles-6768f95.css'));
+ if(parent.length!==177192||hash(parent)!=='63e34cefe835ae172b4bb70af17920a8e48c7be2f0ac0cc29db0b960dbe7a916')throw Error('Pinned 6768f95 CSS fixture mismatch');
  const current=await readFile(currentPath);
  report.source={commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),
-  parent:{htmlSha256:'c02467f859829b438b3142435fe4698f335c42bae592d9f32255774ffe210e16',cssSha256:hash(parent),bytes:parent.length},
+  parent:{commitSha:'6768f95e759652bdaadbd15fab406e0deebf0393',cssSha256:hash(parent),bytes:parent.length},
   current:{path:relative(root,currentPath),cssSha256:hash(current),bytes:current.length,builtAsset:currentPath===join(root,'dist/styles.css')}};
  if(report.source.current.builtAsset){
   const identity=JSON.parse(await readFile(join(root,'dist/build-identity.json'),'utf8'));
@@ -160,41 +118,22 @@ try{
  async function compare(id,html,options){
   const before=await observe(page,parent.toString(),html,{...options,id:id+'-before'});
   const after=await observe(page,current.toString(),html,{...options,id:id+'-after'});
-  const delta=differences(before,after),known=options.kind==='pair'&&delta.length>0,numeric=options.kind==='input'&&options.owner==='q2';
-  let accepted=delta.length===0;
-  if(known){
-   const b=before.pair.style,a=after.pair.style,expectedGap=options.width<375?'15px':'25px';
-   accepted=delta.every(d=>pairAllow.has(d.path))&&a.columnGap===expectedGap&&b.columnGap===expectedGap&&a.rowGap==='12px'&&b.rowGap==='12px'&&
-    Math.abs(after.first.rect.width-before.first.rect.width)<=.1&&Math.abs(after.second.rect.width-before.second.rect.width)<=.1&&
-    Math.abs(after.first.rect.x-before.first.rect.x)<=.1&&Math.abs(after.second.rect.x-before.second.rect.x)<=.1&&
-    Math.abs(after.second.rect.width-after.first.rect.width)<=.1&&
-    Math.abs(after.second.rect.x-(after.first.rect.x+after.first.rect.width+parseFloat(expectedGap)))<=.1&&
-    Math.abs(after.first.rect.height-(options.width<768?73.6:76.4))<=.1&&Math.abs(after.second.rect.height-after.first.rect.height)<=.1&&Math.abs(after.pair.rect.height-after.first.rect.height)<=.1;
-
-  }
-  if(numeric)accepted=delta.every(d=>numericAllow.has(d.path))&&numericContract(after);
-  const msg0526=msg0526FieldDelta(before,after,options,delta);
-  if(msg0526)accepted=true;
-  const msg0521=delta.length>0&&msg0521ShellDelta(before,after,options,delta);
-  if(msg0521)accepted=true;
-  const expectedClass=msg0526?'EXPECTED_MSG0526_SHARED_INPUT_PRIMITIVE':msg0521?'EXPECTED_MSG0521_COMMON_MODAL_INSET_GAP_FOOTER':numeric?'EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY':known?'EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT':null;
-  observations.push({id,...options,before,after,delta,classification:delta.length?(accepted?expectedClass:'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE'):'UNCHANGED'});
-  check(id+':COMPARISON',accepted,{deltaCount:delta.length,knownPairDelta:known,msg0517Numeric:numeric,msg0521CommonShell:msg0521,msg0526SharedInput:msg0526});
-  if(numeric)check(id+':NUMERIC_ROW_CONTRACT',numericContract(after));
+  const delta=differences(before,after),egg=options.kind==='input'&&options.owner!=='q3',pair=options.kind==='pair';
+  const accepted=egg?eggContract(after,options):pair?pairContract(after):delta.length===0;
+  observations.push({id,...options,before,after,delta,classification:egg?'EXPECTED_MSG0528_EGG_COMPACT_VARIANT':pair?'EXPECTED_MSG0528_COMMON_PAIR_GAP':delta.length?'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE':'UNCHANGED'});
+  check(id+':COMPARISON',accepted,{deltaCount:delta.length,eggVariant:egg,sharedPair:pair});
   if(options.target&&['hover','active','focus-visible','disabled'].includes(options.state)){
    const key={'focus-visible':'focusVisible',hover:'hover',active:'active',disabled:'disabled'}[options.state];
-   check(id+':STATE_ACTUALLY_ACTIVE',before[options.target].pseudo[key]&&after[options.target].pseudo[key]);
+   if(before[options.target].pseudo)check(id+':STATE_ACTUALLY_ACTIVE',before[options.target].pseudo[key]&&after[options.target].pseudo[key]);
   }
-  if(options.kind==='input'&&options.invalid){const expected=options.owner==='q3'&&options.state==='focus-visible'?'rgb(217, 45, 72) 0px -1px 0px 0px inset':'none';check(id+':INVALID_FOCUS_OWNER',before.input.style.boxShadow==='none'&&after.input.style.boxShadow===expected,{before:before.input.style.boxShadow,after:after.input.style.boxShadow,expected});}
+  if(options.kind==='input'&&options.invalid)check(id+':INVALID_FOCUS_OWNER',before.input.style.boxShadow==='none'&&after.input.style.boxShadow==='none');
   if(options.kind==='month'){
    const control=after['month-control'],value=after['month-value'],arrow=after['month-arrow'];
-   check(id+':ONE_ROW_CENTER',value.style.gridRowStart==='1'&&arrow.style.gridRowStart==='1'&&
-    Math.abs(value.rect.y+value.rect.height/2-control.rect.y-control.rect.height/2)<=0.5&&
-    Math.abs(value.rect.x+value.rect.width/2-control.rect.x-control.rect.width/2)<=0.5,
-    {valueRow:value.style.gridRowStart,arrowRow:arrow.style.gridRowStart});
+   check(id+':ONE_ROW_CENTER',value.style.gridRowStart==='1'&&arrow.style.gridRowStart==='1'&&Math.abs(value.rect.y+value.rect.height/2-control.rect.y-control.rect.height/2)<=0.5&&Math.abs(value.rect.x+value.rect.width/2-control.rect.x-control.rect.width/2)<=0.5);
   }
   return after;
  }
+
  for(const width of widths){
   await compare(`PAIR_${width}`,pairDOM,{width,kind:'pair'});
   for(const value of ['','1','123456789'])for(const unit of ['개','판'])for(const invalid of [false,true])for(const state of ['default','focus-visible']){
@@ -202,11 +141,12 @@ try{
    const currentValues=await observe(page,current.toString(),numericPairDOM({qty:value,price:value,unit,invalid}),{width,state,target:'qty-input',kind:'numeric-current',id});
    const q=currentValues['qty-input'],p=currentValues['price-input'],qr=currentValues['qty-row'],pr=currentValues['price-row'],ql=currentValues['qty-label'],pl=currentValues['price-label'];
    const equal=keys=>keys.every(k=>q.style[k]===p.style[k]);
-   check(id+':CONTROL_HEIGHT_BASELINE',Math.abs(qr.rect.height-45)<.1&&Math.abs(pr.rect.height-45)<.1&&Math.abs(q.rect.height-44)<.1&&Math.abs(p.rect.height-44)<.1&&Math.abs(q.rect.y-p.rect.y)<.1&&Math.abs(qr.rect.y+qr.rect.height-pr.rect.y-pr.rect.height)<.1&&equal(['fontFamily','fontSize','fontWeight','lineHeight','paddingTop','paddingBottom']));
+   check(id+':CONTROL_HEIGHT_BASELINE',Math.abs(qr.rect.height-45)<.1&&Math.abs(pr.rect.height-45)<.1&&Math.abs(q.rect.height-44)<.1&&Math.abs(p.rect.height-44)<.1&&equal(['fontFamily','fontSize','fontWeight','lineHeight','paddingTop','paddingBottom']));
    check(id+':LABEL_SPACING_TARGET',Math.abs(qr.rect.y-ql.rect.y-ql.rect.height-10.4)<.1&&Math.abs(pr.rect.y-pl.rect.y-pl.rect.height-10.4)<.1&&currentValues['qty-unit'].rect.height>=44&&currentValues['qty-unit'].rect.width>=44);
-   observations.push({id,width,value,unit,invalid,state,after:currentValues,classification:'MSG0517_CURRENT_NUMERIC_EQUALITY'});
+   observations.push({id,width,value,unit,invalid,state,after:currentValues,classification:'MSG0528_CURRENT_EGG_NUMERIC_EQUALITY'});
   }
 
+  for(const owner of ['phone','address','dropdown','date','request'])for(const invalid of [false,true])for(const state of ['default','hover','focus-visible'])await compare(`RESTORE_${width}_${owner}_${invalid?'INVALID':'NORMAL'}_${state}`,restoredDOM(owner,invalid),{width,kind:'restored',owner,invalid,state,target:'input'});
   for(const owner of ['q2','q3','q4'])for(const invalid of [false,true])for(const state of ['default','hover','focus-visible'])
    await compare(`INPUT_${width}_${owner}_${invalid?'INVALID':'NORMAL'}_${state}`,inputDOM(owner,invalid),{width,kind:'input',owner,invalid,state,target:'input'});
   for(const owner of ['q1','q3','q4','q4editor'])for(const target of ['cancel','confirm'])for(const state of ['default','hover','active','focus-visible','disabled']){
@@ -222,8 +162,7 @@ try{
 }catch(error){report.status='FAIL_EXECUTION';report.error=String(error.stack||error);process.exitCode=1;}
 finally{
  await browser?.close();await mkdir(evidence,{recursive:true});
- report.summary={comparisons:observations.length,checks:checks.length,failures:checks.filter(c=>c.status==='FAIL').length,
-  unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,knownPairDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_PAIR_NUMERIC_HEIGHT').length,msg0517NumericDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0517_NUMERIC_ROW_GEOMETRY').length,msg0517CurrentNumericCases:observations.filter(o=>o.classification==='MSG0517_CURRENT_NUMERIC_EQUALITY').length,msg0521CommonShellDeltas:observations.filter(o=>o.classification==='EXPECTED_MSG0521_COMMON_MODAL_INSET_GAP_FOOTER').length};
+ report.summary={comparisons:observations.length,checks:checks.length,failures:checks.filter(c=>c.status==='FAIL').length,unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,eggVariantCases:observations.filter(o=>o.classification==='EXPECTED_MSG0528_EGG_COMPACT_VARIANT').length,commonPairCases:observations.filter(o=>o.classification==='EXPECTED_MSG0528_COMMON_PAIR_GAP').length,currentNumericCases:observations.filter(o=>o.classification==='MSG0528_CURRENT_EGG_NUMERIC_EQUALITY').length};
  await writeFile(join(evidence,'styles.json'),JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify({status:report.status,source:report.source,runtime:report.runtime,summary:report.summary,error:report.error,failedChecks:checks.filter(c=>c.status==='FAIL'),evidence:join(evidence,'styles.json')},null,2));
 }

@@ -47,12 +47,13 @@ test('C26 FLEX integer display is a separate projection of exact ratios',()=>{
  for(const input of [{monthlyPlan:'',quantity:'15'},{monthlyPlan:'67',quantity:'0'},{monthlyPlan:'67',quantity:'15',range:{min:'16',max:'20'}},{monthlyPlan:'67',quantity:'15',range:{min:'12',max:'14'}},{monthlyPlan:'67',quantity:'10가20'}])assert.equal(demandFrequency(input).status,'INVALID');
  const huge=demandFrequency({monthlyPlan:'900719925474099300001',quantity:'2'});assert.equal(huge.normalized.display.low,'450359962737049650001');
 });
-test('C26 Seoul year policy changes at local boundaries and saved anchors do not expire',()=>{
- for(const [now,years,locked] of [['2026-09-30T14:59:59Z',[2026],true],['2026-09-30T15:00:00Z',[2026,2027],false],['2026-12-31T14:59:59Z',[2026,2027],false],['2026-12-31T15:00:00Z',[2027],true]]){
+test('C26 saved-anchor regression; C28 supersedes October year unlocking with the next-month start window',()=>{
+ for(const [now,years,locked] of [['2026-09-30T14:59:59Z',[2026],true],['2026-09-30T15:00:00Z',[2026],true],['2026-12-31T14:59:59Z',[2026,2027],false],['2026-12-31T15:00:00Z',[2027],true]]){
   const p=preferredYearPolicy(now);assert.deepEqual(p.years,years);assert.equal(p.yearLocked,locked);
  }
- assert.equal(inspectPreferredDate('2027-01-01',{now:'2026-09-30T14:00:00Z'}).code,'YEAR_RANGE');
- assert.equal(inspectPreferredDate('2027-01-01',{now:'2026-10-01T00:00:00Z'}).valid,true);
+ assert.equal(inspectPreferredDate('2027-01-01',{now:'2026-09-30T14:00:00Z'}).code,'RANGE');
+ assert.equal(inspectPreferredDate('2027-01-01',{now:'2026-10-01T00:00:00Z'}).valid,false);
+ assert.equal(inspectPreferredDate('2026-11-06',{now:'2026-11-02T00:00:00Z'}).valid,true);
  assert.equal(inspectPreferredDate('2025-01-31',{now:'2026-11-02',savedAnchor:'2025-01-31'}).valid,true);
  assert.equal(inspectPreferredDate('2025-01-31',{now:'2026-11-02',savedAnchor:'2025-01-31',edited:true}).valid,false);
  assert.equal(inspectPreferredDate('',{now:'2026-11-02'}).empty,true);
@@ -61,7 +62,8 @@ test('C26 Seoul year policy changes at local boundaries and saved anchors do not
 test('C26 complete month-end clamps and partial input remains incomplete',()=>{
  for(const [year,month,wanted] of [[2026,2,'2026-02-28'],[2028,2,'2028-02-29'],[2026,4,'2026-04-30'],[2026,1,'2026-01-31']])assert.equal(clampPreferredDate({year,month,day:31}).value,wanted);
  assert.equal(clampPreferredDate({year:'202',month:'2',day:''}).valid,false);assert.equal(clampPreferredDate({year:2026,month:20,day:31}).valid,false);
- assert.equal(inspectPreferredDate({year:2028,month:2,day:31},{now:'2028-01-01',clamp:true}).value,'2028-02-29');
+ // Arithmetic remains valid; a business date requires verified 2028 holiday coverage.
+ assert.equal(inspectPreferredDate({year:2028,month:2,day:31},{now:'2028-01-01',clamp:true}).code,'UNAVAILABLE');
  assert.equal(inspectPreferredDate('2028-02-31',{now:'2028-01-01'}).valid,false);
 });
 test('C26 monthly rule and explicit optional date form one transaction and preserve31/last intent',()=>{
@@ -73,7 +75,7 @@ test('C26 monthly rule and explicit optional date form one transaction and prese
  c=syncMonthlyPreferredDate(c,{kind:'month',year:2028,month:2}).value;assert.equal(c.preferredDate,'2028-02-29');assert.equal(c.dayRule,31);
  c=syncMonthlyPreferredDate(c,{kind:'clear'}).value;assert.equal(c.preferredDate,'');assert.equal(c.dayRule,31);
  assert.equal(inspectCadence({...c,preferredDate:'2028-02-28'}).valid,false);assert.equal(createCadence('4주'),null);
- assert.deepEqual(createCadence('2주'),{version:'2.0.0',preferredDate:'',kind:'INTERVAL_DAYS',intervalDays:14});
+ assert.deepEqual(createCadence('2주'),{version:'2.1.0',preferredDate:'',nominalAnchor:'',kind:'INTERVAL_DAYS',intervalDays:14});
  assert.equal(inspectCadence({...createCadence('2주'),intervalDays:7}).valid,false);assert.equal(inspectCadence(null).valid,false);
 });
 test('C26 direct February31 clamps the first date while preserving requested31, unlike an explicit calendar28 choice',()=>{
