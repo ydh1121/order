@@ -30,6 +30,13 @@ const reset = await storage.reset({
 
 The factory accepts `localStorage`, `sessionStorage`, `locks`, `crypto`, `now`, `key` and `lockName` dependencies. Production defaults are the browser APIs, `Date.now` and `order-q1-q4-storage`. Tests and the separately bundled local QA LAB inject isolated implementations. Product code has no mutable QA global. `projectStoredPayload` and `emptyStoredPayload` are exported for the owning integration.
 
+`inspectCurrent()` checks the durable record under that same lock and returns only
+`ok`, `status`, `revision`, `versionToken` and an optional non-sensitive `reason`.
+It never reads session migration sources or writes a record. Q4 copy review uses
+it to reject an already changed durable source before updating its private parent
+draft. This read does not reserve a revision; the eventual parent save still must
+pass the normal revision/token commit check.
+
 | Result | Meaning |
 | --- | --- |
 | `EMPTY` | No durable record and neither legacy session key exists; revision 0, token `ABSENT`. Reading alone writes nothing. |

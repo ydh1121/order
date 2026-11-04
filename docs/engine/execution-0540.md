@@ -36,6 +36,8 @@ The basic notice appears only before selection. Selected-context notices use the
 
 Legacy per-week/cadence2 values are retained as legacy, never reinterpreted as an approved cadence just by reading. Schema7 persists consultation, frequency, weekday selection order, monthly restoration memory and provider-qualified address data. The durable adapter still serializes writes and returns failure/conflict rather than false success. Popup drafts remain private until confirmation.
 
+Q4 settings copy consumes the shared comparison renderer before applying selected fields to the private parent draft. Its preview includes derived cadence changes. A read-only, locked durable-version preflight and the parent generation/fingerprint reject stale confirmation; inspection never migrates or writes storage. Selection, review, cancellation and child confirmation perform zero durable writes. The parent confirmation remains the sole durable transaction.
+
 S2R renders only actual pending and successful receipts. Its return-to-idle presentation timing is not a fake save. Failed, conflicted or invalidated attempts cannot display success.
 
 The address route allows only the fixed official Kakao host and bounded query/page/results/timeout/response. `KAKAO_REST_API_KEY` exists only in server binding/header. A Kakao selection identity is a locally computed provider-qualified hash, not a claimed provider-issued building identifier. Existing JUSO addresses retain their provenance.

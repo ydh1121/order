@@ -184,14 +184,14 @@ function copyItem(id,label,checked=false){return checkbox(`qa-copy-field-${id}`,
 // MSG0433 copy modal — common required accordion, 5 explicit opt-in fields and zero default selections.
 const COPY_FIELDS=[['contact','연락 수단'],['mode','주문 방식'],['monthly','월 주문 수량'],['base','회당 예상 주문 수량'],['holiday','휴무일 · 주말 · 공휴일 대응']];
 const copyDefaultFields=()=>Object.fromEntries(COPY_FIELDS.map(([k])=>[k,false]));
-let copyHeightAnimation=null,copyOpenAnimation=null,copyClosing=false;
+let copyHeightAnimation=null,copyOpenAnimation=null,copyClosing=false,copyReview=null,copyApplied=false,copyContext=null,copyPending=false,copyGeneration=0;
 function copyFieldAvailable(k){const src=state.copySource;if(src===null||src===undefined)return false;const m=state.siteModes[src];return !(['monthly','base','holiday'].includes(k)&&m==='ONCE');}
 function copyOptions(i){return `<div class="qa-copy-check-grid">${COPY_FIELDS.map(([key,rawLabel],n)=>{const label=key==='holiday'&&state.siteModes[i]==='FLEX'?'매장 정기 휴무일 · 추가 요청사항':rawLabel;return `<div class="qa-copy-check-cell ${n===4?'qa-copy-check-wide':''}">${checkbox(`qa-copy-field-${key}`,label,false,`data-copy-field="${key}" ${copyFieldAvailable(key)?'':'disabled'} aria-label="${label}${copyFieldAvailable(key)?'':' (해당 없음)'}"`,true)}</div>`;}).join('')}</div>`;}
-function requestCopy(i){if(!isIndividual()||$('qa-copy-confirm'))return;closeQ4Dropdown();state.copySource=i;state.copyTargets=[];state.copyFields=copyDefaultFields();state.copyAttempted=false;copyClosing=false;
+function requestCopy(i){if(!isIndividual()||$('qa-copy-confirm'))return;closeQ4Dropdown();state.copySource=i;state.copyTargets=[];state.copyFields=copyDefaultFields();state.copyAttempted=false;copyClosing=false;copyReview=null;copyApplied=false;copyPending=false;copyGeneration++;copyContext=regularContext;
  const targets=Array.from({length:state.count},(_,n)=>n).filter(n=>n!==i).map(n=>checkbox(`qa-copy-target-${n}`,`<span class="qa-copy-target-text">${escapeHTML(names[n])}</span>`,false,`data-copy-target="${n}" aria-label="${escapeHTML(names[n])}"`,true)).join('');
- const host=window.OrderCopyDialog.create({title:names[i]+' 설정 복제',fields:copyOptions(i),targets});
+ const host=window.OrderCopyDialog.create({title:names[i]+' 설정 복사',fields:copyOptions(i),targets,applyLabel:'적용'});host.dataset.copyStage='select';
  document.body.append(host);q4SeedCheckboxes(host);bindCopyDialogEvents(host);updateCopyValidation();
- window.OrderModalShell.bind(host,()=>disposeCopy(),{editable:true,isDirty:()=>!!state.copyTargets.length||Object.values(state.copyFields||{}).some(Boolean)});window.OrderModalShell.open(host,{variant:'copy',history:true,returnFocus:()=>document.querySelector(`[data-copy-from="${i}"]`),initialFocus:()=>host.querySelector('[data-copy-cancel]')});
+ window.OrderModalShell.bind(host,()=>disposeCopy(),{editable:true,isDirty:()=>!!state.copyTargets.length||Object.values(state.copyFields||{}).some(Boolean),onExitIntent:()=>{copyGeneration++;copyPending=false;host.querySelector('[data-copy-apply]').disabled=false;}});window.OrderModalShell.open(host,{variant:'copy',role:'editor',history:true,returnFocus:()=>document.querySelector(`[data-copy-from="${i}"]`),initialFocus:()=>host.querySelector('[data-copy-cancel]')});
 }
 function copyIncompatibleReason(i){const f=state.copyFields,src=state.copySource;if(src===null||!state.copyTargets.includes(i))return '';
  const srcMode=state.siteModes[src],effective=f.mode?srcMode:state.siteModes[i];
@@ -217,11 +217,11 @@ function updateCopyValidation(){const host=$('qa-copy-confirm');if(!host)return;
 function closeCopy(restore=true){if(restore)return window.OrderModalShell.requestClose($('qa-copy-confirm'),'cancel');return disposeCopy(false);}
 function disposeCopy(restore=true){
  const host=$('qa-copy-confirm');if(!host)return;
- const from=state.copySource;
+ const from=state.copySource,context=copyContext;copyClosing=true;copyReview=null;const generation=++copyGeneration;copyPending=false;
  if(copyOpenAnimation){copyOpenAnimation.cancel();copyOpenAnimation=null;}
  if(copyHeightAnimation){copyHeightAnimation.cancel();copyHeightAnimation=null;}
- const finish=()=>{host.remove();state.copySource=null;state.copyTargets=[];state.copyFields=null;state.copyAttempted=false;
-  if(restore&&Number.isInteger(from))document.querySelector(`[data-copy-from="${from}"]`)?.focus({preventScroll:true});};
+ const finish=()=>{host.remove();if(generation!==copyGeneration||copyContext!==context)return;state.copySource=null;state.copyTargets=[];state.copyFields=null;state.copyAttempted=false;copyContext=null;
+  if(restore&&regularContext===context&&!state.dialogClosed&&Number.isInteger(from))document.querySelector(`[data-copy-from="${from}"]`)?.focus({preventScroll:true});};
  window.OrderModalShell.close(host,{after:finish});
 }
 function bindCopyDialogEvents(host){
@@ -232,7 +232,7 @@ function bindCopyDialogEvents(host){
   if(a){const open=a.getAttribute('aria-expanded')!=='true';const card=host.querySelector('.qa-copy-card');const from=card?.getBoundingClientRect().height||0;
    setOpen('qa-copy-fields',open);requestAnimationFrame(()=>animateCopyCardHeight(from,card?.scrollHeight||from));return;}
  });
- host.addEventListener('change',e=>{const el=e.target;if(!el.matches('input[type=checkbox]'))return;
+ host.addEventListener('change',e=>{const el=e.target;if(copyClosing||host.dataset.copyStage==='review'||!el.matches('input[type=checkbox]'))return;
   q4AnimateCheckedTransition(el);
   if(el.dataset.copyField!==undefined){state.copyFields[el.dataset.copyField]=el.checked;updateCopyValidation();requestAnimationFrame(resizeCopyCardAfterToggle);}
   else if(el.dataset.copyTarget!==undefined){const n=Number(el.dataset.copyTarget);if(el.checked){if(!state.copyTargets.includes(n))state.copyTargets.push(n);}else state.copyTargets=state.copyTargets.filter(x=>x!==n);
@@ -241,10 +241,38 @@ function bindCopyDialogEvents(host){
  host.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.target.matches('button,input[type=checkbox]')){
    e.preventDefault();if(copyEligibility().valid)applyCopy();else validateCopyAttempt();}});
 }
-function applyCopy(){if(!isIndividual()||!copyEligibility().valid){validateCopyAttempt();return;}
- const from=state.copySource,f={...state.copyFields}, targets=[...state.copyTargets],srcMode=state.siteModes[from];
- // Preflight ALL destinations before any write: atomic local draft operation.
- if(targets.some(n=>copyIncompatibleReason(n))){validateCopyAttempt();return;}
+function copyDraftFingerprint(){return JSON.stringify({epoch:commitEpoch,mode:state.mode,count:state.count,asOf:state.asOfLocalDate,ids:regularContext?.allocations.map(a=>[a.id,a.locationId,a.lineId]),source:state.copySource,targets:state.copyTargets,fields:state.copyFields,values:state.values,modes:state.siteModes,contacts:state.siteContacts,holidays:state.siteHolidays,repeats:state.siteRepeat,rows:monthlyEditor?.rows});}
+function copyHolidayValue(value,mode){const h=value||{},days=h.none?'없음':h.irregular?'비정기':(h.days||[]).join(' · '),parts=[days];if(mode==='FIXED')parts.push(...['conflict','weekend','holiday','subholiday'].map(k=>h[k]||''));if(h.request)parts.push(h.request);return parts.filter(Boolean).join(' / ');}
+function copyTargetHoliday(from,dest){const source=state.siteHolidays[from],target=state.siteHolidays[dest],mode=state.copyFields.mode?state.siteModes[from]:state.siteModes[dest];return state.siteModes[from]==='FLEX'||mode==='FLEX'?{...target,days:[...source.days],none:source.none,irregular:source.irregular,request:source.request}:{...source,days:[...source.days]};}
+function plannedCopyRepeat(from,dest,f,monthly=state.values[dest].monthly){if(!(f.monthly||f.base)||(f.mode?state.siteModes[from]:state.siteModes[dest])!=='FIXED')return null;const quantity=f.base?state.values[from].base:state.values[dest].base;return editQuantityCadence({repeat:OrderRepeatContract.snapshot(state.siteRepeat[dest]),monthly:f.monthly?state.values[from].monthly:monthly,quantity,field:f.base?'base':'monthly',value:f.base?quantity:state.values[from].monthly,asOfLocalDate:state.asOfLocalDate,clampDirect:false}).repeat;}
+function copyRepeatDate(r){return r.period==='협의'?'':r.period==='매월'?nearestMonthly(r.date==='말일'?'last':Number(String(r.date||'').replace(/일$/,'')),new Date())||'':r.cadence?.preferredDate||'';}
+function copyReviewPatches(){const from=state.copySource,f=state.copyFields,number=value=>String(value??'')?formatNumericText(value,{grouped:true})+unit():'',contact=value=>[['phone','전화'],['sms','문자'],['kakao','카카오톡'],['email','이메일']].filter(([key])=>value?.[key]).map(([,label])=>label).join(' · ');
+ return state.copyTargets.map(dest=>{const beforeMode=state.siteModes[dest],afterMode=f.mode?state.siteModes[from]:beforeMode,changes=[],add=(key,label,before,after)=>{changes.push({key,label,before,after});};
+  if(f.mode)add('mode','주문 방식',mName[beforeMode],mName[afterMode]);
+  if(f.monthly)add('monthly','월 주문 수량',number(state.values[dest].monthly),number(state.values[from].monthly));
+  if(f.base)add('base','회당 예상 주문 수량',number(state.values[dest].base),number(state.values[from].base));
+  const planned=plannedCopyRepeat(from,dest,f);if(planned){const previous=state.siteRepeat[dest];if(previous.period!==planned.period)add('period','주문 주기',previous.period,planned.period);if(previous.frequency!==planned.frequency)add('frequency','주기 내 예상 납품횟수',previous.frequency,planned.frequency);const beforeDate=copyRepeatDate(previous),afterDate=copyRepeatDate(planned);if(beforeDate!==afterDate)add('preferredDate','정기 주문 시작 예상일',beforeDate.replaceAll('-','.'),afterDate.replaceAll('-','.'));}
+  if(f.contact)add('contact','연락 수단',contact(state.siteContacts[dest]),contact(state.siteContacts[from]));
+  if(f.holiday)add('holiday',afterMode==='FLEX'?'매장 정기 휴무일 · 추가 요청사항':'휴무일 · 주말 · 공휴일 대응',copyHolidayValue(state.siteHolidays[dest],beforeMode),copyHolidayValue(copyTargetHoliday(from,dest),afterMode));
+  return {id:regularContext.allocations[dest].id,name:names[dest],changes};});
+}
+function setCopyStage(review=null){const host=$('qa-copy-confirm');if(!host)return;copyReview=review;host.dataset.copyStage=review?'review':'select';const title=review?'주문 설정 변경 확인':names[state.copySource]+' 설정 복사';host.setAttribute('aria-label',title);host.querySelector('.qa-copy-title').textContent=title;
+ window.OrderModalShell.resize(host,()=>{host.querySelector('.qa-copy-accordion-area').hidden=!!review;host.querySelector('.qa-copy-target-group').hidden=!!review;const preview=host.querySelector('[data-copy-preview]');preview.classList.toggle('ui-copy-review',!!review);preview.innerHTML=review?window.OrderCopyDialog.renderReview(review.patches,{prefix:'q4-settings-review'}):'';const apply=host.querySelector('[data-copy-apply]');apply.textContent=review?'확인':'적용';apply.disabled=review?false:!copyEligibility().valid;host.querySelector('.qa-copy-scroll').scrollTop=0;});
+ if(review)host.querySelector('.ui-copy-review-heading')?.focus({preventScroll:true});else{updateCopyValidation();host.querySelector('[data-copy-cancel]')?.focus({preventScroll:true});}
+}
+async function applyCopy(){const host=$('qa-copy-confirm');if(!host||!host.open||copyClosing||copyApplied||copyPending||state.dialogClosed||copyContext!==regularContext)return;if(!isIndividual()||!copyEligibility().valid){if(copyReview)setCopyStage();validateCopyAttempt();return;}
+ if(!copyReview){setCopyStage({fingerprint:copyDraftFingerprint(),patches:copyReviewPatches()});return;}
+ // Review is read-only. Reject a changed parent generation, source, selection,
+ // destination or monthly transaction before the single private application.
+ if(copyReview.fingerprint!==copyDraftFingerprint()||JSON.stringify(copyReview.patches)!==JSON.stringify(copyReviewPatches())){setCopyStage();return;}
+ const from=state.copySource,f={...state.copyFields},targets=[...state.copyTargets];if(targets.some(n=>copyIncompatibleReason(n))){setCopyStage();validateCopyAttempt();return;}
+ const generation=copyGeneration,review=copyReview,context=regularContext;copyPending=true;host.querySelector('[data-copy-apply]').disabled=true;
+ let current=false;try{current=await window.OrderRegularQ4Bridge.isCurrent();}catch{}
+ if(generation!==copyGeneration||context!==regularContext||copyClosing||state.dialogClosed||!host.open||host!==$('qa-copy-confirm'))return;copyPending=false;
+ if(!current||copyReview!==review||review.fingerprint!==copyDraftFingerprint()||JSON.stringify(review.patches)!==JSON.stringify(copyReviewPatches())){setCopyStage();if(!current){const feedback=host.querySelector('#qa-copy-feedback');feedback.textContent='다른 탭에서 입력이 변경되었습니다. 새로고침 후 다시 확인해 주세요.';feedback.classList.remove('ui-feedback-sr');}return;}
+ copyApplied=true;applyCopyDraft(from,f,targets);closeCopy(false);render();travel(from);
+}
+function applyCopyDraft(from,f,targets){const srcMode=state.siteModes[from];
  for(const dest of targets){if(f.mode)state.siteModes[dest]=srcMode;
  if(f.contact)state.siteContacts[dest]={...state.siteContacts[from]};
  if(f.monthly)state.values[dest].monthly=state.values[from].monthly;
@@ -253,8 +281,8 @@ function applyCopy(){if(!isIndividual()||!copyEligibility().valid){validateCopyA
  }if(f.monthly)monthlyEditor?.clone(monthlyLocation(from),targets.map(monthlyLocation));syncMonthlyFields();
  // Copy confirmation is one private transaction. Reclassify the actually
  // copied quantities without clamping a destination's explicit manual Q.
- if(f.monthly||f.base)for(const dest of targets){if(siteMode(dest)!=='FIXED')continue;const r=state.siteRepeat[dest],v=state.values[dest],result=editQuantityCadence({repeat:OrderRepeatContract.snapshot(r),monthly:v.monthly,quantity:v.base,field:f.base?'base':'monthly',value:f.base?v.base:v.monthly,asOfLocalDate:state.asOfLocalDate,clampDirect:false});Object.assign(r,result.repeat);if(!result.repeat.monthlyMemory)delete r.monthlyMemory;state.quantityAdjusted[dest]=false;if(r.period==='매월')syncPreferredRule(dest);state.deliveryPlans[dest]=null;}
- closeCopy(false);state.siteOpen=from;render();travel(from);}
+ if(f.monthly||f.base)for(const dest of targets){if(siteMode(dest)!=='FIXED')continue;const r=state.siteRepeat[dest],next=plannedCopyRepeat(from,dest,f,state.values[dest].monthly);Object.assign(r,next);if(!next.monthlyMemory)delete r.monthlyMemory;state.quantityAdjusted[dest]=false;if(r.period==='매월')syncPreferredRule(dest);state.deliveryPlans[dest]=null;}
+ state.siteOpen=from;}
 function animateCopyCardHeight(){/* The disclosure body owns height; compact flex panel follows it naturally. No second animation on the same size change. */}
 function resizeCopyCardAfterToggle(){/* Error/target content changes use natural height within the common capped, single-scroll shell. */}
 function activeRepeat(i){return isIndividual()?state.siteRepeat[i]:state;}
@@ -555,8 +583,10 @@ function travel(i,afterLayout=false){if(i<0||i>=state.count)return;state.parentO
  state.siteOpen=i;motions.push(setOpen(`site-${i}`,true));
  const header=()=>document.querySelector(`#site-${i} > .accordion-trigger`);
  if(afterLayout)return navigateAfterAccordionLayout(motions,header);
- // Manual accordion navigation retains its existing near-viewport behavior.
- requestAnimationFrame(()=>{const x=$(`site-${i}`);if(!x?.isConnected)return;const scroll=$('q4-regular-scroll');if(scroll){const r=x.getBoundingClientRect(),b=scroll.getBoundingClientRect();if(r.top<b.top||r.top>b.bottom-55)scroll.scrollTop+=r.top-b.top-10;}header()?.focus({preventScroll:true});});
+ // A deferred disclosure measurement must not steal a newer input focus.
+ // Otherwise an immediately following Undo can reach the accordion header.
+ const expectedFocus=document.activeElement;
+ requestAnimationFrame(()=>{if(document.activeElement!==expectedFocus)return;const x=$(`site-${i}`);if(!x?.isConnected)return;const scroll=$('q4-regular-scroll');if(scroll){const r=x.getBoundingClientRect(),b=scroll.getBoundingClientRect();if(r.top<b.top||r.top>b.bottom-55)scroll.scrollTop+=r.top-b.top-10;}header()?.focus({preventScroll:true});});
 }
 function invalid(i){if(isIndividual()&&q4RevealSiteIssue(i))return;if(!fields(i).some(k=>q4QuantityInvalid(i,k))&&revealDateIssue(i))return;state.attempted=true;refreshStatus(i);const el=state.count===1?$('single-site'):$(`site-${i}`);if(!el)return;
  const first=fields(i).find(k=>q4QuantityInvalid(i,k));if(!first){if(isIndividual()&&siteMode(i)==='FIXED'&&!siteRepeatComplete(i)){const id=`site-repeat-${i}-${!comboSelected('period',state.siteRepeat[i].period)?'period':state.siteRepeat[i].period==='매월'?'date':'freq'}`;el.querySelector(`[data-combo="${id}"]`)?.focus({preventScroll:true});el.classList.remove('qa-shake');void el.offsetWidth;if(!matchMedia('(prefers-reduced-motion: reduce)').matches)el.classList.add('qa-shake');return;}if(isIndividual()&&appliesSiteHoliday(i)&&!siteHolidayComplete(i)){exposeSiteHolidayInvalid(i);return;}if(isIndividual()&&!siteContactComplete(i)){el.querySelector('.qa-scoped-contact input')?.focus({preventScroll:true});return;}return;}
@@ -642,7 +672,7 @@ function disposeProductModal(){
 function closeProductModal(reason='cancel'){return window.OrderModalShell.requestClose($('q4-regular-dialog'),reason);}
 function openProductModal(){
  state.dialogClosed=false;const context=regularContext,original=returnFocus;
- window.OrderModalShell.open($('q4-regular-dialog'),{variant:'editor',history:true,returnFocus:()=>original?.isConnected?original:context.returnSelector?document.querySelector(context.returnSelector):document.querySelector(`[data-edit-allocation="${CSS.escape(context.allocations[context.selectedIndex||0].id)}"]`),initialFocus:()=> $('q4-regular-close')});
+ window.OrderModalShell.open($('q4-regular-dialog'),{variant:'editor',history:true,returnFocus:()=>original?.isConnected?original:context.returnSelector?document.querySelector(context.returnSelector):document.querySelector(`[data-edit-allocation="${CSS.escape(context.allocations[context.selectedIndex||0].id)}"]`),initialFocus:()=> $('q4-regular-close')});q4Numeric.refresh();
 }
 
 function repeatValidationIssue(site=null){const r=repeatDraft(site),v=OrderRepeatContract.inspect(r),prefix=site===null?'':`site-repeat-${site}-`;if(v.valid)return null;const issue=v.issue;

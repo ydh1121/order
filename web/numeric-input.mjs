@@ -65,7 +65,19 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
   if(input.closest?.('.ui-egg-number'))input.style?.setProperty('--ui-number-ch',String(String(input.value).length));
   if(input.dataset)input.dataset.numericState=s?.composing?'composing':parseNumericText(input.value,opts(input)).valid?'valid':'invalid';
   const range=input.closest?.('.qa-var-range'),view=input.ownerDocument?.defaultView;
-  if(range&&view?.requestAnimationFrame){view.cancelAnimationFrame(range.__numericMeasure);range.__numericMeasure=view.requestAnimationFrame(()=>{const numbers=[...range.querySelectorAll('.ui-egg-number')],available=range.parentElement?.clientWidth||0;if(!available||numbers.length!==2)return;const gap=parseFloat(view.getComputedStyle(range).columnGap)||0;const required=numbers.reduce((sum,node)=>sum+node.scrollWidth,0)+18+gap*2;range.dataset.long=String(required>available);});}
+  if(range&&view?.getComputedStyle){
+   const numbers=[...range.querySelectorAll('.ui-egg-number')];if(numbers.length!==2)return;
+   // Fit before this accepted edit can paint. An rAF correction exposed one
+   // expanded/clipped frame and could measure the expansion as available room.
+   let available=Infinity;
+   for(let node=range.parentElement;node;node=node.parentElement){
+    const style=view.getComputedStyle(node),width=node.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0);
+    if(width>0)available=Math.min(available,width);if(node===root)break;
+   }
+   if(!Number.isFinite(available))return;
+   const gap=parseFloat(view.getComputedStyle(range).columnGap)||0,required=numbers.reduce((sum,node)=>sum+node.scrollWidth,0)+18+gap*2;
+   range.dataset.long=String(required>available);
+  }
  }
  function stateChanged(input){reflect(input);const E=input.ownerDocument?.defaultView?.Event||Event;input.dispatchEvent(new E('numericstatechange',{bubbles:true}));}
  function emit(input,s,data){const E=input.ownerDocument?.defaultView?.Event||Event,event=new E('input',{bubbles:true});packet(event,data);s.emitting=true;try{input.dispatchEvent(event);}finally{s.emitting=false;}}
@@ -181,6 +193,7 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
   next.history[next.at].mark={...mark};to.value=next.value;place(to,mark);states.set(to,next);if(from!==to)states.delete(from);reflect(to,next);
   return {...parsed,accepted:true,changed:false,phase:'transfer'};
  }
- const api={replace,transfer,inspectHistory(input){const s=states.get(input);return s?{key:s.history[s.at].key,previousKey:s.history[s.at-1]?.key??null,nextKey:s.history[s.at+1]?.key??null,keys:s.history.map(item=>item.key)}:null;},refresh(){root.querySelectorAll(selector).forEach(input=>{if(!input.matches?.(selector))return;const s=state(input);s.input=input;syncExternal(input,s);if(!s.composing){const parsed=parseNumericText(input.value,opts(input));if(parsed.valid&&input.value!==formatNumericText(parsed.value,opts(input)))replace(input,parsed.value,{phase:'refresh'});}reflect(input,s);});return api;},read(input){return parseNumericText(input.value,opts(input));},inspect(){let invalidCount=0,composingCount=0;root.querySelectorAll(selector).forEach(input=>{if(input.disabled||input.readOnly)return;reflect(input);if(states.get(input)?.composing)composingCount++;else if(!parseNumericText(input.value,opts(input)).valid)invalidCount++;});return {valid:invalidCount===0&&composingCount===0,invalidCount,composingCount};},destroy(){listeners.forEach(([type,fn,settings])=>root.removeEventListener(type,fn,settings));bindings.delete(root);}};
- bindings.set(root,api);return api.refresh();
+ const view=root.ownerDocument?.defaultView||root.defaultView,resizeRanges=()=>root.querySelectorAll(selector).forEach(input=>{if(input.closest?.('.qa-var-range'))reflect(input,states.get(input));});
+ const api={replace,transfer,inspectHistory(input){const s=states.get(input);return s?{key:s.history[s.at].key,previousKey:s.history[s.at-1]?.key??null,nextKey:s.history[s.at+1]?.key??null,keys:s.history.map(item=>item.key)}:null;},refresh(){root.querySelectorAll(selector).forEach(input=>{if(!input.matches?.(selector))return;const s=state(input);s.input=input;syncExternal(input,s);if(!s.composing){const parsed=parseNumericText(input.value,opts(input));if(parsed.valid&&input.value!==formatNumericText(parsed.value,opts(input)))replace(input,parsed.value,{phase:'refresh'});}reflect(input,s);});return api;},read(input){return parseNumericText(input.value,opts(input));},inspect(){let invalidCount=0,composingCount=0;root.querySelectorAll(selector).forEach(input=>{if(input.disabled||input.readOnly)return;reflect(input);if(states.get(input)?.composing)composingCount++;else if(!parseNumericText(input.value,opts(input)).valid)invalidCount++;});return {valid:invalidCount===0&&composingCount===0,invalidCount,composingCount};},destroy(){listeners.forEach(([type,fn,settings])=>root.removeEventListener(type,fn,settings));view?.removeEventListener?.('resize',resizeRanges);bindings.delete(root);}};
+ view?.addEventListener?.('resize',resizeRanges);bindings.set(root,api);return api.refresh();
 }

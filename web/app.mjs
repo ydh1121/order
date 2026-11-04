@@ -1088,7 +1088,14 @@ async function q4ReviewCommit(patches,confirmedFingerprint=null,canCommit=()=>tr
  const result=await save({...S,allocations:staged},{errorId:'q4-commit-error',canCommit:()=>canCommit()&&q4ReviewContext===c&&(!confirmedFingerprint||q4ReviewPending?.warning.fingerprint===confirmedFingerprint&&q4OnceConfirmDialog.open&&!q4OnceConfirmDialog.classList.contains('is-closing'))&&$('q4-regular-dialog').open&&!$('q4-regular-dialog').classList.contains('is-closing')&&JSON.stringify([lineById(c.lineId),S.allocations.filter(a=>a.lineId===c.lineId),S.locations])===c.signature});
  if(!result.ok)return {...result,message:result.status==='CANCELLED'?'저장을 취소했습니다.':storageText(result)};q4ReviewCommitCount++;q4ReviewPending=null;return {ok:true};
 }
+async function q4ReviewIsCurrent(){
+ const context=q4ReviewContext,revision=storageRevision,token=storageToken,epoch=storageEpoch;
+ if(!context||!storageReady||storagePending||storageFailure)return false;
+ let current;try{current=await storage.inspectCurrent();}catch{return false;}
+ return current.ok&&q4ReviewContext===context&&storageEpoch===epoch&&storageRevision===revision&&storageToken===token&&!storagePending&&!storageFailure&&current.revision===revision&&current.versionToken===token;
+}
 window.OrderRegularQ4Bridge=Object.freeze({
+ isCurrent:q4ReviewIsCurrent,
  allocationContext:lineId=>{const id=lineId||q4ReviewContext?.lineId;const allocations=q4ReviewContext?.selectionPending&&id===q4ReviewContext.lineId?q4ReviewContext.openingAllocations:S.allocations.filter(a=>a.lineId===id);return q4ReviewClone({line:lineById(id),allocations,locations:S.locations,revision:S.allocationRevision||0});},
  inspect:patches=>{const line=lineById(patches[0]?.lineId);return [...patches.flatMap(a=>q4ReviewAllocationIssues(a,patches)||[]),...(line?monthlyIssues(S,line,patches):[])];},open:q4ReviewOpen,commit:q4ReviewCommit,closed:q4ReviewClosed,
  get commitCount(){return q4ReviewCommitCount;},get committed(){return q4ReviewClone(S);},

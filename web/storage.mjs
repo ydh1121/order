@@ -186,6 +186,13 @@ export function createBrowserStorage(options={}){
   // Original session is deliberately retained, never authoritative after this envelope exists.
   return result;
  });}
+ // Read the current durable revision under the same writer lock without loading
+ // application data or consulting/migrating legacy session state. Callers must
+ // still use commit's revision/token preconditions for an eventual write.
+ async function inspectCurrent(){
+  const result=await exclusive(async()=>{const current=await read();if(current.error)return current.error;return output(true,current.envelope?current.envelope.state==='reset'?'RESET':'LOADED':'EMPTY',current.envelope,{versionToken:current.versionToken});});
+  return {ok:result.ok,status:result.status,revision:result.revision,versionToken:result.versionToken??null,...(result.reason?{reason:result.reason}:{})};
+ }
  async function mutate(operation,payload,settings={}){
   const {expectedRevision,expectedToken,transactionId,canCommit=()=>true}=settings;let data;
   try{if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0||typeof expectedToken!=='string'||!expectedToken||typeof canCommit!=='function')fail('transaction','OPTIONS');id(transactionId,'transactionId');data=operation==='reset'?null:projectStoredPayload(payload);}catch(error){return output(false,'INVALID_DATA',last,{reason:error.reason||'TRANSACTION_OPTIONS',path:error.path});}
@@ -206,5 +213,5 @@ export function createBrowserStorage(options={}){
    if(damaged&&result.ok)result.recoveredFrom=current.error.status;return result;
   });
  }
- return Object.freeze({load,commit:(payload,settings)=>mutate('commit',payload,settings),reset:settings=>mutate('reset',null,settings),key,lockName});
+ return Object.freeze({load,inspectCurrent,commit:(payload,settings)=>mutate('commit',payload,settings),reset:settings=>mutate('reset',null,settings),key,lockName});
 }

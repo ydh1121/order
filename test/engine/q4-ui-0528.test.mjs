@@ -7,7 +7,7 @@ import {createMonthlyAllocationDraft} from '../../web/allocation-ui.mjs';
 import {orderQuantityInput} from '../../web/q4-planning.mjs';
 import {editQuantityCadence,selectCadence,cadenceForPeriod,quantityIssue} from '../../web/approved-schedule.mjs';
 import {nearestMonthly} from '../../web/order-date.mjs';
-import {bindNumericInputs} from '../../web/numeric-input.mjs';
+import {bindNumericInputs,formatNumericText} from '../../web/numeric-input.mjs';
 const source=readFileSync(new URL('../../web/q4-review.mjs',import.meta.url),'utf8');
 const plain=value=>JSON.parse(JSON.stringify(value));
 function harness({count=1,mode='FIXED',period='2주',asOf='2026-12-04',preferredDate='',review}={}){
@@ -136,10 +136,10 @@ test('C54 monthly edit preserves Q even when below it and only accepted numeric 
 test('C54 copy reclassifies changed FIXED target quantities once and mode-only copy preserves dormant legacy cadence',()=>{
  const q=harness({count:2,mode:'MIXED'});q.state.siteModes=['FIXED','FIXED'];q.state.values=[{monthly:'600',base:'40'},{monthly:'600',base:'300'}];q.state.copySource=0;q.state.copyTargets=[1];q.state.copyFields={base:true};
  Object.assign(q,{copyEligibility:()=>({valid:true}),copyIncompatibleReason:()=>'',validateCopyAttempt:()=>assert.fail('unexpected invalid copy'),closeCopy:()=>{},travel:()=>{}});
- vm.runInContext(source.slice(source.indexOf('function applyCopy('),source.indexOf('function animateCopyCardHeight(')),q);
- q.applyCopy();assert.equal(q.state.values[1].base,'40');assert.equal(q.state.siteRepeat[1].period,'매주');assert.equal(q.state.siteRepeat[1].frequency,'약 3회','December31day actual basis');assert.equal(q.state.siteRepeat[1].cadence.version,'3.0.0');assert.equal(q.state.values[0].base,'40');
- q.state.values[1].monthly='20';q.applyCopy();assert.equal(q.state.values[1].base,'40','copy never silently shrinks manual typical quantity');assert.equal(q.state.siteRepeat[1].period,'협의');
- const legacy={period:'3주',frequency:'2회',semantics:'per-week-v1',weekdays:{'1:월':true}};q.state.siteRepeat[1]=structuredClone(legacy);q.state.copyFields={mode:true};q.applyCopy();assert.deepEqual(plain(q.state.siteRepeat[1]),legacy);
+ vm.runInContext(source.slice(source.indexOf('function plannedCopyRepeat('),source.indexOf('function copyReviewPatches('))+source.slice(source.indexOf('function applyCopyDraft('),source.indexOf('function animateCopyCardHeight(')),q);
+ q.applyCopyDraft(0,q.state.copyFields,[1]);assert.equal(q.state.values[1].base,'40');assert.equal(q.state.siteRepeat[1].period,'매주');assert.equal(q.state.siteRepeat[1].frequency,'약 3회','December31day actual basis');assert.equal(q.state.siteRepeat[1].cadence.version,'3.0.0');assert.equal(q.state.values[0].base,'40');
+ q.state.values[1].monthly='20';q.applyCopyDraft(0,q.state.copyFields,[1]);assert.equal(q.state.values[1].base,'40','copy never silently shrinks manual typical quantity');assert.equal(q.state.siteRepeat[1].period,'협의');
+ const legacy={period:'3주',frequency:'2회',semantics:'per-week-v1',weekdays:{'1:월':true}};q.state.siteRepeat[1]=structuredClone(legacy);q.state.copyFields={mode:true};q.applyCopyDraft(0,q.state.copyFields,[1]);assert.deepEqual(plain(q.state.siteRepeat[1]),legacy);
 });
 
 test('C54 changing monthly quantity exposes its dependent Q>M cause at Q without marking an untouched empty Q',()=>{
@@ -150,4 +150,38 @@ test('C54 changing monthly quantity exposes its dependent Q>M cause at Q without
  q.syncRegularQuantityErrors(0);assert.equal(note.hidden,false);assert.equal(note.textContent,'회당 수량이 월 수량보다 큽니다.');assert.equal(field.attributes['aria-invalid'],'true');assert.equal(q.state.values[0].base,'1000');assert.equal(q.state.quantityTouched.has('0:base'),false);
  q.state.values[0].base='';q.syncRegularQuantityErrors(0);assert.equal(note.hidden,true,'entering M must not expose an untouched missing Q');
  q.state.values[0].base='900';q.syncRegularQuantityErrors(0);assert.equal(note.hidden,true);assert.equal(field.attributes['aria-invalid'],'false');
+});
+
+test('C54 opening a site accordion cannot steal a later numeric focus before Undo',()=>{
+ const q=harness({count:2,mode:'MIXED'}),frames=[],header={focus(){q.document.activeElement=this;}};
+ q.state.siteOpen=1;q.document.activeElement=header;q.requestAnimationFrame=callback=>frames.push(callback);q.setOpen=()=>Promise.resolve(true);
+ const input={id:'monthly-A'},site={isConnected:true,getBoundingClientRect:()=>({top:50})},scroll={scrollTop:0,getBoundingClientRect:()=>({top:0,bottom:600})};q.$=id=>id==='q4-regular-scroll'?scroll:site;q.document.querySelector=()=>header;
+ vm.runInContext(source.slice(source.indexOf('function travel('),source.indexOf('function invalid(')),q);
+ q.travel(0);q.document.activeElement=input;frames.shift()();assert.equal(q.document.activeElement,input,'a later accepted input focus owns the upcoming Undo key');
+ q.document.activeElement=header;q.travel(1);frames.shift()();assert.equal(q.document.activeElement,header,'navigation still retains its original header focus when no user moves it');
+});
+
+
+function copyReviewHarness(){
+ const q=harness({count:2,mode:'MIXED'});q.state.siteModes=['FIXED','FIXED'];q.state.values=[{monthly:'600',base:'40'},{monthly:'600',base:'300'}];q.state.copySource=0;q.state.copyTargets=[1];q.state.copyFields={base:true};q.state.dialogClosed=false;
+ const nodes=new Map(),patches=[];const node=selector=>{if(!nodes.has(selector))nodes.set(selector,{textContent:'',hidden:false,disabled:false,innerHTML:'',classList:{toggle(){},remove(){}},focus(){}});return nodes.get(selector);};
+ const host={open:true,dataset:{copyStage:'select'},setAttribute(){},querySelector:node};
+ Object.assign(q,{copyReview:null,copyPending:false,copyClosing:false,copyApplied:false,copyContext:q.regularContext,copyGeneration:1,commitEpoch:1,monthlyEditor:null,formatNumericText,names:['사업장 A','사업장 B'],mName:{FIXED:'정기 주문',FLEX:'소진 시 주문',ONCE:'1회 주문'},unit:()=> '판',$:()=>host,copyEligibility:()=>({valid:true}),copyIncompatibleReason:()=>'',validateCopyAttempt:()=>assert.fail('invalid copy'),updateCopyValidation:()=>{},travel:()=>{},closeCopy:()=>{host.open=false;q.copyClosing=true;},window:{OrderModalShell:{resize:(host,mutate)=>mutate()},OrderCopyDialog:{renderReview:rows=>{patches.push(plain(rows));return '<shared-review>'; }},OrderRegularQ4Bridge:{isCurrent:async()=>true}}});
+ vm.runInContext(source.slice(source.indexOf('function copyDraftFingerprint('),source.indexOf('function animateCopyCardHeight(')),q);
+ return {q,host,patches,nodes};
+}
+test('C54 Q4 copy common review is read-only and shows its derived target cadence before one private confirmation',async()=>{
+ const {q,host,patches}=copyReviewHarness(),before=plain(q.state),durable=plain(q.regularContext);
+ await q.applyCopy();assert.equal(host.dataset.copyStage,'review');assert.deepEqual(plain(q.state),before,'review must not modify even the parent private draft');assert.equal(patches[0][0].changes.find(c=>c.key==='base').after,'40판');assert.equal(patches[0][0].changes.find(c=>c.key==='period').after,'매주');assert.equal(patches[0][0].changes.find(c=>c.key==='frequency').after,'약 3회');
+ let release,checks=0;q.window.OrderRegularQ4Bridge.isCurrent=()=>{checks++;return new Promise(resolve=>release=resolve);};const pending=q.applyCopy();await q.applyCopy();assert.equal(checks,1,'a pending confirmation cannot start a second application');assert.equal(q.state.values[1].base,'300');release(true);await pending;assert.equal(q.state.values[1].base,'40');assert.equal(q.state.siteRepeat[1].period,'매주');assert.equal(host.open,false);await q.applyCopy();assert.deepEqual(plain(q.regularContext),durable,'only parent Save may persist the reviewed draft');
+});
+test('C54 Q4 review rejects changed source, stale durable version and closed-parent pending confirmation',async()=>{
+ for(const failure of ['source','durable','parent']){const {q,host}=copyReviewHarness();await q.applyCopy();let release;q.window.OrderRegularQ4Bridge.isCurrent=()=>new Promise(resolve=>release=resolve);const pending=q.applyCopy();if(failure==='source')q.state.values[0].base='41';if(failure==='parent'){q.state.dialogClosed=true;q.copyGeneration++;}release(failure!=='durable');await pending;assert.equal(q.state.values[1].base,'300',failure+' must not apply the reviewed private change');assert.equal(q.copyApplied,false);if(failure!=='parent')assert.equal(host.dataset.copyStage,'select');}
+ const {q,host}=copyReviewHarness(),before=plain(q.state);await q.applyCopy();q.closeCopy();await q.applyCopy();assert.equal(host.open,false);assert.deepEqual(plain(q.state),before,'review cancel leaves the parent private draft unchanged');
+});
+
+test('C54 closing an older copy dialog cannot clear a newer parent copy transaction',()=>{
+ const {q,host}=copyReviewHarness();let finish;host.remove=()=>{};q.copyOpenAnimation=null;q.copyHeightAnimation=null;q.window.OrderModalShell.close=(dialog,{after})=>finish=after;
+ vm.runInContext(source.slice(source.indexOf('function disposeCopy('),source.indexOf('function bindCopyDialogEvents(')),q);
+ q.disposeCopy(false);q.copyGeneration++;q.copyContext={newParent:true};q.state.copySource=1;q.state.copyTargets=[0];q.state.copyFields={contact:true};finish();assert.equal(q.state.copySource,1);assert.deepEqual(plain(q.state.copyTargets),[0]);assert.deepEqual(plain(q.state.copyFields),{contact:true});
 });
