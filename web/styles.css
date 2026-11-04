@@ -1684,17 +1684,19 @@ button,input,select,textarea{font-family:inherit}
 .ui-quantity-selected-mark{width:16px;height:16px;flex:none;visibility:hidden;color:var(--blue)}
 .ui-quantity-menu [aria-selected="true"] .ui-quantity-selected-mark{visibility:visible}
 .ui-text-plus{font:inherit;line-height:1;flex:none}
-/* Approved R1: dependencies stay close; long values keep their complete width. */
-.q4-regular-dialog .qa-var-range{display:grid;width:fit-content;max-width:100%;grid-template-columns:max-content 18px max-content;align-items:baseline;gap:12px;margin-top:3px}
+/* Approved R1: intrinsic wrapping contains every frame, including viewport
+   changes painted before the browser dispatches its resize event. */
+.q4-regular-dialog .qa-var-range{--ui-range-divider-width:18px;display:flex;flex-wrap:wrap;width:fit-content;max-width:100%;align-items:baseline;gap:12px;margin-top:3px}
+.qa-var-range>.qa-field{flex:0 0 auto}
 .qa-var-range .ui-egg-number{gap:8px;max-width:none}
 .qa-var-range .ui-egg-number>input{text-align:center;--ui-egg-min-ch:2;flex:0 0 auto;max-width:none;width:clamp(2ch,calc(var(--ui-number-ch,3)*1ch + .5ch),16ch)}
-.qa-range-tilde{display:block;font-size:var(--type-strong);color:var(--text-secondary);text-align:center;align-self:center;margin-bottom:8px}
-.q4-regular-dialog .qa-var-range[data-long="true"]{grid-template-columns:max-content;justify-items:start}
+.qa-range-tilde{display:block;flex:0 0 var(--ui-range-divider-width);width:var(--ui-range-divider-width);font-size:var(--type-strong);color:var(--text-secondary);text-align:center;align-self:center;margin-bottom:8px}
+.q4-regular-dialog .qa-var-range[data-long="true"]{flex-direction:column;align-items:flex-start}
 .qa-var-range[data-long="true"] .qa-range-tilde{display:none}
 .q4-regular-dialog [data-section="repeat"] .qa-repeat-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:var(--ui-pair-gap);align-items:start}
 .q4-regular-dialog .qa-order-quantity-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:var(--ui-pair-gap);align-items:start}
 .qa-weekday-owner{margin-top:20px}.qa-weekday-note{margin:8px 0 0}.qa-weekday-owner[data-weekday-error="true"] .q4-check-copy{color:var(--ui-danger)}
-@media(max-width:390px){.q4-regular-dialog .qa-var-range{gap:8px;grid-template-columns:max-content 16px max-content}.qa-var-range .ui-egg-number{gap:6px}.q4-regular-dialog [data-section="repeat"] .qa-repeat-pair,.q4-regular-dialog .qa-order-quantity-pair{column-gap:14px}}
+@media(max-width:390px){.q4-regular-dialog .qa-var-range{--ui-range-divider-width:16px;gap:8px}.qa-var-range .ui-egg-number{gap:6px}.q4-regular-dialog [data-section="repeat"] .qa-repeat-pair,.q4-regular-dialog .qa-order-quantity-pair{column-gap:14px}}
 /* C1R: every changed field shares fixed semantic columns, never text measurements. */
 .ui-copy-review-site{--ui-copy-review-label-width:9rem;--ui-copy-review-direction-lane:2.5rem;gap:var(--ui-gap-dependent)}
 .ui-copy-review-site .ui-copy-review-field{display:grid;grid-template-columns:var(--ui-copy-review-label-width) minmax(0,1fr);column-gap:var(--ui-field-control-gap);row-gap:var(--ui-gap-dependent);align-items:start;padding-block:.5rem;border-bottom:1px solid var(--line)}

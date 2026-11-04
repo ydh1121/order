@@ -67,7 +67,7 @@
     {
       "source": "web/numeric-input.mjs",
       "output": "numeric-input.mjs",
-      "sha256": "282bdd4cba8ce7cde3b9f103f7c9da7c859e79199152188d6dbaa7c1597866ad"
+      "sha256": "8a6a0239239cf9393336ce7f8150228bcbe84a58094ab1354e9bd4d247c7c2de"
     },
     {
       "source": "web/q4-planning.mjs",
@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "8856d2476a45ab225258d130402d924f06300d4ad78a9be7bde4882dba02ae5e"
+      "sha256": "c1d59233e2c9e7117495f373b695b211f254b1796bbf0ab5330b386620ce5a79"
     },
     {
       "source": "web/cadence-contract.mjs",
