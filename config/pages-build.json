@@ -77,7 +77,7 @@
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "5ac111afe4926b6ef3bab36382af815989a0941493a4955485231ee80a56ee4c"
+      "sha256": "76b1c1d8240f8ed97159ec23047459cfcf3610f1c8f2ef888ad51fa9713790a2"
     },
     {
       "source": "web/quantity-contract.mjs",

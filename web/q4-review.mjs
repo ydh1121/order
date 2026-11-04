@@ -269,7 +269,7 @@ async function applyCopy(){const host=$('qa-copy-confirm');if(!host||!host.open|
  const generation=copyGeneration,review=copyReview,context=regularContext;copyPending=true;host.querySelector('[data-copy-apply]').disabled=true;
  let current=false;try{current=await window.OrderRegularQ4Bridge.isCurrent();}catch{}
  if(generation!==copyGeneration||context!==regularContext||copyClosing||state.dialogClosed||!host.open||host!==$('qa-copy-confirm'))return;copyPending=false;
- if(!current||copyReview!==review||review.fingerprint!==copyDraftFingerprint()||JSON.stringify(review.patches)!==JSON.stringify(copyReviewPatches())){setCopyStage();if(!current){const feedback=host.querySelector('#qa-copy-feedback');feedback.textContent='다른 탭에서 입력이 변경되었습니다. 새로고침 후 다시 확인해 주세요.';feedback.classList.remove('ui-feedback-sr');}return;}
+ if(!current||copyReview!==review||review.fingerprint!==copyDraftFingerprint()||JSON.stringify(review.patches)!==JSON.stringify(copyReviewPatches())){setCopyStage();if(!current){const feedback=host.querySelector('#qa-copy-feedback');feedback.textContent='변경을 적용하지 못했습니다. 입력을 확인한 후 다시 시도해 주세요.';feedback.classList.remove('ui-feedback-sr');}return;}
  copyApplied=true;applyCopyDraft(from,f,targets);closeCopy(false);render();travel(from);
 }
 function applyCopyDraft(from,f,targets){const srcMode=state.siteModes[from];
