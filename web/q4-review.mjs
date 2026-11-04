@@ -61,7 +61,7 @@ function q4AnimateCheckedTransition(el){
 }
 const CODE1_UI=Object.freeze({copyIcon:window.OrderIcons.svg('clone'),accordion:options=>window.OrderAccordionView.render({...options,bindKey:true,requiredLabel:true}),button:({label,action,filled=false})=>`<button type="button" class="subaction ui-continue-action" ${action}>${label}</button>`});
 function acc(id,label,body,open=false,st='empty',extra='qa-site-parent',required=false){return CODE1_UI.accordion({id,label:escapeHTML(label),content:body,complete:st==='complete',expanded:open,error:st==='error',extraClass:extra,required});}
-function quantity(i,key,label,placeholder){placeholder='0';const v=state.values[i]?.[key]??'',invalid=(state.attempted||state.quantityTouched?.has(`${i}:${key}`))&&q4QuantityInvalid(i,key),id=`q0394-${i}-${key}`,monthly=key==='monthly',row=monthly?monthlyRow(i):null,inline=['min','max'].includes(key),labelHTML=`<label class="${inline?'qa-number-label':'qa-site-label'} ui-field-title ${inline?'ui-field-title--dependent':''}" for="${id}">${label}${inline?'':` ${requiredStar}`}</label>`;
+function quantity(i,key,label,placeholder){placeholder='0';const v=state.values[i]?.[key]??'',invalid=quantityFeedbackVisible(i,key)&&q4QuantityInvalid(i,key),id=`q0394-${i}-${key}`,monthly=key==='monthly',row=monthly?monthlyRow(i):null,inline=['min','max'].includes(key),labelHTML=`<label class="${inline?'qa-number-label':'qa-site-label'} ui-field-title ${inline?'ui-field-title--dependent':''}" for="${id}">${label}${inline?'':` ${requiredStar}`}</label>`;
  return `<div class="qa-site-field qa-field ui-input-field ui-egg-field" data-field-size="quantity" data-field-group="${i}-${key}" data-error="${invalid}" ${monthly?`data-quantity-source="${row?.source||'manual'}"`:''}>${inline?'':labelHTML}<div class="qa-number input-unit ui-egg-number">${inline?labelHTML:''}<input id="${id}" data-qty="${i}:${key}" type="text" inputmode="numeric" value="${escapeHTML(formatNumericText(monthly?monthlyQuantityInputText(row?.quantity):v,{grouped:true}))}" placeholder="${escapeHTML(placeholder)}" aria-invalid="${invalid}" ${monthly?`aria-describedby="${id}-allocation"`:''}/><span class="qa-unit">${unit()}</span></div>${monthly?`<p class="qa-quantity-support ui-field-support" id="${id}-allocation" data-monthly-feedback="${i}" aria-live="polite">${monthlyFeedback(i)}</p>`:''}<p class="qa-inline-error qa-error" data-quantity-error="${i}:${key}" ${invalid?'':'hidden'}>${invalid?escapeHTML(q4QuantityMessage(i,key)):''}</p></div>`;}
 
 function choice(label,choices,val,key){return `<section class="qa-form-section" data-section="${key}"><div class="qa-section-title ui-field-title ui-field-title--top">${label} <span class="ui-required" aria-hidden="true">*</span></div><div class="qa-mode-choices ${choices.length===2?'qa-two':''}" role="group" aria-label="${label}">${choices.map(([v,t])=>`<button type="button" class="ui-choice" data-choice="${key}" data-value="${v}" aria-pressed="${val===v}">${t}</button>`).join('')}</div></section>`;}
@@ -924,6 +924,18 @@ function exposeHolidayInvalid(){if(holidayComplete()){refreshHolidayStatus();ret
 }
 
 // Quantity and range feedback use the same exact contract as the estimate.
+function quantityFeedbackVisible(i,key){
+ if(state.attempted||state.quantityTouched?.has(`${i}:${key}`))return true;
+ const v=state.values[i]||{};
+ // Editing M can invalidate the already entered Q. Paint the cause at Q,
+ // while a never-edited, empty Q remains neutral until validation.
+ if(key==='base'&&state.quantityTouched?.has(`${i}:monthly`)&&isValid(v.monthly)&&isValid(v.base)&&BigInt(v.base)>BigInt(v.monthly))return true;
+ if(['min','max'].includes(key)){
+  if(state.quantityTouched?.has(`${i}:${key==='min'?'max':'min'}`))return true;
+  if(state.quantityTouched?.has(`${i}:base`)&&isValid(v[key])){const issue=quantityIssue({monthly:v.monthly,quantity:v.base,min:v.min,max:v.max,variable:state.variable[i],unit:unit()});return issue.field===key&&['Q_BELOW_MIN','Q_ABOVE_MAX'].includes(issue.code);}
+ }
+ return false;
+}
 function q4QuantityMessage(i,key){const v=state.values[i]||{},suffix=unit();
  if(key==='once')return !isValid(v.once)?`1${suffix} 이상 입력해 주세요.`:'';
  if(key==='monthly'){if(v.monthly==='')return '월 주문 수량을 입력해 주세요.';if(!isValid(v.monthly))return `월 수량은 1${suffix} 이상이어야 합니다.`;return q4QuantityInvalid(i,key)?'이 사업장 수량을 확인해 주세요.':'';}
@@ -938,7 +950,7 @@ function q4QuantityInvalid(i,key){const v=state.values[i]||{};if(key==='monthly'
  if(!state.variable[i])return false;
  const issue=quantityIssue({monthly:v.monthly,quantity:v.base,min:v.min,max:v.max,variable:true,unit:unit()});return !issue.valid&&issue.field===key;
 }
-function syncRegularQuantityErrors(i){const root=$(`site-${i}`)||$('single-site');root?.querySelectorAll('[data-qty]').forEach(el=>{const [si,key]=el.dataset.qty.split(':');if(+si!==i)return;const invalid=(state.attempted||state.quantityTouched?.has(`${i}:${key}`)||['min','max'].includes(key)&&state.quantityTouched?.has(`${i}:${key==='min'?'max':'min'}`))&&q4QuantityInvalid(i,key);el.setAttribute('aria-invalid',String(invalid));const group=el.closest('.qa-field');if(group){group.dataset.error=String(invalid);const note=group.querySelector('[data-quantity-error]');if(note){note.hidden=!invalid;note.textContent=invalid?q4QuantityMessage(i,key):'';}}});}
+function syncRegularQuantityErrors(i){const root=$(`site-${i}`)||$('single-site');root?.querySelectorAll('[data-qty]').forEach(el=>{const [si,key]=el.dataset.qty.split(':');if(+si!==i)return;const invalid=quantityFeedbackVisible(i,key)&&q4QuantityInvalid(i,key);el.setAttribute('aria-invalid',String(invalid));const group=el.closest('.qa-field');if(group){group.dataset.error=String(invalid);const note=group.querySelector('[data-quantity-error]');if(note){note.hidden=!invalid;note.textContent=invalid?q4QuantityMessage(i,key):'';}}});}
 
 
 })();

@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {parse} from 'acorn';
 import {webcrypto} from 'node:crypto';
-import {validMonthlyQuantity,convertMonthlyUnit,monthlyPlanSnapshot} from '../../web/quantity-contract.mjs';
+import {validMonthlyQuantity,convertMonthlyUnit,monthlyPlanSnapshot,quantityDisplayUnit} from '../../web/quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/allocation-ui.mjs';
 import {inspectStoredOrderQuantity} from '../../web/q4-planning.mjs';
 import {createBrowserStorage,emptyStoredPayload,projectStoredPayload} from '../../web/storage.mjs';
@@ -525,4 +525,14 @@ test('C54-21 failed durable write never paints a check even after feedback timer
 
 test('C54 date composition cancels a held Q4 write without silently committing the prior date', async()=>{
  const h=q4CommitHarness(),pending=h.subject.save();h.subject.dateComposition();assert.equal(h.pending[0].canCommit(),false);h.pending[0].held.resolve({ok:true,status:'COMMITTED'});await pending;assert.equal(h.writes,0);assert.equal(h.closes,0);assert.equal(h.subject.raw,'50');
+});
+
+
+test('C54-06 reset can inspect the old Q2 controls after the durable model cleared their SKU',()=>{
+ const lines=new Map([['L',{id:'L',qtyUnit:'each',pack:'30'}]]);
+ const options=vm.runInNewContext(productionFunction(app,appAst,'q2NumericOptions')+'\nq2NumericOptions',{quantityDisplayUnit,lineById:id=>lines.get(id)});
+ const input={dataset:{lineQty:'L'}};
+ assert.equal(options(input).step,'30');assert.equal(options(input).maxDigits,12);
+ lines.clear();assert.doesNotThrow(()=>options(input));assert.equal(options(input).step,1);assert.equal(options(input).maxDigits,12);
+ assert.equal(options({dataset:{linePrice:'L'}}).step,1);
 });

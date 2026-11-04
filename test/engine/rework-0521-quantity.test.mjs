@@ -13,12 +13,12 @@ const evaluate=(state,draft)=>evaluateAllocation({state,lineId:'eggs',draft});
 const change=(state,draft,operation)=>{const changed=editAllocation(state,draft,operation);assert.equal(changed.status,'VALID');return changed.session;};
 const line=(qty='5000',pack='30')=>({id:'eggs',housing:'4',size:'특란',pack,qty,qtyUnit:'each',price:'10000'});
 
-test('R11/R12 Q2 opposite-unit note uses CEIL and DOWN once while exact demand/cost stay unchanged',()=>{
- const source=line();assert.equal(quantityDisplayNote(source),'포장 기준 167판 (166.6판)');
+test('C54-04 Q2 opposite-unit note uses whole packages while raw demand remains exact',()=>{
+ const source=line();assert.equal(quantityDisplayNote(source),'포장 기준 167판');
  const packages=convertMonthlyUnit(source,'tray');assert.equal(quantityDisplayNote(packages),'낱개 기준 총 5,000개');assert.equal(baseQuantity(packages).n,5000n);
- assert.equal(quantityDisplayNote(convertMonthlyUnit(packages,'each')),'포장 기준 167판 (166.6판)');
+ assert.equal(quantityDisplayNote(convertMonthlyUnit(packages,'each')),'포장 기준 167판');
  assert.equal(quantityDisplayNote(line('6000')),'포장 기준 200판');assert.equal(quantityDisplayNote(line('1')),'포장 기준 1판');
- assert.equal(quantityDisplayNote(line('501','10')),'포장 기준 51팩 (50.1팩)');assert.equal(quantityDisplayNote(line('501','20')),'포장 기준 26팩 (25.0팩)');
+ assert.equal(quantityDisplayNote(line('501','10')),'포장 기준 51팩');assert.equal(quantityDisplayNote(line('501','20')),'포장 기준 26팩');
  assert.equal(moneyDisplay(currentPurchaseCost(source)),'1,670,000');assert.equal(moneyDisplay(currentPurchaseCost({...source,qty:'167',qtyUnit:'tray'})),'1,670,000');
 });
 test('R13 5000 each, A50 packages proposes residual3500 and B117 without changing M or recording A observed demand',()=>{

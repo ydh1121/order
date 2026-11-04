@@ -39,10 +39,9 @@ export function quantityDisplayNote(line){
   const base=baseQuantity(line),packages=divide(base,exact(String(line.pack))),label=String(line.pack)==='30'?'판':'팩';
   if(quantityDisplayUnit(line)!=='each')return `낱개 기준 총 ${exactDisplay(toJSON(base))}개`;
   const packs=round(packages,{scale:0,mode:'CEIL'}).decimal;
-  const truncated=round(packages,{scale:1,mode:'DOWN'}).decimal;
-  // Sub-package demand must never look like zero; the exact source stays untouched.
-  const detail=packages.d!==1n&&truncated!=='0.0'?` (${truncated}${label})`:'';
-  return `포장 기준 ${BigInt(packs).toLocaleString('ko-KR')}${label}${detail}`;
+  // The approved helper shows the whole-package purchase basis only. The raw
+  // each demand remains exact in the model and the opposite unit projection.
+  return `포장 기준 ${BigInt(packs).toLocaleString('ko-KR')}${label}`;
 }
 /** Read-only display projection. Historical demand is never rewritten as a plan. */
 export function monthlyPlanSnapshot(line,allocation={}){

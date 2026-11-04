@@ -678,7 +678,13 @@ for(const id of ['picks-housing','picks-size','picks-pack'])$(id).addEventListen
 });$('commit-sku').onclick=()=>upsertSku(false);
 $('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=['each',String(line.pack)==='30'?'tray':'pack'];if(!allowed.includes(e.target.value)||quantityDisplayUnit(line)===e.target.value)return;Object.assign(line,convertMonthlyUnit(line,e.target.value));inlineDraft=true;void save(S,{publish:false});renderQ2();refreshCompletionBadges();});
 const q2UnitMenu=bindQuantityMenu($('q2-lines'));
-const q2Numeric=bindNumericInputs($('q2-lines'),{selector:'input[data-line-qty],input[data-line-price]',options:input=>({grouped:true,allowEmpty:true,allowZero:true,maxDigits:12,step:input.dataset.lineQty&&quantityDisplayUnit(lineById(input.dataset.lineQty))==='each'?lineById(input.dataset.lineQty).pack:1})});
+function q2NumericOptions(input){
+ // A durable reset replaces S before the old rendered controls are removed.
+ // Those controls can still be inspected while completion state is refreshed.
+ const line=input.dataset.lineQty?lineById(input.dataset.lineQty):null;
+ return {grouped:true,allowEmpty:true,allowZero:true,maxDigits:12,step:line&&quantityDisplayUnit(line)==='each'?line.pack:1};
+}
+const q2Numeric=bindNumericInputs($('q2-lines'),{selector:'input[data-line-qty],input[data-line-price]',options:q2NumericOptions});
 $('q2-lines').addEventListener('numericstatechange',()=>refreshCompletionBadges());
 $('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const digits=e.orderNumeric?.value;if(digits===undefined||e.isComposing)return;if(el.dataset.lineQty){const previousUnit=quantityUnit(l);for(const a of S.allocations.filter(a=>a.lineId===l.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=previousUnit;delete l.qtyExact;l.qtyUnit=quantityDisplayUnit(l);}l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const demand=document.querySelector(`[data-line-demand="${CSS.escape(String(id))}"]`);if(demand)demand.textContent=quantityDisplayNote(l);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();syncQ2Tracks();inlineDraft=true;void save(S,{publish:false});});
 
