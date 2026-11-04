@@ -45,3 +45,9 @@ v2 성공 응답은 `version,status,reason,items,page,total,pageable,hasMore`이
 기존 `_routes.json`은 주소 경로만 Functions로 처리한다. `functions` 소스는 정적 dist에 복사하지 않는다. HTML/CSS/JS는 정적으로 제공하고 QA/LAB/fixture/증거/키는 dist에서 제외한다.
 
 `node --test test/engine/address-service.test.mjs test/engine/address-contract.test.mjs test/engine/address-ui.test.mjs`는 실제 모듈의 **합성 Kakao 응답/DOM mock** 검사다. 외부 조회는0회다. 실제 Production secret 적용, provider 성공, 브라우저 검색·부모 저장·복원은 별도 실행 근거가 필요하다. 예전 JUSO503 원인은 이번 adapter 변경만으로 해결 처리하지 않는다. JUSO 구현·검사·신청 설명의 역사 원문은 이 저장소의 MSG0519~MSG0528 Git 이력에 남아 있다.
+
+## MSG0543 Workers 요청 호환 보수
+
+서버의 `fetch(url, init)`은 `redirect: 'manual'`을 사용한다. Workers는 표준 Fetch의 `error` 모드를 지원하지 않아 요청 생성 단계에서 `TypeError`를 발생시킨다. 이전 코드는 그 예외를 `NETWORK`로 축약했다. `manual`은 3xx를 그대로 반환하며 기존 `!response.ok` 검사에서 `PROVIDER_HTTP`로 거부한다. Location을 따라가거나 다른 호스트로 Authorization을 전달하지 않는다. 브라우저의 same-origin `redirect: 'error'`는 지원되는 별도 경로로 유지한다.
+
+공식 근거: <https://developers.cloudflare.com/workers/runtime-apis/request/#constructor>. 이 코드 결함 확인은 Production 과거 예외 로그 열람이나 키 인증 성공의 증거를 대신하지 않는다. 실제 검색은 수정 배포 후 승인된 대표1건으로 따로 확인한다. Node 합성 검사에는301/302/303/307/308 미추적·추가 요청0·원문/키 미노출을 포함한다.
