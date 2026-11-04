@@ -37,3 +37,13 @@ test('formatted lines retain postal leading zero, separate placement and omit op
  assert.deepEqual(addressLines(selected()),['합성시 가상로 10','08843']);assert.deepEqual(addressLines({}),[]);
  assert.deepEqual(addressFields({id:'site-a',name:'A',email:'q@example.com',road:'주소'}),{road:'주소',postal:'',detail:'',jibun:'',region:'',providerId:'',dropoff:'',addressProvider:''});
 });
+
+test('C54-02 Kakao namespaced candidate identity is distinct from legacy JUSO and retains same-base optional fields',()=>{
+ const a={...selected(),providerId:'KAKAO:v1:'+'a'.repeat(64),addressProvider:'KAKAO'};
+ assert.equal(isVerifiedAddress(a),true);assert.equal(isVerifiedAddress({...a,providerId:'1'.repeat(25)}),false);assert.equal(isVerifiedAddress({...selected(),providerId:a.providerId}),false);
+ for(const providerId of ['KAKAO:v1:'+'A'.repeat(64),'KAKAO:v2:'+'a'.repeat(64),'KAKAO:v1:'+'a'.repeat(63)])assert.equal(isVerifiedAddress({...a,providerId}),false);
+ const current={...selected(),detail:'2층',dropoff:'문 앞'};
+ assert.equal(sameAddressBase(current,a),true);assert.equal(selectAddress(current,a).dropoff,'문 앞');
+ assert.equal(selectAddress(current,{...a,road:'다른 건물',providerId:'KAKAO:v1:'+'b'.repeat(64)}).detail,'');
+ assert.equal(addressStatus({...a,addressProvider:''}).valid,false);
+});

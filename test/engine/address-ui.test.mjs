@@ -77,3 +77,12 @@ test('DOM MOCK: waiting for an explicit discard decision issues no delayed searc
     h.$('address-retry').fire('click');await new Promise(resolve=>setImmediate(resolve));assert.equal(h.searches.length,1);assert.equal(h.searches[0][0],'취소 확인 대기');
   } finally {h.cleanup();}
 });
+
+test('C54-02 DOM MOCK: restored Kakao selection opens without queries and confirms only address fields once',()=>{
+ const address={...selected(),addressProvider:'KAKAO',providerId:'KAKAO:v1:'+'a'.repeat(64)};
+ const h=harness({address});try {
+  const parent=structuredClone(h.parent);h.editor.open();assert.equal(h.searches.length,0);assert.equal(h.$('address-query').value,address.road);
+  h.input('address-dropoff','공통 출입문 옆');h.$('address-confirm').fire('click');h.$('address-confirm').fire('click');
+  assert.equal(h.searches.length,0);assert.equal(h.commits.length,1);assert.equal(h.commits[0].address.addressProvider,'KAKAO');assert.equal(h.commits[0].address.postal,'08843');assert.equal(h.commits[0].address.dropoff,'공통 출입문 옆');assert.deepEqual(h.parent,parent);
+ } finally {h.cleanup();}
+});

@@ -19,7 +19,7 @@ export function repeatVisitPlan(repeat,reference,count=''){
  if(!reference||!Number.isInteger(Number(reference.year))||!Number.isInteger(Number(reference.month))||Number(reference.year)<1||Number(reference.year)>9999||Number(reference.month)<1||Number(reference.month)>12)return {resolved:false,reason:'PROJECTION_MONTH_UNSPECIFIED',message:''};
  const common={year:Number(reference.year),month:Number(reference.month),mode:'FIXED',quantity:'1',calendarPolicy:{kind:'UNADJUSTED'}};
  let schedule;
- if(['2.0.0','2.1.0'].includes(repeat.cadence?.version)){
+ if(['2.0.0','2.1.0','3.0.0'].includes(repeat.cadence?.version)){
   const cadence=repeat.cadence;
   const anchor=cadence.nominalAnchor||cadence.preferredDate;
   if(cadence.kind==='INTERVAL_DAYS'){
@@ -28,8 +28,8 @@ export function repeatVisitPlan(repeat,reference,count=''){
   }else if(cadence.kind==='MONTHLY')schedule={kind:'MONTHLY',day:cadence.dayRule,shortMonthPolicy:'CLAMP',...(anchor?{anchorDate:anchor}:{})};
   else if(cadence.kind==='WEEKLY'){
    if(!repeat.weeklyCheck)return {resolved:false,reason:'WEEKDAYS_UNSELECTED',message:''};
-   const selected=days.flatMap((day,d)=>repeat.weekdays?.['1:'+day]?[d+1]:[]),frequency=Number.parseInt(repeat.frequency,10);
-   if(selected.length!==frequency)return {resolved:false,reason:'WEEKDAYS_INCOMPLETE',message:''};
+   const selected=days.flatMap((day,d)=>repeat.weekdays?.['1:'+day]?[d+1]:[]),frequency=Number.parseInt(String(repeat.frequency).replace(/^약\s*/,''),10);
+   if(selected.length!==frequency)return {resolved:false,reason:cadence.version==='3.0.0'?'PARTIAL_WEEKDAYS':'WEEKDAYS_INCOMPLETE',message:''};
    schedule={kind:'WEEKLY',weekdays:selected};
   }else return {resolved:false,reason:'CADENCE_UNSUPPORTED',message:''};
  }else if(repeat.period==='매월')schedule={kind:'MONTHLY',day:repeat.date==='말일'?'last':Number(String(repeat.date??'').replace(/일$/,''))};
@@ -38,7 +38,7 @@ export function repeatVisitPlan(repeat,reference,count=''){
   return {resolved:true,visits:Number(count),dates:[],basis:'count',message:''};
  }else{
   const weeks=repeat.period==='매주'?1:Number.parseInt(repeat.period,10);
-  const frequency=Number.parseInt(repeat.frequency,10);
+  const frequency=Number.parseInt(String(repeat.frequency).replace(/^약\s*/,''),10);
   if(![1,2,3,4].includes(weeks)||!Number.isInteger(frequency))return {resolved:false,reason:'LEGACY_CADENCE_INVALID',message:''};
   const plans=Array.from({length:weeks},(_,i)=>days.flatMap((day,d)=>repeat.weekdays?.[`${i+1}:${day}`]?[d+1]:[]));
   if(plans.some(plan=>plan.length!==frequency))return {resolved:false,reason:'LEGACY_WEEKDAYS_INCOMPLETE',message:''};

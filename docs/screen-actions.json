@@ -382,6 +382,64 @@
           "durableWrites": "1; duplicate/stale/cancel 0"
         }
       ]
+    },
+    {
+      "id": "MSG0540_APPROVED_CANONICAL_INTEGRATION",
+      "route": "/#/form",
+      "contract": "STORAGE_V7_CADENCE_V3_ORDER_DATE_D1R6",
+      "supersedes": [
+        "MSG0517/0528 proportional Q2 purchase cost",
+        "MSG0528 three preparation business day date gate for approved FIXED cadence",
+        "MSG0526/0528 modal widths and Q1 icon",
+        "R7 date cards and date candidate alternatives"
+      ],
+      "actions": [
+        {
+          "id": "add-line",
+          "type": "new-sku-private-draft",
+          "requires": "Literal + text and original button role; new cancel no discard dialog; existing editor protection unchanged",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-unit-trigger/order-quantity-menu",
+          "type": "shared-custom-unit-menu",
+          "requires": "Keyboard and pointer selection; return focus; raw demand unchanged; per-package price; each step packSize; package step 1"
+        },
+        {
+          "id": "data-line-qty/data-line-price",
+          "type": "package-ceiling-purchase-cost",
+          "requires": "Cost ceil(rawEach/packSize)*packagePrice; grouped view / canonical integer model; 12 digits; no fraction input; single error underline"
+        },
+        {
+          "id": "data-qty/data-combo=period",
+          "type": "approved-cadence-draft-transaction",
+          "requires": "Accepted M/Q edit classifies MONTHLY/WEEKLY/14days/CONSULT; M never rewrites Q; direct Q>M clamps once; explicit MONTHLY remembers Q; valid departure restores Q",
+          "durableWrites": 0
+        },
+        {
+          "id": "data-combo=frequency/data-day",
+          "type": "required-frequency-and-maximum-weekdays",
+          "requires": "Weekly computed exact month-day ratio or consultation; fewer than N valid; selection-order excess red and blocks confirmation; no silent removal"
+        },
+        {
+          "id": "data-order-date-part/data-order-calendar-day",
+          "type": "shared-D1R6-start-date",
+          "requires": "Single year/month/day row; current Seoul defaults and empty day; immediate impossible-value clamp with valid prefixes; today through next-month end; weekends/holidays notices not blanket block; weekly/fortnight required; consultation hidden; monthly derived readOnly dayRule with no calendar",
+          "durableWrites": 0
+        },
+        {
+          "id": "save-checkpoint",
+          "type": "durable-receipt-feedback",
+          "requires": "Actual pending spinner; success receipt then check/저장됨; failure/conflict/cancel no success; existing epoch/attempt guard",
+          "durableWrites": "1; duplicate receipt 0"
+        },
+        {
+          "id": "address-query/address-confirm",
+          "type": "same-origin-Kakao-selection",
+          "requires": "Fixed Kakao REST host; server-only REST key; normalized provider provenance; child patches parent address only; representative online request budget 1",
+          "durableWrites": "child 0; parent confirmed 1"
+        }
+      ]
     }
   ]
 }

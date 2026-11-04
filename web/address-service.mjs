@@ -1,3 +1,4 @@
+import {isVerifiedAddress} from './address-contract.mjs';
 // Same-origin transport only. IME/debounce and DOM generations belong to the editor.
 export const ADDRESS_SEARCH_PATH='/api/address/search';
 const MAX_PAGE=20,MAX_ENTRIES=20,MAX_BYTES=65536;
@@ -5,11 +6,13 @@ const cleanQuery=value=>typeof value==='string'?value.trim().replace(/ +/g,' '):
 const blank=(status,reason)=>({version:1,status,reason,items:[],page:1,total:0,hasMore:false});
 const clone=value=>JSON.parse(JSON.stringify(value));
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
-function validItem(item){return plain(item)&&Object.keys(item).every(k=>['road','postal','jibun','region','providerId','addressProvider'].includes(k))&&typeof item.road==='string'&&item.road.trim().length>0&&item.road.length<=512&&typeof item.postal==='string'&&/^\d{5}$/.test(item.postal)&&typeof item.providerId==='string'&&/^\d{25}$/.test(item.providerId)&&item.addressProvider==='JUSO'&&['jibun','region'].every(k=>typeof item[k]==='string'&&item[k].length<=512)&&[item.road,item.jibun,item.region].every(v=>!/[\u0000-\u001f\u007f]/u.test(v));}
+function validItem(item){return plain(item)&&Object.keys(item).every(k=>['road','postal','jibun','region','providerId','addressProvider'].includes(k))&&typeof item.road==='string'&&item.road.trim().length>0&&item.road.length<=512&&typeof item.postal==='string'&&/^\d{5}$/.test(item.postal)&&isVerifiedAddress(item)&&['jibun','region'].every(k=>typeof item[k]==='string'&&item[k].length<=512)&&[item.road,item.jibun,item.region].every(v=>!/[\u0000-\u001f\u007f]/u.test(v));}
 function checkedResult(value,page){
- if(!plain(value)||value.version!==1||!['OK','EMPTY'].includes(value.status)||value.page!==page||!Number.isSafeInteger(value.total)||value.total<0||value.total>10000000||typeof value.hasMore!=='boolean'||!Array.isArray(value.items)||value.items.length>10||value.items.length>value.total||!value.items.every(validItem)||new Set(value.items.map(i=>i.providerId)).size!==value.items.length)throw Error('BAD_RESPONSE');
- if((value.status==='OK')!==(value.items.length>0)||value.hasMore!==(page<MAX_PAGE&&page*10<value.total))throw Error('BAD_RESPONSE');
- return {version:1,status:value.status,reason:value.status==='OK'?'RESULTS':'NO_RESULTS',items:value.items.map(clone),page,total:value.total,hasMore:value.hasMore};
+ if(!plain(value)||![1,2].includes(value.version)||!['OK','EMPTY'].includes(value.status)||value.page!==page||!Number.isSafeInteger(value.total)||value.total<0||value.total>10000000||typeof value.hasMore!=='boolean'||!Array.isArray(value.items)||value.items.length>10||value.items.length>value.total||!value.items.every(item=>validItem(item)&&(value.version===1?item.addressProvider==='JUSO':item.addressProvider==='KAKAO'))||new Set(value.items.map(i=>i.providerId)).size!==value.items.length)throw Error('BAD_RESPONSE');
+ if((value.status==='OK')!==(value.items.length>0))throw Error('BAD_RESPONSE');
+ if(value.version===1&&value.hasMore!==(page<MAX_PAGE&&page*10<value.total))throw Error('BAD_RESPONSE');
+ if(value.version===2&&(!Number.isSafeInteger(value.pageable)||value.pageable<0||value.pageable>value.total||(value.hasMore&&(page>=MAX_PAGE||page*10>=value.pageable))))throw Error('BAD_RESPONSE');
+ return {version:value.version,status:value.status,reason:value.status==='OK'?'RESULTS':value.version===2&&value.reason==='NO_SELECTABLE_ADDRESSES'?'NO_SELECTABLE_ADDRESSES':'NO_RESULTS',items:value.items.map(clone),page,total:value.total,...(value.version===2?{pageable:value.pageable}:{}),hasMore:value.hasMore};
 }
 async function readJson(response){
  if(Number(response.headers.get('content-length'))>MAX_BYTES)throw Error('BAD_RESPONSE');
@@ -31,7 +34,7 @@ export function createAddressSearchService({fetcher=globalThis.fetch,origin=glob
    try {
     const response=await fetcher(endpoint,{method:'POST',mode:'same-origin',credentials:'omit',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify({query,page}),signal:controller.signal});
     let value;try {value=await readJson(response);}catch{throw Error('BAD_RESPONSE');}
-    if(!response.ok){const known=['NOT_CONFIGURED','TIMEOUT','NETWORK','PROVIDER_HTTP','PROVIDER_ERROR','BAD_RESPONSE','ORIGIN_REJECTED','INVALID_REQUEST','CANCELLED'];return blank(response.status===400?'INVALID_REQUEST':'UNAVAILABLE',known.includes(value.reason)?value.reason:'HTTP_ERROR');}
+    if(!response.ok){const known=['NOT_CONFIGURED','TIMEOUT','NETWORK','PROVIDER_HTTP','PROVIDER_AUTH','PROVIDER_QUOTA','PROVIDER_ERROR','BAD_RESPONSE','ORIGIN_REJECTED','INVALID_REQUEST','CANCELLED'];return blank(response.status===400?'INVALID_REQUEST':'UNAVAILABLE',known.includes(value.reason)?value.reason:'HTTP_ERROR');}
     return checkedResult(value,page);
    }catch(error){return blank('UNAVAILABLE',error.message==='BAD_RESPONSE'?'BAD_RESPONSE':'NETWORK');}
   })();

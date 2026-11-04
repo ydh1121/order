@@ -136,7 +136,7 @@ function q4CommitHarness() {
   });
   vm.runInContext(`
     let committing = false, commitEpoch = 0, commitAttempt = 0, numericValid = true, state = {dialogClosed: false, asOfLocalDate: '2026-12-04', count: 1, preferredDates: {}};
-    const q4Numeric = {inspect: () => ({valid: numericValid})}, numericComposing = new Set();
+    const q4Numeric = {inspect: () => ({valid: numericValid})}, numericComposing = new Set(), approvedDateBindings = new Map();
     let regularContext = {id: 'original'};
     let patches = [{id: 'A', monthlyDemandQty: '50', qty: '3'}];
     const serializedAllocations = () => structuredClone(patches);
@@ -149,6 +149,7 @@ function q4CommitHarness() {
       cancel() { state.dialogClosed = true; },
       exitIntent() { commitEpoch++; commitAttempt++; committing = false; },
       numericInvalid() { numericValid = false; },
+      dateComposition() { approvedDateBindings.set('date', {inspect: () => ({valid:false, composingCount:1})}); },
       reopen() { commitEpoch++; regularContext = {id: 'new'}; state.dialogClosed = false; },
       get busy() { return committing; },
       get raw() { return patches[0].monthlyDemandQty; }
@@ -292,18 +293,20 @@ async function coordinatorHarness(seed = restored('FLEX')) {
   let lockTail = Promise.resolve();
   const locks = {request: (name, _options, callback) => {
     locks.onRequest?.(name);
-    const pending = lockTail.then(() => callback({name}));
+    const pending = lockTail.then(async () => {if(locks.hold)await locks.hold.promise;return callback({name});});
     lockTail = pending.catch(() => {}); return pending;
   }};
   const storage = createBrowserStorage({localStorage: local, sessionStorage: {getItem: () => null}, locks, crypto: webcrypto});
   const empty = await storage.load();
   const loaded = await storage.commit(seed, {expectedRevision: empty.revision, expectedToken: empty.versionToken, transactionId: 'seed'});
   assert.equal(loaded.ok, true);
-  const $ = id => {if (!nodes.has(id)) nodes.set(id, {textContent: '', hidden: true, dataset: {}, classList: {remove() {}}, setAttribute() {}}); return nodes.get(id);};
+  const $ = id => {if (!nodes.has(id)) nodes.set(id, {textContent: '', hidden: true, dataset: {}, attributes:{}, classList: {remove() {},add() {}}, setAttribute(name,value) {this.attributes[name]=value;},removeAttribute(name){delete this.attributes[name];}}); return nodes.get(id);};
+  const feedbackTimers=new Map();let feedbackSequence=0;
   let nextId = 0;
   const context = vm.createContext({
     // Clone across VM realms so the real storage strict plain-object validator
     // sees the same realm it receives from the actual browser coordinator.
+    setTimeout:(callback)=>{const id=++feedbackSequence;feedbackTimers.set(id,callback);return id;},clearTimeout:id=>feedbackTimers.delete(id),
     initial: loaded, storage: {commit: (data, options) => storage.commit(structuredClone(data), options)}, projectStoredPayload: value => projectStoredPayload(structuredClone(value)), structuredClone, JSON, Promise,
     document: {documentElement: {dataset: {}}, querySelector: () => null}, $, ident: () => 'review-save-' + (++nextId),
     refreshCompletionBadges: () => {},
@@ -318,12 +321,12 @@ async function coordinatorHarness(seed = restored('FLEX')) {
     let storageRevision = initial.revision, storageToken = initial.versionToken;
     let storageReady = true, storagePending = 0, storageFailure = null, storageEpoch = 0;
     let uncertainWrite = null, storageTail = Promise.resolve(), inlineDraft = false, storageMessage = '';
-    let checkpointAttempt = null, checkpointReceipt = null;
+    let checkpointAttempt = null, checkpointReceipt = null, checkpointFeedbackTimer = null;
     let siteEditing = null, deliveryDraft = null, q4AssignmentDraft = null;
     let editorMode = S.lines.length ? null : 'initial';
     let editing = {id: 'initial-choice', housing: '', size: '', pack: ''};
     ${productionVariable(app, appAst, 'storageText')}
-    ${['storagePaint','storageFeedback','bodyCheckpoint','checkpointSignature','clearCheckpointStatus','showCheckpointReceipt'].map(name => productionFunction(app, appAst, name)).join('\n')}
+    ${['storagePaint','storageFeedback','bodyCheckpoint','checkpointSignature','paintCheckpointButton','clearCheckpointStatus','showCheckpointReceipt'].map(name => productionFunction(app, appAst, name)).join('\n')}
     ${productionFunction(app, appAst, 'save')}
     ${productionFunction(app, appAst, 'complete')}
     ${productionHandler(app, appAst, 'save-checkpoint')}
@@ -333,6 +336,7 @@ async function coordinatorHarness(seed = restored('FLEX')) {
       select(field, value) {editing[field] = value;},
       popup(value) {siteEditing = value;},
       get checkpointStatus() {return structuredClone($('checkpoint-status').dataset);},
+      get checkpointButton() {return structuredClone({state:$('save-checkpoint').dataset.state,attributes:$('save-checkpoint').attributes});},
       get checkpointReceipt() {return structuredClone(checkpointReceipt);},
       input(raw) {S.lines[0].qty = raw; inlineDraft = true; return save(S, {publish: false});},
       get state() {return structuredClone(S);},
@@ -343,7 +347,7 @@ async function coordinatorHarness(seed = restored('FLEX')) {
       complete
     };
   `, context);
-  return {subject: context.subject, local, storage, locks};
+  return {subject: context.subject, local, storage, locks, expireFeedback(){for(const [id,callback]of [...feedbackTimers]){feedbackTimers.delete(id);callback();}}};
 }
 
 test('production coordinator serializes rapid Q2 input without self-conflicts or stale visible raw', async () => {
@@ -501,4 +505,24 @@ test('C28 production checkpoint uncertain readback retry shows the actual origin
   const saved = await h.storage.load();
   assert.equal(h.subject.checkpointStatus.revision, String(saved.revision));
   assert.equal(h.subject.checkpointReceipt.data.allocationRevision, saved.data.allocationRevision);
+});
+
+
+test('C54-21 receipt button stays pending behind actual storage lock; timer cannot create a success',async()=>{
+ const h=await coordinatorHarness();h.locks.hold=deferred();
+ const pending=h.subject.checkpoint();assert.equal(h.subject.checkpointButton.state,'pending');assert.equal(h.subject.checkpointButton.attributes['aria-busy'],'true');
+ h.expireFeedback();assert.equal(h.subject.checkpointButton.state,'pending');assert.equal(h.local.writes,1);
+ h.locks.hold.resolve();await pending;
+ assert.equal(h.subject.checkpointButton.state,'saved');assert.equal(h.subject.checkpointButton.attributes['aria-busy'],undefined);assert.equal(h.subject.checkpointButton.attributes['aria-label'],'저장됨');
+ assert.equal(h.local.writes,2);assert.equal(h.subject.checkpointStatus.transaction,(await h.storage.load()).data? h.subject.checkpointReceipt.transactionId:null);
+ h.expireFeedback();assert.equal(h.subject.checkpointButton.state,'idle');assert.equal(h.local.writes,2);
+});
+test('C54-21 failed durable write never paints a check even after feedback timers run',async()=>{
+ const h=await coordinatorHarness();h.local.failWrite=true;await h.subject.checkpoint();
+ assert.equal(h.subject.checkpointStatus.state,'failed');assert.equal(h.subject.checkpointButton.state,'idle');assert.equal(h.local.writes,1);
+ h.expireFeedback();assert.equal(h.subject.checkpointButton.state,'idle');assert.equal(h.subject.checkpointReceipt,null);
+});
+
+test('C54 date composition cancels a held Q4 write without silently committing the prior date', async()=>{
+ const h=q4CommitHarness(),pending=h.subject.save();h.subject.dateComposition();assert.equal(h.pending[0].canCommit(),false);h.pending[0].held.resolve({ok:true,status:'COMMITTED'});await pending;assert.equal(h.writes,0);assert.equal(h.closes,0);assert.equal(h.subject.raw,'50');
 });

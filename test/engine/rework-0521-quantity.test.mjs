@@ -19,7 +19,7 @@ test('R11/R12 Q2 opposite-unit note uses CEIL and DOWN once while exact demand/c
  assert.equal(quantityDisplayNote(convertMonthlyUnit(packages,'each')),'포장 기준 167판 (166.6판)');
  assert.equal(quantityDisplayNote(line('6000')),'포장 기준 200판');assert.equal(quantityDisplayNote(line('1')),'포장 기준 1판');
  assert.equal(quantityDisplayNote(line('501','10')),'포장 기준 51팩 (50.1팩)');assert.equal(quantityDisplayNote(line('501','20')),'포장 기준 26팩 (25.0팩)');
- assert.equal(moneyDisplay(currentPurchaseCost(source)),'1,666,667');assert.equal(moneyDisplay(currentPurchaseCost({...source,qty:'167',qtyUnit:'tray'})),'1,670,000');
+ assert.equal(moneyDisplay(currentPurchaseCost(source)),'1,670,000');assert.equal(moneyDisplay(currentPurchaseCost({...source,qty:'167',qtyUnit:'tray'})),'1,670,000');
 });
 test('R13 5000 each, A50 packages proposes residual3500 and B117 without changing M or recording A observed demand',()=>{
  const state=fixture(),original=structuredClone(state),draft=start(state),result=evaluate(state,draft),n=result.normalized;

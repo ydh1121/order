@@ -5,16 +5,18 @@ import {readFileSync} from 'node:fs';
 import {createCadence,startDateRange,inspectStartDate,syncMonthlyPreferredDate,holidayPolicyFromSelection} from '../../web/cadence-contract.mjs';
 import {createMonthlyAllocationDraft} from '../../web/allocation-ui.mjs';
 import {orderQuantityInput} from '../../web/q4-planning.mjs';
+import {editQuantityCadence,selectCadence,cadenceForPeriod} from '../../web/approved-schedule.mjs';
+import {nearestMonthly} from '../../web/order-date.mjs';
 import {bindNumericInputs} from '../../web/numeric-input.mjs';
 const source=readFileSync(new URL('../../web/q4-review.mjs',import.meta.url),'utf8');
 const plain=value=>JSON.parse(JSON.stringify(value));
 function harness({count=1,mode='FIXED',period='2주',asOf='2026-12-04',preferredDate='',review}={}){
  const cadence=createCadence(period);if(period==='매월')cadence.dayRule=31;cadence.preferredDate=preferredDate;cadence.nominalAnchor=preferredDate;
  const repeat={period,date:period==='매월'?'31일':'',cadence},h={days:[],none:true,irregular:false,conflict:'협의 후 조정',weekend:'휴무 다음날 희망',holiday:'휴무 다음날 희망',subholiday:'휴무 다음날 희망',request:''};
- const state={count,mode,asOfLocalDate:asOf,...structuredClone(repeat),siteRepeat:Array.from({length:count},()=>structuredClone(repeat)),siteModes:Array(count).fill(mode),siteContacts:Array.from({length:count},()=>({phone:true})),contact:{phone:true},siteHolidays:Array.from({length:count},()=>structuredClone(h)),holidayDays:[],holidayNone:true,holidayIrregular:false,holiday:h,request:'',process:'contact',siteProcess:Array(count).fill('contact'),values:Array.from({length:count},()=>({base:'30',monthly:'200'})),qtySources:Array(count).fill('user'),deliveryPlans:Array(count).fill(null),preferredDates:{},preferredTouched:new Set(),startDateReviews:{},startDateResults:{},dateTouched:new Set(),datesByAllocation:{},attempted:false};
+ const state={count,mode,asOfLocalDate:asOf,...structuredClone(repeat),siteRepeat:Array.from({length:count},()=>structuredClone(repeat)),siteModes:Array(count).fill(mode),siteContacts:Array.from({length:count},()=>({phone:true})),contact:{phone:true},siteHolidays:Array.from({length:count},()=>structuredClone(h)),holidayDays:[],holidayNone:true,holidayIrregular:false,holiday:h,request:'',process:'contact',siteProcess:Array(count).fill('contact'),values:Array.from({length:count},()=>({base:'30',monthly:'200'})),qtySources:Array(count).fill('user'),deliveryPlans:Array(count).fill(null),preferredDates:{},preferredTouched:new Set(),startDateReviews:{},startDateResults:{},dateTouched:new Set(),datesByAllocation:{},attempted:false,quantityAdjusted:Array(count).fill(false),quantityTouched:new Set(),approvedDateParts:{}};
  const regularContext={line:{id:'L'},allocations:Array.from({length:count},(_,i)=>({id:'A'+i,locationId:'S'+i,cadence:structuredClone(cadence),q4Review:review?{startDateReview:review}:{}}))};
- const scope={state,regularContext,createCadence,startDateRange,inspectStartDate,syncMonthlyPreferredDate,holidayPolicyFromSelection,orderQuantityInput,structuredClone,clone:structuredClone,numericComposing:new Set(),Set,Map,document:{querySelector:()=>null},q4Numeric:{replace:()=>{}},syncMonthlyFields:()=>{},render:()=>{},refreshStatus:()=>{},refreshResultsOnly:()=>{},syncRegularQuantityErrors:()=>{},datePolicy:{blank:()=>({year:'',month:'',day:''}),validate:()=>({valid:true})},OrderRepeatContract:{days:['월','화','수','목','금','토','일'],monthValue:value=>({valid:value==='말일'||/^(?:[1-9]|[12]\d|3[01])일$/.test(value)}),snapshot:r=>plain({period:r.period,date:r.date,cadence:r.cadence}),resetPeriod:(r,period)=>{r.period=period;r.cadence=createCadence(period);}}};
- scope.repeatDraft=i=>i===null?state:state.siteRepeat[i];scope.isIndividual=()=>state.count>1&&state.mode==='MIXED';scope.siteMode=i=>scope.isIndividual()?state.siteModes[i]:state.mode;scope.activeRepeat=i=>scope.isIndividual()?state.siteRepeat[i]:state;scope.dateKey=i=>JSON.stringify(['L','A'+i]);scope.preferredKey=i=>scope.isIndividual()?'site:'+scope.dateKey(i):'common:L';scope.preferredDateActive=i=>scope.siteMode(i)==='FIXED';scope.monthlyRow=i=>({quantity:{raw:state.values[i].monthly}});scope.monthlyLocation=i=>'S'+i;
+ const scope={state,regularContext,editQuantityCadence,selectCadence,cadenceForPeriod,nearestMonthly,approvedDateBindings:new Map(),approvedDateActive:()=>false,approvedDateId:i=>'date'+i,renderRepeatOnly:()=>{},quantityEditedFields:new WeakSet(),Date:class extends Date{constructor(value){super(value??asOf+'T12:00:00+09:00');}},createCadence,startDateRange,inspectStartDate,syncMonthlyPreferredDate,holidayPolicyFromSelection,orderQuantityInput,structuredClone,clone:structuredClone,numericComposing:new Set(),Set,Map,document:{querySelector:()=>null},q4Numeric:{replace:()=>{}},syncMonthlyFields:()=>{},render:()=>{},refreshStatus:()=>{},refreshResultsOnly:()=>{},syncRegularQuantityErrors:()=>{},datePolicy:{blank:()=>({year:'',month:'',day:''}),validate:()=>({valid:true})},OrderRepeatContract:{days:['월','화','수','목','금','토','일'],monthValue:value=>({valid:value==='말일'||/^(?:[1-9]|[12]\d|3[01])일$/.test(value)}),snapshot:r=>plain(Object.fromEntries(['period','frequency','date','cadence','weeklyCheck','weekdays','weekdayOrder','monthlyMemory','quantityEditVersion','semantics','legacyReviewRequired'].filter(k=>r[k]!==undefined).map(k=>[k,r[k]]))),resetPeriod:(r,period)=>{r.period=period;r.cadence=createCadence(period);}}};
+ scope.approvedDateValue=i=>nearestMonthly(scope.activeRepeat(i).date==='말일'?'last':Number(String(scope.activeRepeat(i).date||'').replace(/일$/,'')),new scope.Date())||'';scope.repeatDraft=i=>i===null?state:state.siteRepeat[i];scope.isIndividual=()=>state.count>1&&state.mode==='MIXED';scope.siteMode=i=>scope.isIndividual()?state.siteModes[i]:state.mode;scope.activeRepeat=i=>scope.isIndividual()?state.siteRepeat[i]:state;scope.dateKey=i=>JSON.stringify(['L','A'+i]);scope.preferredKey=i=>scope.isIndividual()?'site:'+scope.dateKey(i):'common:L';scope.preferredDateActive=i=>scope.siteMode(i)==='FIXED';scope.monthlyRow=i=>({quantity:{raw:state.values[i].monthly}});scope.monthlyLocation=i=>'S'+i;
  vm.createContext(scope);vm.runInContext(source.slice(source.indexOf('function preferredParts('),source.indexOf('function localDateISO('))+source.slice(source.indexOf('function dateOwnerIndex('),source.indexOf('function monthDayCount(')).replace('syncDateFields(i);','')+source.slice(source.indexOf('function materializeCommonSettings('),source.indexOf('function completeQuantityInputs(')),scope);
  return scope;
 }
@@ -46,7 +48,7 @@ test('C28 explicit STARTED and untouched LEGACY past anchors survive; NEW is rev
 });
 test('C28 date drafts retain independent site owners across common view and optional blank does not activate',()=>{
  const q=harness({count:2,mode:'MIXED'});q.state.siteModes=['FIXED','FIXED'];q.storePreferredDate(1,{year:3000,month:1,day:2},{completed:false});q.state.mode='FIXED';assert.deepEqual(plain(q.dateData(1)),{year:'',month:'',day:''});q.state.mode='MIXED';assert.equal(q.dateData(1).year,3000);
- const monthly=harness({period:'매월'});monthly.syncPreferredRule();assert.equal(monthly.state.cadence.preferredDate,'');assert.equal(monthly.dateInspection(0).empty,true);
+ const monthly=harness({period:'매월'});monthly.syncPreferredRule();assert.equal(monthly.state.cadence.version,'3.0.0');assert.equal(monthly.state.cadence.preferredDate,'2026-12-31','MSG0540 derives monthly date from required rule');
 });
 test('C28 shared FIXED direct overshoot materializes peers then changes only edited site atomically',()=>{
  const q=harness({count:2});q.applyQuantityInput(0,'base','201',{phase:'input',direct:true});assert.equal(q.state.mode,'MIXED');assert.equal(q.state.values[0].base,'200');assert.equal(q.state.siteRepeat[0].period,'매월');assert.equal(q.state.siteRepeat[0].cadence.dayRule,'');assert.equal(q.state.siteRepeat[1].period,'2주');assert.equal(q.state.values[1].base,'30');assert.equal(q.state.siteProcess[1],'contact');
@@ -78,7 +80,7 @@ function attachQuantityInput(q){
  const doc=q.document;doc.defaultView={Event};q.quantityEditedFields=new WeakSet();
  const field=value=>({value,dataset:{qty:'0:base'},disabled:false,readOnly:false,ownerDocument:doc,selectionStart:value.length,selectionEnd:value.length,selectionDirection:'none',matches:()=>true,closest:()=>null,getAttribute:()=>null,setSelectionRange(start,end,direction='none'){Object.assign(this,{selectionStart:start,selectionEnd:end,selectionDirection:direction});},focus(){doc.activeElement=this;this.dispatchEvent(new Event('focusin'));},dispatchEvent(event){event.target=this;for(const capture of [true,false])for(const listener of listeners.get(event.type)||[]){if(listener.capture!==capture)continue;listener.fn(event);if(event.stopped)return !event.defaultPrevented;}return !event.defaultPrevented;}});
  current=field(q.state.values[0].base);const root={querySelectorAll:()=>[current],addEventListener(type,fn,options={}){listeners.set(type,[...(listeners.get(type)||[]),{fn,capture:!!options.capture}]);},removeEventListener(){}};
- const numeric=bindNumericInputs(root,{selector:'[data-qty]',options:{grouped:true,allowEmpty:true,allowZero:true,maxDigits:5}});q.q4Numeric=numeric;q.document.querySelector=()=>current;q.render=()=>{current=field(q.state.values[0].base);numeric.refresh();};
+ const numeric=bindNumericInputs(root,{selector:'[data-qty]',options:{grouped:true,allowEmpty:true,allowZero:true,maxDigits:12}});q.q4Numeric=numeric;q.document.querySelector=()=>current;q.render=()=>{current=field(q.state.values[0].base);numeric.refresh();};
  q.$=()=>root;q.refreshQuantitySupport=()=>{};
  vm.runInContext(source.slice(source.indexOf("$('q4-regular-dialog').addEventListener('input',e=>{const el=e.target,packet=e.orderNumeric;"),source.indexOf("$('q4-regular-dialog').addEventListener('numericstatechange',")),q);
  vm.runInContext(source.slice(source.indexOf("$('q4-regular-dialog').addEventListener('compositionstart',"),source.indexOf("$('q4-regular-dialog').addEventListener('focusout',")),q);
@@ -111,4 +113,31 @@ test('C28 calendar arrow crosses a disabled weekend and holiday without losing f
 });
 test('C28 calendar navigation at the allowed endpoint safely retains the current view/focus',()=>{
  const h=calendarHarness({from:{year:2027,month:1,day:28},invalid:[20270129]});h.press('ArrowRight');assert.deepEqual(h.rendered,[]);assert.deepEqual(h.focused,[]);assert.deepEqual(plain(h.q.state.calendarView),{year:2027,month:1});
+});
+
+test('C54 explicit monthly selection Undo/Redo preserves quantity and monthly restoration memory atomically',()=>{
+ const q=harness();Object.assign(q.state,{period:'협의',frequency:'협의',cadence:cadenceForPeriod('협의')});q.state.values[0]={monthly:'1000',base:'100'};
+ q.q4ValidationEpoch=0;q.closeQ4Dropdown=()=>{};q.monthEditing=new Set();
+ const h=attachQuantityInput(q);
+ vm.runInContext(source.slice(source.indexOf('function selectedOption('),source.indexOf('function disposeProductModal(')),q);
+ q.selectedOption('period','매월');assert.equal(q.state.values[0].base,'1000');assert.equal(h.input.value,'1,000');assert.equal(q.state.period,'매월');assert.equal(q.state.monthlyMemory.quantity,'100');
+ h.undo();assert.equal(q.state.values[0].base,'100');assert.equal(q.state.period,'협의');assert.equal(q.state.monthlyMemory,undefined);
+ h.redo();assert.equal(q.state.values[0].base,'1000');assert.equal(q.state.period,'매월');assert.equal(q.state.monthlyMemory.quantity,'100');
+ h.replace('500');assert.equal(q.state.values[0].base,'500');assert.equal(q.state.period,'2주');assert.equal(q.state.monthlyMemory,undefined);
+ h.undo();assert.equal(q.state.values[0].base,'1000');assert.equal(q.state.period,'매월');assert.equal(q.state.monthlyMemory.quantity,'100');
+});
+
+test('C54 monthly edit preserves Q even when below it and only accepted numeric edits replace explicit negotiation',()=>{
+ const q=harness();Object.assign(q.state,{period:'매월',frequency:'1회',cadence:cadenceForPeriod('매월')});q.state.values[0]={monthly:'600',base:'600'};
+ q.monthlyEditor={set:(id,value)=>q.state.values[0].monthly=value};q.applyQuantityInput(0,'monthly','599');assert.equal(q.state.values[0].base,'600');assert.equal(q.state.period,'협의');
+ q.state.period='협의';q.state.values[0]={monthly:'600',base:'40'};q.applyQuantityInput(0,'min','30');assert.equal(q.state.period,'협의');q.applyQuantityInput(0,'base','40');assert.equal(q.state.period,'협의','boundary no-change is not an accepted edit');q.applyQuantityInput(0,'base','44');assert.equal(q.state.period,'매주');assert.equal(q.state.frequency,'약 3회');
+});
+
+test('C54 copy reclassifies changed FIXED target quantities once and mode-only copy preserves dormant legacy cadence',()=>{
+ const q=harness({count:2,mode:'MIXED'});q.state.siteModes=['FIXED','FIXED'];q.state.values=[{monthly:'600',base:'40'},{monthly:'600',base:'300'}];q.state.copySource=0;q.state.copyTargets=[1];q.state.copyFields={base:true};
+ Object.assign(q,{copyEligibility:()=>({valid:true}),copyIncompatibleReason:()=>'',validateCopyAttempt:()=>assert.fail('unexpected invalid copy'),closeCopy:()=>{},travel:()=>{}});
+ vm.runInContext(source.slice(source.indexOf('function applyCopy('),source.indexOf('function animateCopyCardHeight(')),q);
+ q.applyCopy();assert.equal(q.state.values[1].base,'40');assert.equal(q.state.siteRepeat[1].period,'매주');assert.equal(q.state.siteRepeat[1].frequency,'약 3회','December31day actual basis');assert.equal(q.state.siteRepeat[1].cadence.version,'3.0.0');assert.equal(q.state.values[0].base,'40');
+ q.state.values[1].monthly='20';q.applyCopy();assert.equal(q.state.values[1].base,'40','copy never silently shrinks manual typical quantity');assert.equal(q.state.siteRepeat[1].period,'협의');
+ const legacy={period:'3주',frequency:'2회',semantics:'per-week-v1',weekdays:{'1:월':true}};q.state.siteRepeat[1]=structuredClone(legacy);q.state.copyFields={mode:true};q.applyCopy();assert.deepEqual(plain(q.state.siteRepeat[1]),legacy);
 });

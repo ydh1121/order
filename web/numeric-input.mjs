@@ -61,7 +61,12 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
  function snapshot(input,s){syncExternal(input,s);s.before={value:s.value,mark:selection(input)};return s.before;}
  function restore(input,s,mark=s.before){if(!mark)return;input.value=mark.value;s.value=mark.value;s.mark={...mark.mark};place(input,s.mark);}
  function packet(event,value){try{Object.defineProperty(event,'orderNumeric',{value,configurable:true});}catch{event.orderNumeric=value;}}
- function reflect(input,s=states.get(input)){if(input.closest?.('.ui-egg-number'))input.style?.setProperty('--ui-number-ch',String(String(input.value).length));if(input.dataset)input.dataset.numericState=s?.composing?'composing':parseNumericText(input.value,opts(input)).valid?'valid':'invalid';}
+ function reflect(input,s=states.get(input)){
+  if(input.closest?.('.ui-egg-number'))input.style?.setProperty('--ui-number-ch',String(String(input.value).length));
+  if(input.dataset)input.dataset.numericState=s?.composing?'composing':parseNumericText(input.value,opts(input)).valid?'valid':'invalid';
+  const range=input.closest?.('.qa-var-range'),view=input.ownerDocument?.defaultView;
+  if(range&&view?.requestAnimationFrame){view.cancelAnimationFrame(range.__numericMeasure);range.__numericMeasure=view.requestAnimationFrame(()=>{const numbers=[...range.querySelectorAll('.ui-egg-number')],available=range.parentElement?.clientWidth||0;if(!available||numbers.length!==2)return;const gap=parseFloat(view.getComputedStyle(range).columnGap)||0;const required=numbers.reduce((sum,node)=>sum+node.scrollWidth,0)+18+gap*2;range.dataset.long=String(required>available);});}
+ }
  function stateChanged(input){reflect(input);const E=input.ownerDocument?.defaultView?.Event||Event;input.dispatchEvent(new E('numericstatechange',{bubbles:true}));}
  function emit(input,s,data){const E=input.ownerDocument?.defaultView?.Event||Event,event=new E('input',{bubbles:true});packet(event,data);s.emitting=true;try{input.dispatchEvent(event);}finally{s.emitting=false;}}
  function remember(s){const last=s.history[s.at];if(last?.value===s.value){last.mark={...s.mark};return;}s.history.splice(++s.at);s.history.push(historyEntry(s.value,s.mark));if(s.history.length>100){s.history.shift();s.at--;}}

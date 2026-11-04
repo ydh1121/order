@@ -11,7 +11,7 @@ export function monthlyQuantity(line) {
     if(line.qtyExact.conversionReviewed!==true||line.qty!==`${value.n}/${value.d}`||value.n<=0n)throw Error('MONTHLY_QUANTITY_METADATA');
     return value;
   }
-  if(!/^[1-9]\d*$/.test(String(line.qty)))throw Error('MONTHLY_QUANTITY_INVALID');
+  if(!/^[1-9]\d{0,11}$/.test(String(line.qty)))throw Error('MONTHLY_QUANTITY_INVALID');
   return exact(String(line.qty));
 }
 export function validMonthlyQuantity(line){try{if(!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityUnit(line))||!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(line)))return false;quantityFactor(line);return monthlyQuantity(line).n>0n;}catch{return false;}}
@@ -75,8 +75,9 @@ export function monthlyPlanSnapshot(line,allocation={}){
 export function monthlyQuantityText(line){try{return exactDisplay(toJSON(line.qtyExact?.representation==='rational'?baseQuantity(line):monthlyQuantity(line)));}catch{return String(line.qty??'').includes('/')?'확인 필요':String(line.qty??'');}}
 export function currentPurchaseCost(line) {
   try {
-    if(!validMonthlyQuantity(line)||!/^[1-9]\d*$/.test(String(line.price)))return null;
-    return toJSON(divide(multiply(baseQuantity(line),exact(String(line.price))),exact(String(line.pack))));
+    if(!validMonthlyQuantity(line)||!/^[1-9]\d{0,11}$/.test(String(line.price)))return null;
+    const packages=round(divide(baseQuantity(line),exact(String(line.pack))),{scale:0,mode:'CEIL'}).decimal;
+    return toJSON(multiply(exact(packages),exact(String(line.price))));
   }catch{return null;}
 }
 export function totalPurchaseCost(lines) {
