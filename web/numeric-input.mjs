@@ -75,7 +75,7 @@ export function bindNumericInputs(root,{selector='[data-numeric-input]',options=
     if(width>0)available=Math.min(available,width);if(node===root)break;
    }
    if(!Number.isFinite(available))return;
-   const gap=parseFloat(view.getComputedStyle(range).columnGap)||0,required=numbers.reduce((sum,node)=>sum+node.scrollWidth,0)+18+gap*2;
+   const style=view.getComputedStyle(range),gap=parseFloat(style.columnGap)||0,divider=parseFloat(style.getPropertyValue?.('--ui-range-divider-width'))||18,required=numbers.reduce((sum,node)=>sum+node.scrollWidth,0)+divider+gap*2;
    range.dataset.long=String(required>available);
   }
  }
