@@ -74,7 +74,9 @@ export function createAddressSearchHandler({fetcher=globalThis.fetch,timeoutMs=5
    const endpoint=new URL(PROVIDER_URL);
    endpoint.search=new URLSearchParams({query,page:String(page),size:String(COUNT),analyze_type:'similar'}).toString();
    let response;
-   try {response=await fetcher(endpoint.href,{method:'GET',headers:{authorization:'KakaoAK '+key,accept:'application/json'},redirect:'error',signal:controller.signal});}
+   // Workers rejects redirect:'error' during Request construction. Manual mode
+   // returns 3xx to the !ok guard below without following or forwarding the key.
+   try {response=await fetcher(endpoint.href,{method:'GET',headers:{authorization:'KakaoAK '+key,accept:'application/json'},redirect:'manual',signal:controller.signal});}
    catch {throw new Error('NETWORK');}
    if(!response.ok)throw new Error(response.status===401||response.status===403?'PROVIDER_AUTH':response.status===429?'PROVIDER_QUOTA':'PROVIDER_HTTP');
    if(!/\bapplication\/(?:[\w.+-]*\+)?json\b/i.test(response.headers.get('content-type')||''))throw new Error('BAD_RESPONSE');

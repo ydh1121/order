@@ -18,11 +18,31 @@ test('C54-02 Kakao fixed HTTPS GET uses header-only secret and preserves road/po
  const calls=[];
  const {response,value}=await invoke(async(url,options)=>{calls.push({url,options});return json(provider());});
  assert.equal(response.status,200);assert.deepEqual(value,answer());assert.equal(value.items[0].postal,'08843');
- assert.equal(calls.length,1);const upstream=new URL(calls[0].url);assert.equal(upstream.origin+upstream.pathname,'https://dapi.kakao.com/v2/local/search/address.json');assert.equal(calls[0].options.method,'GET');assert.equal(calls[0].options.redirect,'error');
+ assert.equal(calls.length,1);const upstream=new URL(calls[0].url);assert.equal(upstream.origin+upstream.pathname,'https://dapi.kakao.com/v2/local/search/address.json');assert.equal(calls[0].options.method,'GET');assert.equal(calls[0].options.redirect,'manual');
  assert.deepEqual(Object.fromEntries(upstream.searchParams),{query:'합성검사로',page:'1',size:'10',analyze_type:'similar'});
  assert.equal(calls[0].options.headers.authorization,'KakaoAK synthetic-test-secret');assert.equal(calls[0].options.body,undefined);
  assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(JSON.stringify(value).includes('synthetic-test-secret'),false);assert.equal(calls[0].url.includes('synthetic-test-secret'),false);
  assert.equal('x' in value.items[0],false);assert.equal('y' in value.items[0],false);
+});
+test('C54-02 Workers-compatible redirects fail closed without a second request or secret echo',async()=>{
+ for(const status of [301,302,303,307,308]){
+  const calls=[],location='https://redirect.invalid/?private=synthetic-test-secret';
+  const {response,value}=await invoke(async(url,options)=>{
+   // Match the documented Workers Request modes; Node's mock alone would
+   // otherwise accept redirect:error and conceal a pre-network TypeError.
+   if(!['follow','manual'].includes(options.redirect))throw new TypeError('Unsupported redirect mode');
+   calls.push({url,options});
+   assert.equal(options.redirect,'manual');
+   return new Response('synthetic-test-secret private provider body',{status,headers:{location}});
+  });
+  assert.equal(response.status,502,String(status));
+  assert.deepEqual(value,{version:2,status:'UNAVAILABLE',reason:'PROVIDER_HTTP',items:[]});
+  assert.equal(calls.length,1);assert.equal(new URL(calls[0].url).origin,'https://dapi.kakao.com');
+  assert.equal(calls[0].options.headers.authorization,'KakaoAK synthetic-test-secret');
+  assert.equal(response.headers.get('location'),null);
+  assert.equal(JSON.stringify(value).includes('synthetic-test-secret'),false);
+  assert.equal(JSON.stringify(value).includes('redirect.invalid'),false);
+ }
 });
 test('A09 missing production secret is unavailable with zero provider calls, never empty or success',async()=>{
  let calls=0;for(const key of [undefined,'',null]){const {response,value}=await invoke(async()=>{calls++;},undefined,{KAKAO_REST_API_KEY:key});assert.equal(response.status,503);assert.equal(value.status,'UNAVAILABLE');assert.equal(value.reason,'NOT_CONFIGURED');assert.deepEqual(value.items,[]);}assert.equal(calls,0);

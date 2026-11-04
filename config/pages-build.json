@@ -131,7 +131,7 @@
     {
       "source": "functions/api/address/search.js",
       "route": "/api/address/search",
-      "sha256": "ef9c7fc2d4339b90a113122b27324d368fdef4355f4e663d406698e1be023907"
+      "sha256": "f599e225cc74409c6509ef7e06fedfd4d7912ad87051f97e16e33050cd5c5fa5"
     }
   ],
   "approvedIntegration": {
