@@ -1,7 +1,9 @@
 import {createBrowserStorage,projectStoredPayload} from './storage.mjs';
 import {bindNumericInputs} from './numeric-input.mjs';
+import {bindQuantityMenu} from './quantity-menu.mjs';
 import {inspectStoredOrderQuantity} from './q4-planning.mjs';
 import {inspectStartDate,holidayPolicyFromSelection,seoulDate} from './cadence-contract.mjs';
+import {validateApprovedStart} from './order-date.mjs';
 import {calendarForecast} from '../src/engine/calculation/calendar-forecast.mjs';
 import {compare,fromRatio,multiply} from '../src/engine/calculation/exact.mjs';
 import {quantityUnit,quantityDisplayUnit,quantityInputText,quantityDisplayNote,numericInput,moneyDisplay,quantityLabel,validMonthlyQuantity,monthlyQuantityText,convertMonthlyUnit,currentPurchaseCost,totalPurchaseCost,exactDisplay,baseQuantity,quantityFactor,monthlyPlanSnapshot} from './quantity-contract.mjs';
@@ -32,7 +34,7 @@ const blankAllocation=(lineId,locationId)=>({id:ident('alloc'),lineId,locationId
 const locationById=id=>S.locations.find(l=>l.id===id);
 const allocationById=id=>S.allocations.find(a=>a.id===id);
 const siteName=loc=>loc?.name||loc?.road||'사업장';
-const deliveryLabel=a=>a.mode==='FIXED'?(()=>{const r=OrderRepeatContract.fromAllocation(a);return r.cadence?.kind==='INTERVAL_DAYS'?'정기 주문 · '+r.period+'마다 1회':r.period==='매월'?'정기 주문 · 매월 '+(OrderRepeatContract.monthValue(r.date).valid?OrderRepeatContract.monthValue(r.date).display:'날짜 미입력'):'정기 주문 · '+r.period+' · 매주 '+r.frequency+(r.legacyReviewRequired?' (횟수 재확인)':'');})():a.mode==='ONCE'?'1회 주문':'소진 시 주문';
+const deliveryLabel=a=>a.mode==='FIXED'?(()=>{const r=OrderRepeatContract.fromAllocation(a);return r.cadence?.kind==='CONSULT'?'정기 주문 · 협의':r.cadence?.kind==='INTERVAL_DAYS'?'정기 주문 · '+r.period+'마다 1회':r.period==='매월'?'정기 주문 · 매월 '+(OrderRepeatContract.monthValue(r.date).valid?OrderRepeatContract.monthValue(r.date).display:'날짜 미입력'):'정기 주문 · '+r.period+' · 매주 '+r.frequency+(r.legacyReviewRequired?' (횟수 재확인)':'');})():a.mode==='ONCE'?'1회 주문':'소진 시 주문';
 
 // Q3 completeness means every SKU has an assigned, valid site; not merely 1 allocation.
 const addressComplete=()=>S.locations.length>0&&S.locations.every(siteValid);
@@ -70,7 +72,7 @@ const storage=createBrowserStorage(),storageHydration=storage.load();
 let storageRevision=null,storageToken=null,storageReady=false,storagePending=0,storageFailure=null;
 let storageEpoch=0,uncertainWrite=null;
 let storageTail=Promise.resolve(),lastCommitted=structuredClone(S),inlineDraft=false,storageMessage='';
-let checkpointAttempt=null,checkpointReceipt=null;
+let checkpointAttempt=null,checkpointReceipt=null,checkpointFeedbackTimer=null;
 $('app').inert=true;
 const storageText=result=>result.uncertain?'저장 결과를 확인하지 못했습니다. 다시 저장하거나 새로고침 후 확인해 주세요.':result.status==='CONFLICT'?'다른 탭에서 입력이 변경되었습니다. 새로고침 후 다시 확인해 주세요.':result.status==='CORRUPT'||result.status==='UNSUPPORTED'?'저장된 입력을 불러올 수 없습니다. 입력을 초기화한 후 다시 시도해 주세요.':'입력을 저장하지 못했습니다. 다시 시도해 주세요.';
 function storageFeedback(result,id='form-error'){
@@ -112,21 +114,30 @@ function bodyCheckpoint(){
  return candidate;
 }
 function checkpointSignature(candidate){const payload=projectStoredPayload(candidate);delete payload.allocationRevision;return JSON.stringify(payload);}
-function clearCheckpointStatus(){const status=$('checkpoint-status');status.hidden=true;status.textContent='';status.dataset.state='idle';delete status.dataset.revision;delete status.dataset.transaction;}
-function showCheckpointReceipt(receipt){const status=$('checkpoint-status');status.hidden=false;status.textContent='저장했습니다.';status.dataset.state='saved';status.dataset.revision=String(receipt.revision);status.dataset.transaction=receipt.transactionId;}
+function paintCheckpointButton(state){
+ const button=$('save-checkpoint');button.dataset.state=state;button.setAttribute('aria-label',state==='pending'?'저장 중':state==='saved'?'저장됨':'임시저장');
+ if(state==='pending')button.setAttribute('aria-busy','true');else button.removeAttribute('aria-busy');
+}
+function clearCheckpointStatus(){clearTimeout(checkpointFeedbackTimer);checkpointFeedbackTimer=null;paintCheckpointButton('idle');const status=$('checkpoint-status');status.hidden=true;status.textContent='';status.dataset.state='idle';status.classList.remove('ui-feedback-sr');delete status.dataset.revision;delete status.dataset.transaction;}
+function showCheckpointReceipt(receipt){
+ clearTimeout(checkpointFeedbackTimer);paintCheckpointButton('saved');const status=$('checkpoint-status');status.hidden=false;status.classList.add('ui-feedback-sr');status.textContent='저장됨';status.dataset.state='saved';status.dataset.revision=String(receipt.revision);status.dataset.transaction=receipt.transactionId;
+ // Only the receipt presentation expires. Success itself is reached solely by
+ // the real serialized storage result above, never by elapsed time.
+ checkpointFeedbackTimer=setTimeout(()=>{if(checkpointReceipt===receipt&&status.dataset.state==='saved'){paintCheckpointButton('idle');status.hidden=true;}},1400);
+}
 $('save-checkpoint').onclick=async()=>{
  if(!storageReady||checkpointAttempt?.pending||siteEditing||skuDraftActive()||deliveryDraft||q4AssignmentDraft||document.querySelector('dialog[open]'))return;
  const candidate=bodyCheckpoint(),signature=checkpointSignature(candidate);
  const replay=checkpointReceipt?.signature===signature&&checkpointReceipt.revision===storageRevision?checkpointReceipt:null;
  const attempt={pending:true,transactionId:replay?.transactionId||ident('checkpoint'),signature,epoch:storageEpoch};checkpointAttempt=attempt;
- const status=$('checkpoint-status');status.hidden=false;status.textContent='';status.dataset.state='pending';
+ clearCheckpointStatus();paintCheckpointButton('pending');const status=$('checkpoint-status');status.hidden=false;status.textContent='';status.dataset.state='pending';
  const result=await save(replay?.data||candidate,{publish:false,transactionId:attempt.transactionId,receiptReplay:!!replay,canCommit:()=>checkpointAttempt===attempt&&attempt.epoch===storageEpoch&&checkpointSignature(bodyCheckpoint())===signature});
  attempt.pending=false;storagePaint();if(checkpointAttempt!==attempt)return;
  if(result.ok){
   if(candidate.bodyCheckpoint)S.bodyCheckpoint=structuredClone(candidate.bodyCheckpoint);else delete S.bodyCheckpoint;
   checkpointReceipt={signature,revision:result.revision,transactionId:result.transactionId,data:structuredClone(result.data)};if(checkpointSignature(bodyCheckpoint())===signature)showCheckpointReceipt(checkpointReceipt);else clearCheckpointStatus();
  }else if(result.status==='CANCELLED')clearCheckpointStatus();
- else{status.hidden=false;status.textContent=storageText(result);status.dataset.state=result.status==='CONFLICT'?'conflict':'failed';delete status.dataset.revision;delete status.dataset.transaction;}
+ else{paintCheckpointButton('idle');status.classList.remove('ui-feedback-sr');status.hidden=false;status.textContent=storageText(result);status.dataset.state=result.status==='CONFLICT'?'conflict':'failed';delete status.dataset.revision;delete status.dataset.transaction;}
 };
 // Explicit reset is a revisioned tombstone, never removeItem plus legacy fallback.
 let resetAttempt=null;
@@ -269,9 +280,9 @@ function openSiteActionConfirm({kind,id,trigger}){
  if(lineMode?!line:!site||kind==='unlink'&&!allocation)return;
  const readTarget=()=>lineMode?JSON.stringify([lineById(id),S.allocations.filter(a=>a.lineId===id)]):JSON.stringify([locationById(site.id),allocation?allocationById(allocation.id):null,S.allocations.filter(a=>a.locationId===site.id)]);
  const snapshot=readTarget(),title=lineMode?'모든 연결을 해제할까요?':kind==='site'?siteName(site)+'을 삭제할까요?':'품목 연결을 해제할까요?',body=lineMode?itemIdentity(line)+'의 사업장 연결과 납품 설정을 모두 해제합니다. 사업장 정보와 다른 품목의 설정은 유지됩니다.':kind==='site'?'이 사업장의 정보와 연결된 납품 설정이 삭제됩니다.':siteName(site)+'에서 '+itemIdentity(lineById(allocation.lineId))+'의 납품 설정을 해제합니다.';
- let d=$('q3-action-confirm');if(!d){d=document.createElement('dialog');d.id='q3-action-confirm';d.className='q1-sku-dialog';d.setAttribute('aria-labelledby','q3-action-confirm-title');d.innerHTML='<div class="q1-confirm"><h2 id="q3-action-confirm-title"></h2><p id="q3-action-confirm-body"></p><p id="q3-action-confirm-failure" role="alert" hidden></p><div class="ui-transaction-group"><button type="button" class="ui-transaction-action" data-q3-confirm-cancel>취소</button><button type="button" class="ui-transaction-action" data-q3-confirm-apply></button></div></div>';document.body.append(d);}
+ let d=$('q3-action-confirm');if(!d){d=document.createElement('dialog');d.id='q3-action-confirm';d.className='q1-sku-dialog';d.setAttribute('aria-labelledby','q3-action-confirm-title');d.innerHTML='<div class="q1-confirm"><h2 id="q3-action-confirm-title"></h2><div id="q3-action-confirm-body"></div><p id="q3-action-confirm-failure" role="alert" hidden></p><div class="ui-transaction-group"><button type="button" class="ui-transaction-action" data-q3-confirm-cancel>취소</button><button type="button" class="ui-transaction-action" data-q3-confirm-apply></button></div></div>';document.body.append(d);}
  if(d.open)return;let settled=false,pending=false;
- $('q3-action-confirm-title').textContent=title;$('q3-action-confirm-body').textContent=body;$('q3-action-confirm-failure').hidden=true;const apply=d.querySelector('[data-q3-confirm-apply]');apply.textContent=kind==='site'?'삭제':'해제';apply.classList.toggle('ui-transaction-action--danger',kind==='site');apply.classList.toggle('ui-transaction-action--primary',kind!=='site');apply.disabled=false;
+ $('q3-action-confirm-title').textContent=title;if(lineMode)$('q3-action-confirm-body').innerHTML='<p class="ui-confirm-identity">'+esc(itemIdentity(line))+'</p><div class="ui-confirm-copy"><p>연결된 사업장의 납품 설정을 모두 해제합니다.</p><p>사업장 정보와 다른 품목의 설정은 유지됩니다.</p></div>';else $('q3-action-confirm-body').textContent=body;$('q3-action-confirm-failure').hidden=true;const apply=d.querySelector('[data-q3-confirm-apply]');apply.textContent=kind==='site'?'삭제':'해제';apply.classList.toggle('ui-transaction-action--danger',kind==='site');apply.classList.toggle('ui-transaction-action--primary',kind!=='site');apply.disabled=false;
  const close=()=>{settled=true;OrderModalShell.close(d,{after:()=>{renderAddress();renderDelivery();refreshCompletionBadges();if(lineMode&&q4AssignmentDraft===assignment)paintQ4Assignment();}});};
  d.querySelector('[data-q3-confirm-cancel]').onclick=close;apply.onclick=async()=>{if(settled||pending)return;if(readTarget()!==snapshot||lineMode&&(q4AssignmentDraft!==assignment||assignment.lineId!==id)){$('q3-action-confirm-failure').textContent='대상 정보가 변경되었습니다. 취소 후 다시 확인해 주세요.';$('q3-action-confirm-failure').hidden=false;return;}
   pending=true;apply.disabled=true;const candidate=structuredClone(S);
@@ -462,10 +473,21 @@ function render(){if(editorMode==='initial'&&S.lines.length)editorMode=null;
  $('sku-confirm').hidden=!skuConfirmationPending;
  renderQ2();renderAddress();renderDelivery();$('q1-step-actions').hidden=!S.lines.length||!!editorMode;if(orderErrorExposure)renderOrderPageFeedback();
 }
+function syncQ2Tracks(){
+ const list=$('q2-lines');if(!list?.clientWidth)return;
+ const measure=input=>{const canvas=syncQ2Tracks.canvas||(syncQ2Tracks.canvas=document.createElement('canvas')),context=canvas.getContext('2d');context.font=getComputedStyle(input).font;return context.measureText(input.value||'0').width;};
+ const quantities=[...list.querySelectorAll('[data-line-qty]')],prices=[...list.querySelectorAll('[data-line-price]')];
+ const qtyWidth=Math.max(140,...quantities.map(input=>measure(input)+44+24));
+ const priceWidth=Math.max(0,...prices.map(input=>measure(input)+(input.nextElementSibling?.getBoundingClientRect().width||30)+18));
+ list.dataset.numberStack=String(qtyWidth+28+priceWidth>list.clientWidth);
+ list.style.setProperty('--ui-q2-quantity-track',Math.min(qtyWidth,Math.max(140,list.clientWidth-180))+'px');
+}
+window.addEventListener('resize',syncQ2Tracks);document.fonts?.ready.then(syncQ2Tracks);
 function renderQ2(){
- $('q2-lines').innerHTML=S.lines.map(l=>`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field ui-egg-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit ui-egg-number"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(quantityInputText(l)))}" placeholder="0"><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}">${!['each',String(l.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(l))?'<option value="" selected disabled>단위 확인</option>':''}<option value="each" ${quantityDisplayUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityDisplayUnit(l)===(String(l.pack)==='30'?'tray':'pack')?'selected':''}>${unit(l.pack)}</option></select></div><p class="muted q2-demand-note" data-line-demand="${esc(l.id)}">${esc(quantityDisplayNote(l))}</p><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field ui-egg-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit ui-egg-number"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal"><span>현재 월 구매비용</span><output data-line-subtotal="${esc(l.id)}">${lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l))}</output></div></fieldset>`).join('');
+ q2UnitMenu.close();
+ $('q2-lines').innerHTML=S.lines.map(l=>`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field ui-egg-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit ui-egg-number"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(quantityInputText(l)))}" placeholder="0" step="${quantityDisplayUnit(l)==='each'?esc(l.pack):'1'}"><span class="ui-quantity-choice" data-open="false"><span class="ui-quantity-label" aria-hidden="true">${quantityDisplayUnit(l)==='each'?'개':unit(l.pack)}</span><svg class="ui-quantity-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg><button type="button" class="ui-quantity-trigger" role="combobox" id="q2-unit-trigger-${esc(l.id)}" aria-label="월 구매량 단위" aria-haspopup="listbox" aria-expanded="false" aria-controls="order-quantity-menu" data-unit-trigger="${esc(l.id)}"></button><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}" hidden aria-hidden="true" tabindex="-1">${!['each',String(l.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(l))?'<option value="" selected disabled>단위 확인</option>':''}<option value="each" ${quantityDisplayUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityDisplayUnit(l)===(String(l.pack)==='30'?'tray':'pack')?'selected':''}>${unit(l.pack)}</option></select></span></div><p class="muted q2-demand-note" data-line-demand="${esc(l.id)}">${esc(quantityDisplayNote(l))}</p><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field ui-egg-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit ui-egg-number"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal"><span>현재 월 구매비용</span><output data-line-subtotal="${esc(l.id)}">${lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l))}</output></div></fieldset>`).join('');
  $('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());
- q2Numeric.refresh();
+ q2Numeric.refresh();q2UnitMenu.refresh();syncQ2Tracks();
  if(orderErrorExposure)paintPageFieldIssues(orderValidationProjection().exposedErrors);
 }
 function paintPageFieldIssues(issues,{shake=false,projection=orderValidationProjection()}={}){
@@ -498,7 +520,7 @@ function paintPageFieldIssues(issues,{shake=false,projection=orderValidationProj
  }
 }
 
-function updateLineSpend(){const l=lineById(S.current);$('line-total').textContent=l&&validMonthlyQuantity(l)&&valid(l.price)&&sum(l.qty,l.price)!==null?w(sum(l.qty,l.price)):'—';}
+function updateLineSpend(){const l=lineById(S.current);$('line-total').textContent=l&&lineSubtotal(l)!==null?w(lineSubtotal(l)):'—';}
 // Owns Q3 and Q4 only. v0.15R1 Q1/Q2 layout code remains from baseline.
 let siteEditing=null;let siteEditOriginal=null;let siteDraftBaseline=null;let siteEditGeneration=0;let primarySiteId=null;let focusedDetailDraft=null;let siteManagementOpen=false;let connectingLineId=null;let editingAllocationId=null;let deliveryDraft=null;
 const q3Expanded=new Map();let q3EditorReturn=null,q3EditorSelector='#add-site',q4AssignmentDraft=null;const addressTrace=[];
@@ -654,10 +676,17 @@ for(const id of ['picks-housing','picks-size','picks-pack'])$(id).addEventListen
  const delta=e.key==='ArrowLeft'||e.key==='ArrowUp'?-1:1;
  options[(i+delta+options.length)%options.length].click();
 });$('commit-sku').onclick=()=>upsertSku(false);
-$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=['each',String(line.pack)==='30'?'tray':'pack'];if(!allowed.includes(e.target.value))return;Object.assign(line,convertMonthlyUnit(line,e.target.value));inlineDraft=true;void save(S,{publish:false});renderQ2();refreshCompletionBadges();});
-const q2Numeric=bindNumericInputs($('q2-lines'),{selector:'input[data-line-qty],input[data-line-price]',options:()=>({grouped:true,allowEmpty:true,allowZero:true})});
+$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=['each',String(line.pack)==='30'?'tray':'pack'];if(!allowed.includes(e.target.value)||quantityDisplayUnit(line)===e.target.value)return;Object.assign(line,convertMonthlyUnit(line,e.target.value));inlineDraft=true;void save(S,{publish:false});renderQ2();refreshCompletionBadges();});
+const q2UnitMenu=bindQuantityMenu($('q2-lines'));
+function q2NumericOptions(input){
+ // A durable reset replaces S before the old rendered controls are removed.
+ // Those controls can still be inspected while completion state is refreshed.
+ const line=input.dataset.lineQty?lineById(input.dataset.lineQty):null;
+ return {grouped:true,allowEmpty:true,allowZero:true,maxDigits:12,step:line&&quantityDisplayUnit(line)==='each'?line.pack:1};
+}
+const q2Numeric=bindNumericInputs($('q2-lines'),{selector:'input[data-line-qty],input[data-line-price]',options:q2NumericOptions});
 $('q2-lines').addEventListener('numericstatechange',()=>refreshCompletionBadges());
-$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const digits=e.orderNumeric?.value;if(digits===undefined||e.isComposing)return;if(el.dataset.lineQty){const previousUnit=quantityUnit(l);for(const a of S.allocations.filter(a=>a.lineId===l.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=previousUnit;delete l.qtyExact;l.qtyUnit=quantityDisplayUnit(l);}l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const demand=document.querySelector(`[data-line-demand="${CSS.escape(String(id))}"]`);if(demand)demand.textContent=quantityDisplayNote(l);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();inlineDraft=true;void save(S,{publish:false});});
+$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const digits=e.orderNumeric?.value;if(digits===undefined||e.isComposing)return;if(el.dataset.lineQty){const previousUnit=quantityUnit(l);for(const a of S.allocations.filter(a=>a.lineId===l.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=previousUnit;delete l.qtyExact;l.qtyUnit=quantityDisplayUnit(l);}l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const demand=document.querySelector(`[data-line-demand="${CSS.escape(String(id))}"]`);if(demand)demand.textContent=quantityDisplayNote(l);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();syncQ2Tracks();inlineDraft=true;void save(S,{publish:false});});
 
 $('q1-next').onclick=()=>{if(!guardPendingEdits('q1-next'))return;const bad=CODE1_ORDER_VALIDATION.validateOrderDraft(S,{scope:'full'}).fieldErrors.find(x=>x.stage==='q1');if(bad){errorAt('q1',bad.message);return;}err('err-q1','');if(changeOpen('q2'))navigateRegularStage('q2');};
 let regularStageEpoch=0;
@@ -671,7 +700,7 @@ $('added-lines').addEventListener('click',e=>{
  const l=lineById(b.dataset.edit);if(!l||!guardPendingEdits('sku-edit'))return;skuEditSnapshot={current:S.current,open:S.open,error:$('err-q1').textContent};skuRestoreCurrent=S.current;editing={...l};S.current=l.id;addingSku=false;editorMode='edit';skuConfirmationPending=false;changeOpen('q1',false);openSkuDialog(b);
 });
 const beginAdditionalSku=()=>{if(!guardPendingEdits('sku-add'))return;const fromButton=document.activeElement;skuEditSnapshot={current:S.current,open:S.open,error:$('err-q1').textContent};skuRestoreCurrent=S.current;editing=empty();addingSku=true;S.current=null;editorMode='new';skuConfirmationPending=false;changeOpen('q1',false);openSkuDialog(fromButton);};
-$('add-line').innerHTML=OrderIcons.svg('plus')+'<span>계란 추가</span>';$('reset-input').innerHTML=OrderIcons.svg('eraser')+'<span>입력 초기화</span>';
+$('add-line').innerHTML='<span class="ui-text-plus" aria-hidden="true">+</span><span>계란 추가</span>';$('reset-input').innerHTML=OrderIcons.svg('eraser')+'<span>입력 초기화</span>';
 $('add-line').onclick=beginAdditionalSku;
 $('cancel-sku').onclick=()=>OrderModalShell.requestClose($('sku-dialog'),'cancel');
 $('sku-confirm-back').onclick=backFromSkuConfirmation;
@@ -823,7 +852,7 @@ function requestAssignmentProof(siteId,force=false){const c=q4AssignmentDraft,si
 function openQ4Assignment(lineId,trigger){if(!guardPendingEdits('q4-assignment'))return;const line=lineById(lineId);if(!line)return;
  const selected=S.allocations.filter(a=>a.lineId===lineId).map(a=>a.locationId);q4AssignmentDraft={lineId,selected:[...selected],originalIds:[...selected],trigger,checking:new Set(),controller:new AbortController(),exposed:false,transitioning:false};
  $('q4-assignment-title').textContent=itemIdentity(line)+' 납품 사업장';$('q4-assignment-error').textContent='';delete $('q4-assignment-options').dataset.shape;paintQ4Assignment();
- OrderModalShell.open($('q4-assignment-dialog'),{variant:'compact',role:'confirm',history:true,returnFocus:()=>trigger?.isConnected?trigger:document.querySelector(`[data-q4-select-sites="${CSS.escape(lineId)}"]`)});
+ OrderModalShell.open($('q4-assignment-dialog'),{variant:'compact',role:'selection',history:true,returnFocus:()=>trigger?.isConnected?trigger:document.querySelector(`[data-q4-select-sites="${CSS.escape(lineId)}"]`)});
  // One proof request per relevant site on entry; never a renderer-side network loop.
  for(const site of S.locations)if(!OrderSiteContract.basicIssues(site).length&&!OrderEmailDomain.isSuccess(OrderEmailDomain.status(site.email)))requestAssignmentProof(site.id);
  refreshCompletionBadges();
@@ -871,8 +900,8 @@ function q4InvalidateSiteDemand(lineId){ /* Derived monthly drafts recalculate o
 
 
 const q4ValidInteger=v=>/^[1-9]\d*$/.test(String(v??''))&&Number.isSafeInteger(Number(v));
-// V5 P1 candidate only: Q4 per-delivery amounts are in 1..99999. Q2 global quantity validator is unchanged.
-const q4ValidAmount=v=>q4ValidInteger(v)&&Number(v)<=99999;
+// MSG0540: Q2/Q4 share the approved twelve-digit integer input contract.
+const q4ValidAmount=v=>q4ValidInteger(v)&&String(v).length<=12;
 
 
 
@@ -978,7 +1007,7 @@ function quantityBoundIssue(a,line){
 function q4ReviewAllocationIssues(a,all=S.allocations,line=lineById(a.lineId)){
 
  if(a.q4Review?.version!=='0460')return null;
- const z=[],put=(k,m)=>z.push(q4ReviewIssue(a,k,m)),num=v=>/^\d+$/.test(String(v??''))&&+v>0&&+v<=99999;
+ const z=[],put=(k,m)=>z.push(q4ReviewIssue(a,k,m)),num=v=>/^[1-9]\d{0,11}$/.test(String(v??''));
  if(!a.modeExplicit||!['FLEX','FIXED','ONCE'].includes(a.mode))put('mode','주문 방식을 선택해 주세요.');
  if(!a.advanced?.contactChannels?.length)put('contact','연락 수단을 하나 이상 선택해 주세요.');
  if(!num(a.qty))put('qty',a.mode==='ONCE'?'1회 주문량을 입력해 주세요.':'회당 예상 주문 수량을 입력해 주세요.');else{const bound=quantityBoundIssue(a,line);if(bound)z.push(bound);}
@@ -995,7 +1024,11 @@ function q4ReviewAllocationIssues(a,all=S.allocations,line=lineById(a.lineId)){
   if(a.mode==='FIXED'){
    const r=OrderRepeatContract.fromAllocation(a),contract=OrderRepeatContract.inspect(r);if(!contract.valid){if(contract.issue.kind==='weekdays'){for(const week of contract.week.filter(w=>!w.complete))put('weekdays-'+week.number,week.number+'주차 희망요일 개수를 확인해 주세요.');}else put(contract.issue.kind,contract.issue.message);}
    else if(r.semantics==='per-week-v1'){const expected=OrderRepeatContract.serialize(r).value;for(const key of ['intervalWeeks','frequencyPerWeek','freq','cycleCount','monthDay','scheduleDetail','weekPlans'])if(JSON.stringify(a[key])!==JSON.stringify(expected[key])){put('repeat-contract','반복 횟수와 저장된 주차 계획이 일치하지 않습니다. 다시 저장해 주세요.');break;}}
-   if(contract.valid&&a.cadence?.preferredDate){
+   if(contract.valid&&a.cadence?.version==='3.0.0'){
+    const start=validateApprovedStart(a.cadence,new Date());
+    if(!start.valid)put('repeat-preferred',start.message);
+   }
+   if(contract.valid&&a.cadence?.preferredDate&&a.cadence.version!=='3.0.0'){
     const today=seoulDate(),asOfLocalDate=`${today.year}-${String(today.month).padStart(2,'0')}-${String(today.day).padStart(2,'0')}`;
     const start=inspectStartDate(a.cadence.preferredDate,{asOfLocalDate,cadence:a.cadence,lifecycle:a.q4Review?.startDateReview?.lifecycle||'LEGACY',savedAnchor:a.cadence.preferredDate,edited:false,adjust:false,holidayPolicy:holidayPolicyFromSelection(a.q4Review?.activeHoliday||a.advanced)});
     if(!start.valid)put('repeat-preferred',start.message);
@@ -1055,7 +1088,14 @@ async function q4ReviewCommit(patches,confirmedFingerprint=null,canCommit=()=>tr
  const result=await save({...S,allocations:staged},{errorId:'q4-commit-error',canCommit:()=>canCommit()&&q4ReviewContext===c&&(!confirmedFingerprint||q4ReviewPending?.warning.fingerprint===confirmedFingerprint&&q4OnceConfirmDialog.open&&!q4OnceConfirmDialog.classList.contains('is-closing'))&&$('q4-regular-dialog').open&&!$('q4-regular-dialog').classList.contains('is-closing')&&JSON.stringify([lineById(c.lineId),S.allocations.filter(a=>a.lineId===c.lineId),S.locations])===c.signature});
  if(!result.ok)return {...result,message:result.status==='CANCELLED'?'저장을 취소했습니다.':storageText(result)};q4ReviewCommitCount++;q4ReviewPending=null;return {ok:true};
 }
+async function q4ReviewIsCurrent(){
+ const context=q4ReviewContext,revision=storageRevision,token=storageToken,epoch=storageEpoch;
+ if(!context||!storageReady||storagePending||storageFailure)return false;
+ let current;try{current=await storage.inspectCurrent();}catch{return false;}
+ return current.ok&&q4ReviewContext===context&&storageEpoch===epoch&&storageRevision===revision&&storageToken===token&&!storagePending&&!storageFailure&&current.revision===revision&&current.versionToken===token;
+}
 window.OrderRegularQ4Bridge=Object.freeze({
+ isCurrent:q4ReviewIsCurrent,
  allocationContext:lineId=>{const id=lineId||q4ReviewContext?.lineId;const allocations=q4ReviewContext?.selectionPending&&id===q4ReviewContext.lineId?q4ReviewContext.openingAllocations:S.allocations.filter(a=>a.lineId===id);return q4ReviewClone({line:lineById(id),allocations,locations:S.locations,revision:S.allocationRevision||0});},
  inspect:patches=>{const line=lineById(patches[0]?.lineId);return [...patches.flatMap(a=>q4ReviewAllocationIssues(a,patches)||[]),...(line?monthlyIssues(S,line,patches):[])];},open:q4ReviewOpen,commit:q4ReviewCommit,closed:q4ReviewClosed,
  get commitCount(){return q4ReviewCommitCount;},get committed(){return q4ReviewClone(S);},

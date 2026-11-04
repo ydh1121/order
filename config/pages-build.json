@@ -22,17 +22,17 @@
     {
       "source": "web/address-contract.mjs",
       "output": "address-contract.mjs",
-      "sha256": "408d07178923562a14be4981fc29e00d4df37eeac4287ab5baf022ad8f324211"
+      "sha256": "8758f7688bba64c52175870b2b4f46565893c88fe7f023c480b4dae15680586e"
     },
     {
       "source": "web/address-service.mjs",
       "output": "address-service.mjs",
-      "sha256": "6b677b75578340bb77bffea251fdd1de86a930f30b07b4d8e2781d1909077b3c"
+      "sha256": "de695aca52c92c5b5b3b8e27c6aea191311cb0478f3ee305e6b203204b08379e"
     },
     {
       "source": "web/address-ui.mjs",
       "output": "address-ui.mjs",
-      "sha256": "d43af78db502c23de14e399f5328418be8769fd0d4101334e0ac019114ff815a"
+      "sha256": "8d0d1ae5ad40e5fd0b54f9bc526548ce6605e922c2ef6049d8426a0a134c286a"
     },
     {
       "source": "web/allocation-ui.mjs",
@@ -42,12 +42,12 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "f5555483b0f33d419bad3398abdee1241f84a366ebec0ccf33d309866bfdf4b0"
+      "sha256": "fff87aeb7b24f57e53b22030e9439f9de876cacafc78d02954bb8bed3057c19d"
     },
     {
       "source": "web/common-ui.mjs",
       "output": "common-ui.mjs",
-      "sha256": "3e3cfec0c92b510ca2ad4a148d805f56be6a907de3b9af724602779e01e68f21"
+      "sha256": "2e143ccb6aecb13d319d2043fad995d7ef0eec38424a1e2331fd7c87044d015e"
     },
     {
       "source": "web/contact-ui.mjs",
@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "b61cab12fa4c606a12b36bf1917bb2d66970b78dea5f2624bc2b0cf175365856"
+      "sha256": "f126c1636dbf52fbd03b127d7fbd34e2f8134aa36a14df3a5f0c74645ad88c14"
     },
     {
       "source": "web/main.mjs",
@@ -67,37 +67,62 @@
     {
       "source": "web/numeric-input.mjs",
       "output": "numeric-input.mjs",
-      "sha256": "486d97303c94a7eca5b249363b7439169b5b79a40a73009197d71977126442ed"
+      "sha256": "282bdd4cba8ce7cde3b9f103f7c9da7c859e79199152188d6dbaa7c1597866ad"
     },
     {
       "source": "web/q4-planning.mjs",
       "output": "q4-planning.mjs",
-      "sha256": "2f67ab05a8cd9a0b7e283feadf670cdf75988e42af0c34f68a7479cf4a584550"
+      "sha256": "265455689684c3b6291e9cf00b8cd5e8aff572497bcb5ac0a0febe1f2c3f1e4d"
     },
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "0bf0fa54388e3b6b4ae5b6afb0f7b613a697ec9de230bc1965cb411676a97e97"
+      "sha256": "76b1c1d8240f8ed97159ec23047459cfcf3610f1c8f2ef888ad51fa9713790a2"
     },
     {
       "source": "web/quantity-contract.mjs",
       "output": "quantity-contract.mjs",
-      "sha256": "43ff2ac6861b68b54094823099245a22dbbd0db994767993e41faedbc3e91286"
+      "sha256": "6cdc8663ad794648a44d7ed4a1173a02d6d500ab8756e28c1e5e34fdecf03ab1"
     },
     {
       "source": "web/storage.mjs",
       "output": "storage.mjs",
-      "sha256": "6a7983e5d352a70752cfc8f6e1b036ff501e187f9e5681c4fe6c0cc2ff8ce1d0"
+      "sha256": "99e6150f8e7970157f8df387b36685e77d75bebbb5eadefd6df22ebbb3fd6721"
     },
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "2ee15f0873f3d646eb64b2b4b23472db220404ed107fbaee994b64e2612d1ea8"
+      "sha256": "8856d2476a45ab225258d130402d924f06300d4ad78a9be7bde4882dba02ae5e"
     },
     {
       "source": "web/cadence-contract.mjs",
       "output": "cadence-contract.mjs",
-      "sha256": "d7e0fc2f05c68b38e259343475ea4bc2d5fdbb814c7ddf434f6ef32e35924f89"
+      "sha256": "4936847af4b5264f2f3750fca93b5748d3cca6b521ab81f4612866b15d426cbf"
+    },
+    {
+      "source": "web/approved-schedule.mjs",
+      "output": "approved-schedule.mjs",
+      "sha256": "78a32c3f3290d7932ec67a5837b171ced32328843cbc78e61bc972f637d036b5"
+    },
+    {
+      "source": "web/order-date.mjs",
+      "output": "order-date.mjs",
+      "sha256": "e537d4b93f6df06891c629b5b68275c833fa5e4fbef5cdabe76d1aad7d31065b"
+    },
+    {
+      "source": "web/date-field.mjs",
+      "output": "date-field.mjs",
+      "sha256": "e1d3ceb0716a1e371e4c2dfbd783c5ee96bf9f7430e59aa6790971d02cf2a01d"
+    },
+    {
+      "source": "web/date-field.css",
+      "output": "date-field.css",
+      "sha256": "79a8f06b48d491029b688befecbe8519fa60f4a06fcef98466c0d20d69bfd49b"
+    },
+    {
+      "source": "web/quantity-menu.mjs",
+      "output": "quantity-menu.mjs",
+      "sha256": "aa3cbb6ac0efaf33e48697ecf29a39f6f9162f295e29c919b4b5781518e9dc27"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",
@@ -106,7 +131,13 @@
     {
       "source": "functions/api/address/search.js",
       "route": "/api/address/search",
-      "sha256": "8ca49e6af49359a14823a99e771c88b56c985981a194a7adba81ddde350e7bfe"
+      "sha256": "ef9c7fc2d4339b90a113122b27324d368fdef4355f4e663d406698e1be023907"
     }
-  ]
+  ],
+  "approvedIntegration": {
+    "message": "MSG-20261105-0540",
+    "uiApproval": "USER_APPROVED_QA_SCOPED",
+    "dateContract": "D1R6",
+    "sourceSha256": "68dbcefeb3aad691a3096c6dc4f1f31df2217532464eee5bb2f6673649141435"
+  }
 }

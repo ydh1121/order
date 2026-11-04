@@ -11,7 +11,7 @@ export function monthlyQuantity(line) {
     if(line.qtyExact.conversionReviewed!==true||line.qty!==`${value.n}/${value.d}`||value.n<=0n)throw Error('MONTHLY_QUANTITY_METADATA');
     return value;
   }
-  if(!/^[1-9]\d*$/.test(String(line.qty)))throw Error('MONTHLY_QUANTITY_INVALID');
+  if(!/^[1-9]\d{0,11}$/.test(String(line.qty)))throw Error('MONTHLY_QUANTITY_INVALID');
   return exact(String(line.qty));
 }
 export function validMonthlyQuantity(line){try{if(!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityUnit(line))||!['each',String(line.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(line)))return false;quantityFactor(line);return monthlyQuantity(line).n>0n;}catch{return false;}}
@@ -39,10 +39,9 @@ export function quantityDisplayNote(line){
   const base=baseQuantity(line),packages=divide(base,exact(String(line.pack))),label=String(line.pack)==='30'?'판':'팩';
   if(quantityDisplayUnit(line)!=='each')return `낱개 기준 총 ${exactDisplay(toJSON(base))}개`;
   const packs=round(packages,{scale:0,mode:'CEIL'}).decimal;
-  const truncated=round(packages,{scale:1,mode:'DOWN'}).decimal;
-  // Sub-package demand must never look like zero; the exact source stays untouched.
-  const detail=packages.d!==1n&&truncated!=='0.0'?` (${truncated}${label})`:'';
-  return `포장 기준 ${BigInt(packs).toLocaleString('ko-KR')}${label}${detail}`;
+  // The approved helper shows the whole-package purchase basis only. The raw
+  // each demand remains exact in the model and the opposite unit projection.
+  return `포장 기준 ${BigInt(packs).toLocaleString('ko-KR')}${label}`;
 }
 /** Read-only display projection. Historical demand is never rewritten as a plan. */
 export function monthlyPlanSnapshot(line,allocation={}){
@@ -75,8 +74,9 @@ export function monthlyPlanSnapshot(line,allocation={}){
 export function monthlyQuantityText(line){try{return exactDisplay(toJSON(line.qtyExact?.representation==='rational'?baseQuantity(line):monthlyQuantity(line)));}catch{return String(line.qty??'').includes('/')?'확인 필요':String(line.qty??'');}}
 export function currentPurchaseCost(line) {
   try {
-    if(!validMonthlyQuantity(line)||!/^[1-9]\d*$/.test(String(line.price)))return null;
-    return toJSON(divide(multiply(baseQuantity(line),exact(String(line.price))),exact(String(line.pack))));
+    if(!validMonthlyQuantity(line)||!/^[1-9]\d{0,11}$/.test(String(line.price)))return null;
+    const packages=round(divide(baseQuantity(line),exact(String(line.pack))),{scale:0,mode:'CEIL'}).decimal;
+    return toJSON(multiply(exact(packages),exact(String(line.price))));
   }catch{return null;}
 }
 export function totalPurchaseCost(lines) {

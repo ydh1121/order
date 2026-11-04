@@ -126,11 +126,11 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     if (result.status === 'OK') {
       const incoming = (result.items || []).filter(isVerifiedAddress);
       const combined = next ? [...options, ...incoming] : incoming;
-      options = [...new Map(combined.map(item => [item.providerId + ':' + item.postal, item])).values()];
+      options = [...new Map(combined.map(item => [item.addressProvider + ':' + item.providerId + ':' + item.postal, item])).values()];
       status = options.length ? 'RESULTS' : 'EMPTY';
       mutate(() => { renderOptions(); showStatus(options.length ? `${options.length}개 주소` : '검색 결과가 없습니다.'); });
     } else if (result.status === 'EMPTY') {
-      if (!next) options = []; hasMore = false; status = 'EMPTY';
+      if (!next) options = []; status = 'EMPTY';
       mutate(() => { renderOptions(); showStatus('검색 결과가 없습니다.'); });
     } else if (result.status === 'INVALID_REQUEST') {
       status = 'INVALID_REQUEST'; hasMore = false;

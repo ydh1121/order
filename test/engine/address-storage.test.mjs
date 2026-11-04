@@ -23,7 +23,7 @@ test('schema1/2 restore remains byte-identical and unverified; successful explic
   const draft=structuredClone(loaded.data);Object.assign(draft.locations[0],selectAddress(draft.locations[0],candidate()),{dropoff:'문 앞'});
   env.local.fail=true;const failed=await env.api.commit(draft,opts(loaded));assert.equal(failed.status,'WRITE_FAILED');assert.equal(env.local.getItem(STORAGE_KEY),before);assert.equal(draft.locations[0].dropoff,'문 앞');
   env.local.fail=false;const saved=await env.api.commit(draft,opts(loaded));assert.equal(saved.status,'COMMITTED');assert.equal(saved.revision,5);assert.equal(env.local.writes,1);
-  const record=JSON.parse(env.local.getItem(STORAGE_KEY));assert.equal(record.schemaVersion,6);assert.equal(record.generation,'existing-generation');assert.equal(record.data.locations[0].postal,'08843');assert.equal(record.data.locations[0].detail,'2층');assert.equal(record.data.locations[0].dropoff,'문 앞');
+  const record=JSON.parse(env.local.getItem(STORAGE_KEY));assert.equal(record.schemaVersion,7);assert.equal(record.generation,'existing-generation');assert.equal(record.data.locations[0].postal,'08843');assert.equal(record.data.locations[0].detail,'2층');assert.equal(record.data.locations[0].dropoff,'문 앞');
   const restored=await setup(env).api.load();assert.deepEqual(restored.data,draft);assert.equal(addressStatus(restored.data.locations[0]).valid,true);
  }
 });
@@ -37,7 +37,7 @@ test('old schema/session cannot smuggle provider provenance or new placement fie
 test('legacy session migrates to current schema without turning old providerId or status into verified evidence',async()=>{
  const data=payload();Object.assign(data.locations[0],{providerId:candidate().providerId,status:'PROVIDER_CHECKED',addressState:'PRESENT_REQUIRES_PROVIDER_POLICY'});
  const original=JSON.stringify(data),env=setup({session:new MemoryStorage({[LEGACY_KEYS[0]]:original})}),loaded=await env.api.load();
- assert.equal(loaded.status,'MIGRATED');assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,6);assert.equal(addressStatus(loaded.data.locations[0]).valid,false);assert.equal(loaded.data.locations[0].postal,'08843');assert.equal(env.session.getItem(LEGACY_KEYS[0]),original);
+ assert.equal(loaded.status,'MIGRATED');assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,7);assert.equal(addressStatus(loaded.data.locations[0]).valid,false);assert.equal(loaded.data.locations[0].postal,'08843');assert.equal(env.session.getItem(LEGACY_KEYS[0]),original);
 });
 test('strict new provider selections and placement limits reject malformed data without any write',async()=>{
  for(const patch of [{addressProvider:'OTHER'},{addressProvider:'JUSO'}, {...candidate(),postal:8843}, {...candidate(),providerId:'old'}, {dropoff:'x'.repeat(4097)}, {dropoff:12}, {location:{dropoff:'nested wrong field'}}]){

@@ -2,7 +2,10 @@
 import {startDateRange,inspectStartDate} from '../src/engine/calculation/start-date.mjs';
 export {startDateRange,inspectStartDate,recurringDeliveryDates,holidayPolicyFromSelection,START_DATE_POLICY_VERSION,START_DATE_MESSAGES} from '../src/engine/calculation/start-date.mjs';
 export const CADENCE_VERSION='2.1.0';
-const versions=['2.0.0',CADENCE_VERSION];
+// Explicitly selected MSG0540 recurrence. Old versions are retained verbatim;
+// a newer UI never changes the meaning of an existing per-week schedule on read.
+export const APPROVED_CADENCE_VERSION='3.0.0';
+const versions=['2.0.0',CADENCE_VERSION,APPROVED_CADENCE_VERSION];
 const kinds=['WEEKLY','INTERVAL_DAYS','MONTHLY'];
 const dateFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'});
 const clone=value=>structuredClone(value);
@@ -38,6 +41,23 @@ export function inspectPreferredDate(value,{now=new Date(),savedAnchor='',edited
 export const validDayRule=value=>value==='last'||Number.isInteger(value)&&value>=1&&value<=31;
 export function inspectCadence(cadence){
  const failure=code=>({valid:false,code,value:null});
+ if(cadence?.version===APPROVED_CADENCE_VERSION){
+  if(!['CONSULT','WEEKLY','INTERVAL_DAYS','MONTHLY'].includes(cadence.kind))return failure('CADENCE_INVALID');
+  const allowed=['version','kind','preferredDate','nominalAnchor',...(cadence.kind==='INTERVAL_DAYS'?['intervalDays']:cadence.kind==='MONTHLY'?['dayRule']:[])];
+  if(Object.keys(cadence).some(key=>!allowed.includes(key))||typeof cadence.preferredDate!=='string'||typeof cadence.nominalAnchor!=='string')return failure('CADENCE_FIELDS_INVALID');
+  if(cadence.kind==='INTERVAL_DAYS'&&cadence.intervalDays!==14)return failure('CADENCE_INTERVAL_INVALID');
+  if(cadence.kind==='MONTHLY'&&!validDayRule(cadence.dayRule))return failure('CADENCE_DAY_RULE_INVALID');
+  if(cadence.preferredDate!==cadence.nominalAnchor)return failure('CADENCE_ANCHOR_INVALID');
+  if(cadence.preferredDate!==''){
+   const date=clampPreferredDate(cadence.preferredDate);
+   if(!date.valid||date.clamped||date.value!==cadence.preferredDate)return failure('CADENCE_DATE_INVALID');
+   if(cadence.kind==='MONTHLY'){
+    const last=daysInMonth(date.parts.year,date.parts.month),day=cadence.dayRule==='last'?last:Math.min(cadence.dayRule,last);
+    if(date.parts.day!==day)return failure('CADENCE_MONTHLY_DATE_MISMATCH');
+   }
+  }
+  return {valid:true,code:'VALID',value:clone(cadence)};
+ }
  if(!cadence||typeof cadence!=='object'||Array.isArray(cadence)||!versions.includes(cadence.version)||!kinds.includes(cadence.kind))return failure('CADENCE_INVALID');
  const current=cadence.version===CADENCE_VERSION;
  const allowed=['version','kind','preferredDate',...(current?['nominalAnchor']:[]),...(cadence.kind==='INTERVAL_DAYS'?['intervalDays']:cadence.kind==='MONTHLY'?['dayRule']:[])];
@@ -66,12 +86,22 @@ export function createCadence(period,previous=null){
  if(period==='매월')return {...base,kind:'MONTHLY',dayRule:previous?.kind==='MONTHLY'?previous.dayRule:''};
  return null;
 }
+/** New accepted input is the only entry point to approved recurrence semantics. */
+export function createApprovedCadence(period,previous=null){
+ const selected=typeof previous?.preferredDate==='string'?previous.preferredDate:'';
+ const base={version:APPROVED_CADENCE_VERSION,preferredDate:selected,nominalAnchor:selected};
+ if(period==='협의')return {...base,kind:'CONSULT'};
+ if(period==='매주')return {...base,kind:'WEEKLY'};
+ if(period==='2주')return {...base,kind:'INTERVAL_DAYS',intervalDays:14};
+ if(period==='매월')return {...base,kind:'MONTHLY',dayRule:previous?.kind==='MONTHLY'?previous.dayRule:''};
+ return null;
+}
 /** One monthly rule plus optional selected start month, updated as one draft transaction. */
 export function syncMonthlyPreferredDate(cadence,action){
  const next=clone(cadence);
  const failure=code=>({valid:false,code,value:clone(cadence)});
  if(next?.kind!=='MONTHLY'||!versions.includes(next.version))return failure('CADENCE_MONTHLY_REQUIRED');
- const current=next.version===CADENCE_VERSION;
+ const current=next.version===CADENCE_VERSION||next.version===APPROVED_CADENCE_VERSION;
  if(action?.kind==='clear'){next.preferredDate='';if(current)next.nominalAnchor='';return {valid:true,code:'VALID',value:next};}
  if(action?.kind==='rule'){
   if(!validDayRule(action.dayRule))return failure('CADENCE_DAY_RULE_INVALID');

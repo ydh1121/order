@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import {bindNumericInputs} from '../../web/numeric-input.mjs';
 // Deterministic delegated-event contract, not OS/IME acceptance evidence.
 class E{constructor(type,init={}){Object.assign(this,{type,bubbles:true,cancelable:true},init);}preventDefault(){this.defaultPrevented=true;}stopImmediatePropagation(){this.stopped=true;}}
-function harness(raw='1200',{grouped=true,egg=true}={}){
- const listeners=new Map(),accepted=[],css=new Map(),document={activeElement:null,defaultView:{Event:E}};
+function harness(raw='1200',{grouped=true,egg=true,view={}}={}){
+ const listeners=new Map(),accepted=[],css=new Map(),document={activeElement:null,defaultView:{Event:E,...view}};
  const input={value:raw,dataset:{},disabled:false,readOnly:false,ownerDocument:document,selectionStart:raw.length,selectionEnd:raw.length,selectionDirection:'none',style:{setProperty:(k,v)=>css.set(k,v)},matches:s=>s!=='.ui-egg-number',closest:s=>s==='.ui-egg-number'&&egg?{className:'input-unit ui-egg-number'}:null,getAttribute:()=>null,setSelectionRange(start,end,direction='none'){Object.assign(this,{selectionStart:start,selectionEnd:end,selectionDirection:direction});},dispatchEvent(event){event.target=this;for(const phase of [true,false])for(const l of listeners.get(event.type)||[]){if(l.capture!==phase)continue;l.fn(event);if(event.stopped)return !event.defaultPrevented;}return !event.defaultPrevented;}};
- const root={querySelectorAll:()=>[input],addEventListener(type,fn,opts){listeners.set(type,[...(listeners.get(type)||[]),{fn,capture:typeof opts==='boolean'?opts:!!opts?.capture}]);},removeEventListener(){}};
+ const root={ownerDocument:document,querySelectorAll:()=>[input],addEventListener(type,fn,opts){listeners.set(type,[...(listeners.get(type)||[]),{fn,capture:typeof opts==='boolean'?opts:!!opts?.capture}]);},removeEventListener(){}};
  const api=bindNumericInputs(root,{options:field=>({grouped:field.grouped??grouped})});document.activeElement=input;root.addEventListener('input',e=>accepted.push({...e.orderNumeric}));
  const fire=(type,init={})=>{const e=new E(type,init);input.dispatchEvent(e);return e;};
  const edit=(text,{type='insertText',start=input.selectionStart,end=input.selectionEnd}={})=>{input.setSelectionRange(start,end);const e=fire('beforeinput',{inputType:type,data:text});if(e.defaultPrevented)return;input.value=input.value.slice(0,start)+text+input.value.slice(end);input.setSelectionRange(start+text.length,start+text.length);return fire('input',{inputType:type,data:text});};
  const remount=(raw=input.value,config={})=>{const next={...input,...config,value:raw,dataset:{},selectionStart:raw.length,selectionEnd:raw.length,selectionDirection:'none'};root.querySelectorAll=()=>[next];api.refresh();const fireNext=(type,init={})=>{const e=new E(type,init);next.dispatchEvent(e);return e;};return {input:next,fire:fireNext,focus(){document.activeElement=next;fireNext('focusin');}};};
- return {input,api,accepted,css,fire,edit,remount,onInput:fn=>root.addEventListener('input',fn)};
+ return {input,api,root,accepted,css,fire,edit,remount,onInput:fn=>root.addEventListener('input',fn)};
 }
 test('C28 initial/reopened grouped rendering publishes no model edit and keeps identifier/date roles untouched',()=>{
  const h=harness('1200');assert.equal(h.input.value,'1,200');assert.equal(h.api.read(h.input).value,'1200');assert.equal(h.accepted.length,0);assert.equal(h.css.get('--ui-number-ch'),'5');
@@ -73,4 +73,30 @@ test('C28 composition commit correction and remount suppress the trailing input 
  const trailing=next.fire('input',{inputType:'insertCompositionText',data:'201'});assert.equal(trailing.stopped,true);assert.equal(h.accepted.length,1,'the corrected replacement owns the trailing composition guard');
  next.fire('keydown',{key:'z',ctrlKey:true});assert.equal(next.input.value,'199');next.fire('keydown',{key:'y',ctrlKey:true});assert.equal(next.input.value,'200');assert.equal(h.accepted.length,3);
  next.fire('beforeinput',{inputType:'insertText',data:'2'});next.input.value='202';next.fire('input',{inputType:'insertText',data:'2'});assert.equal(h.accepted.length,4,'a later deliberate edit is accepted normally');assert.equal(h.accepted.at(-1).value,'202');
+});
+test('MSG0540 range fit completes synchronously against its padded modal viewport before a numeric edit returns',()=>{
+ const h=harness('20'),view=h.input.ownerDocument.defaultView;let deferred=0;
+ const viewport={clientWidth:288,parentElement:null},expandedParent={clientWidth:360,parentElement:viewport};
+ const numbers=[{scrollWidth:70},{scrollWidth:224}],range={dataset:{},parentElement:expandedParent,querySelectorAll:()=>numbers};
+ view.requestAnimationFrame=()=>{deferred++;};view.cancelAnimationFrame=()=>{};
+ view.getComputedStyle=node=>node===range?{columnGap:'8px'}:node===viewport?{paddingLeft:'20px',paddingRight:'20px'}:{paddingLeft:'0px',paddingRight:'0px'};
+ const priorClosest=h.input.closest;h.input.closest=selector=>selector==='.qa-var-range'?range:priorClosest(selector);
+ h.api.replace(h.input,'123456789012');
+ assert.equal(range.dataset.long,'true','expanded parent cannot override the 248px visible viewport');
+ assert.equal(deferred,0,'no later animation frame may repair a clipped accepted input');
+ assert.equal(h.input.value,'123,456,789,012');assert.equal(h.accepted.length,0,'layout fitting does not publish a model write');
+ numbers[1].scrollWidth=70;h.api.replace(h.input,'20');assert.equal(range.dataset.long,'false','short values restore the shared row in the same turn');
+});
+
+test('MSG0540 range viewport resize fits once per owner and preserves exact value, caret, undo and zero writes',()=>{
+ const listeners=new Set();let adds=0,removes=0;
+ const h=harness('20',{view:{addEventListener(type,fn){if(type==='resize'){adds++;listeners.add(fn);}},removeEventListener(type,fn){if(type==='resize'){removes++;listeners.delete(fn);}}}});
+ const view=h.input.ownerDocument.defaultView,viewport={clientWidth:504,parentElement:null},parent={clientWidth:464,parentElement:viewport},numbers=[{scrollWidth:70},{scrollWidth:224}],range={dataset:{},parentElement:parent,querySelectorAll:()=>numbers};
+ view.getComputedStyle=node=>node===range?{columnGap:'8px'}:node===viewport?{paddingLeft:'20px',paddingRight:'20px'}:{paddingLeft:'0px',paddingRight:'0px'};
+ const closest=h.input.closest;h.input.closest=selector=>selector==='.qa-var-range'?range:closest(selector);
+ h.api.replace(h.input,'123456789012',{history:'append'});h.input.setSelectionRange(3,6,'backward');const history=h.api.inspectHistory(h.input);
+ assert.equal(range.dataset.long,'false');assert.equal(bindNumericInputs(h.root),h.api);assert.equal(adds,1,'rebinding cannot duplicate global listeners');
+ viewport.clientWidth=288;for(const fn of listeners)fn();assert.equal(range.dataset.long,'true');assert.equal(h.input.value,'123,456,789,012');assert.deepEqual([h.input.selectionStart,h.input.selectionEnd,h.input.selectionDirection],[3,6,'backward']);assert.deepEqual(h.api.inspectHistory(h.input),history);assert.equal(h.accepted.length,0);
+ viewport.clientWidth=504;for(const fn of listeners)fn();assert.equal(range.dataset.long,'false');h.fire('keydown',{key:'z',ctrlKey:true});assert.equal(h.input.value,'20');
+ h.api.destroy();assert.equal(removes,1);assert.equal(listeners.size,0);
 });

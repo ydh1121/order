@@ -50,7 +50,7 @@ test('F03 schema1 records read unchanged and upgrade only with verified current-
  const before=env.local.getItem(STORAGE_KEY),loaded=await env.api.load();assert.equal(loaded.ok,true);assert.equal(env.local.getItem(STORAGE_KEY),before);assert.equal(loaded.data.lines[0].qty,'6050');
  const changed=structuredClone(loaded.data);changed.lines[0].qtyDisplayUnit='tray';env.local.failWrite=true;
  assert.equal((await env.api.commit(changed,options(loaded,'v2-change'))).status,'WRITE_FAILED');assert.equal(env.local.getItem(STORAGE_KEY),before);
- env.local.failWrite=false;const saved=await env.api.commit(changed,options(loaded,'v2-change'));assert.equal(saved.ok,true);assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,6);assert.equal(saved.data.lines[0].qty,'6050');assert.equal(saved.data.lines[0].qtyDisplayUnit,'tray');
+ env.local.failWrite=false;const saved=await env.api.commit(changed,options(loaded,'v2-change'));assert.equal(saved.ok,true);assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,7);assert.equal(saved.data.lines[0].qty,'6050');assert.equal(saved.data.lines[0].qtyDisplayUnit,'tray');
  assert.equal((await env.api.commit(data,options(loaded,'stale-v1'))).status,'CONFLICT');
 });
 test('F03 strict schema1 refuses unknown display metadata; schema2 refuses unrecognized display units',async()=>{

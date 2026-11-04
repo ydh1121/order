@@ -4,7 +4,7 @@ CODE1 산하 별도 프로젝트. 사업자용 계란 견적 산출, 공급 농�
 ## 현재 상태
 - Q1~Q4 입력·독립 검증/계산 코어·브라우저 입력 보존을 기존 제품 계보에서 개발 중이다. 판매 서비스 **미출시**.
 - 개발 검토 정본은 기존 Cloudflare Pages 프로젝트 `order-ooo`의 https://order-ooo.pages.dev/ 이다. 실제 상품·농가·출고지역·승인 가격 데이터는 연결되지 않았다.
-- 주소 선택1은 부모 사업장 초안에 주소 필드만 반영하고, 부모 저장에서 한 번 확정한다. 실제 정부 주소 검색은 이 프로젝트의 Production secret과 실제 HTTPS 응답 확인이 필요하다. 모의 검사나 코드 존재는 실제 연결 완료를 뜻하지 않는다.
+- 주소 선택1은 부모 사업장 초안에 주소 필드만 반영하고, 부모 저장에서 한 번 확정한다. Kakao REST 검색은 기존 Pages의 Production secret과 실제 HTTPS 응답 확인이 필요하다. 모의 검사나 코드 존재는 실제 연결 완료를 뜻하지 않는다.
 
 ## 정본 위치
 - [기획](https://drive.google.com/drive/folders/1Y7nLy8bR760ZCDBSss0eyrxy2b5ljotI)
@@ -17,7 +17,7 @@ Figma 디자인 지정 페이지: https://www.figma.com/design/OGc2SUKEvckzYhhow
 Node 22 이상에서 `npm ci` 후 실행한다.
 
 - `npm test`: 독립 코어·브라우저 계약·저장/주소 서버 함수의 Node 검사.
-- `npm run dev`: 로컬 정적 제품 실행. 이 서버는 Juso 키를 사용하거나 실제 주소 Function을 실행하지 않는다.
+- `npm run dev`: 로컬 정적 제품 실행. 이 서버는 제공자 키를 사용하거나 실제 주소 Function을 실행하지 않는다.
 - `npm run build`: 검토한 파일 해시를 검사하고 `dist`를 생성한다. Pages 설정은 Framework None, build `npm run build`, output `dist`, root 빈칸, `NODE_VERSION=22`다.
 - `npm run build:qa-lab`: 현재 고정 Git 소스에서 `.qa-lab/order-qa-lab.html` 한 파일을 만든다. 저장은 제품과 격리된 메모리이며 DNS·주소 모의 응답은 도구막대에서 명시적으로 선택한다. LAB은 `dist`에 들어가지 않는다.
 
@@ -25,6 +25,12 @@ Node 22 이상에서 `npm ci` 후 실행한다.
 
 ## 출시 금지 상태
 모든 실제 접수 및 주문 API, 계좌·세무·개인정보·허가·가격 승인 정책 미연결. QA 통과/사업자 신청 완료를 주장하지 말 것.
+
+## MSG0540 승인안 통합
+
+아래 이전 회차의 충돌 규격은 [MSG0540 계약](docs/engine/execution-0540.md)이 대체한다. 9개 QA 묶음의 사용자 승인은 유지하며, 실제 제품 검사와 배포 근거는 별도로 기록한다. Q2 구매비용은 포장 수 올림 × 포장 가격이다. 정기 주문은 cadence3, 저장은 schema7이며, 날짜는 D1R6 단일 날짜 입력과 공통 달력으로 통합한다. 이 날짜의 선택 범위는 서울 오늘부터 다음 달 말일까지다. 이전 3영업일 준비기간이나 주말 일괄 차단을 새 계약의 숨은 검사로 적용하지 않는다. 기존 1회 주문·구형 저장 의미와 실제 공급자 정책 미확정 경계는 유지한다.
+
+이전 절의 수치는 해당 회차의 역사이며 현재 검사 결과가 아니다. LOWFI=NONE / P26=IN_REVIEW, MSG0540 승인 범위의 G11=USER_APPROVED_QA_CANONICAL_VERIFY_PENDING을 유지하며 실제 정본 확인 후 실행 결과만 갱신한다.
 
 ## MSG0521 입력 유지·수량 재작업
 

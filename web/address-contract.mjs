@@ -1,17 +1,18 @@
 /** Selected address data, independent of dialogs, search transport and persistence.
- * JUSO provenance records a chosen search result, not occupancy or delivery approval.
+ * Provider provenance records a chosen search result, not occupancy or delivery approval.
  * Legacy address text has no provider provenance and is never promoted on restore.
  */
 export const ADDRESS_FIELDS=Object.freeze(['road','postal','detail','jibun','region','providerId','dropoff','addressProvider']);
-export const ADDRESS_LIMITS=Object.freeze({road:4096,postal:5,detail:4096,jibun:4096,region:1024,providerId:25,dropoff:4096,addressProvider:4});
+export const ADDRESS_LIMITS=Object.freeze({road:4096,postal:5,detail:4096,jibun:4096,region:1024,providerId:73,dropoff:4096,addressProvider:5});
 const clean=value=>typeof value==='string'?value:'';
 const bounded=(value,max)=>typeof value==='string'&&value.length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
 /** Copy only address fields. Never copy site IDs, contacts or async email state. */
 export function addressFields(site={}){return Object.fromEntries(ADDRESS_FIELDS.map(key=>[key,clean(site?.[key])]));}
 export const normalizeAddress=addressFields;
 export function isVerifiedAddress(site){
- return site?.addressProvider==='JUSO'&&bounded(site.road,ADDRESS_LIMITS.road)&&site.road.trim()!==''&&
-  typeof site.postal==='string'&&/^\d{5}$/.test(site.postal)&&typeof site.providerId==='string'&&/^\d{25}$/.test(site.providerId)&&
+ const identity=site?.addressProvider==='JUSO'?/^\d{25}$/:site?.addressProvider==='KAKAO'?/^KAKAO:v1:[a-f0-9]{64}$/:null;
+ return identity!==null&&bounded(site.road,ADDRESS_LIMITS.road)&&site.road.trim()!==''&&
+  typeof site.postal==='string'&&/^\d{5}$/.test(site.postal)&&typeof site.providerId==='string'&&identity.test(site.providerId)&&
   ['jibun','region'].every(key=>site[key]===undefined||bounded(site[key],ADDRESS_LIMITS[key]));
 }
 export function addressStatus(site){
@@ -24,8 +25,8 @@ export function addressStatus(site){
 export function sameAddressBase(current,candidate){
  const a=addressFields(current),b=addressFields(candidate);
  // A historical ID may belong to a different provider/format. Only compare
- // building IDs as authoritative identity when the prior result was JUSO too.
- if(isVerifiedAddress(a)&&isVerifiedAddress(b))return a.providerId===b.providerId&&a.postal===b.postal;
+ // IDs inside the same provider namespace; cross-provider identity uses road/postal.
+ if(isVerifiedAddress(a)&&isVerifiedAddress(b)&&a.addressProvider===b.addressProvider)return a.providerId===b.providerId&&a.postal===b.postal;
  return !!a.road.trim()&&a.road.trim()===b.road.trim()&&a.postal===b.postal;
 }
 export function selectAddress(current,candidate){

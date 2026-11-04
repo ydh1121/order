@@ -31,7 +31,8 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
  const modules=await collectQaModules(root);
  const manifest=JSON.parse(await readFile(resolve(root,'src/engine/reference/iana-manifest.json'),'utf8'));
  const now=Date.parse(manifest.collectedAt)+3600000;
- const paths=[...modules.keys(),'web/index.html','web/styles.css','scripts/build-qa-lab.mjs','scripts/engine/build-browser-reference.mjs','scripts/engine/update-iana.mjs','src/engine/reference/iana.mjs','package.json','package-lock.json','src/engine/reference/iana-manifest.json','src/engine/reference/'+manifest.rawFile];
+ const html=await readFile(resolve(root,'web/index.html'),'utf8'),stylePaths=[...html.matchAll(/<link rel="stylesheet" href="(\/[a-zA-Z0-9_.-]+\.css)">/g)].map(m=>'web'+m[1]);
+ const paths=[...modules.keys(),'web/index.html',...stylePaths,'scripts/build-qa-lab.mjs','scripts/engine/build-browser-reference.mjs','scripts/engine/update-iana.mjs','src/engine/reference/iana.mjs','package.json','package-lock.json','src/engine/reference/iana-manifest.json','src/engine/reference/'+manifest.rawFile];
  for(const path of paths){await mkdir(dirname(resolve(directory,path)),{recursive:true});await writeFile(resolve(directory,path),await readFile(resolve(root,path)));}
  const git=args=>execFileSync('git',args,{cwd:directory,encoding:'utf8',stdio:['ignore','pipe','ignore']});
  git(['init']);git(['add','.']);git(['-c','user.name=QA fixture','-c','user.email=qa@example.invalid','commit','-m','Isolated source fixture']);

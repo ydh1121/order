@@ -19,7 +19,7 @@ const substitutions=new Map([
  ['src/engine/adapters/iana-browser.mjs','order-qa/virtual/iana.mjs'],
  ['src/engine/adapters/email-browser.mjs','order-qa/virtual/email.mjs'],
 ]);
-const extraQaPaths=new Set(['test/fixtures/qa-lab-0528.mjs','test/fixtures/qa-run-0528.mjs']);
+const extraQaPaths=new Set(['test/fixtures/qa-lab-0528.mjs','test/fixtures/qa-run-0528.mjs','test/fixtures/qa-lab-0540.mjs']);
 const allowed=path=>/^(?:web\/|src\/(?:engine|browser)\/)[a-zA-Z0-9_./-]+\.mjs$/.test(path)||path===fixturePath||extraQaPaths.has(path);
 
 async function readSource(root,path){
@@ -106,10 +106,17 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  for(let cursor=output;cursor!==dirname(cursor);cursor=dirname(cursor)){try{if((await lstat(cursor)).isSymbolicLink())throw Error('QA_OUTPUT_SYMLINK_FORBIDDEN');}catch(error){if(error.code!=='ENOENT')throw error;}}
  const commitSha=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
  if(!/^[a-f0-9]{40}$/.test(commitSha))throw Error('QA_COMMIT_INVALID');
- const modules=await collectQaModules(root,{extraEntries:qaEntry?[qaEntry]:[]}),html=await readSource(root,'web/index.html'),css=await readSource(root,'web/styles.css');
+ const modules=await collectQaModules(root,{extraEntries:qaEntry?[qaEntry]:[]}),html=await readSource(root,'web/index.html');
+ // Bundle exactly the product's linked stylesheet order, including the shared
+ // calendar component. No public/static QA asset or second style implementation.
+ const styleLinks=[...html.matchAll(/<link rel="stylesheet" href="(\/[a-zA-Z0-9_.-]+\.css)">/g)];
+ if(!styleLinks.length)throw Error('QA_HTML_STYLESHEET_CONTRACT_CHANGED');
+ const styles=new Map();
+ for(const match of styleLinks){const path='web'+match[1];if(styles.has(path))throw Error('QA_DUPLICATE_STYLESHEET');styles.set(path,await readSource(root,path));}
+ const css=[...styles.values()].join('\n');
  const reference=await buildBrowserReference({directory:pathToFileURL(resolve(root,'src/engine/reference')+sep),now});
  const sourceFiles=new Map([...modules].map(([path,file])=>[path,file.source]));
- for(const path of ['web/index.html','web/styles.css',...buildSourcePaths,'src/engine/reference/iana-manifest.json','src/engine/reference/'+reference.manifest.rawFile])sourceFiles.set(path,await readSource(root,path));
+ for(const path of ['web/index.html',...styles.keys(),...buildSourcePaths,'src/engine/reference/iana-manifest.json','src/engine/reference/'+reference.manifest.rawFile])sourceFiles.set(path,await readSource(root,path));
  const dirtySourceFiles=[];
  for(const [path,source]of sourceFiles){let committed=null;try{committed=execFileSync('git',['show',commitSha+':'+path],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']});}catch{}if(committed!==source)dirtySourceFiles.push(path);}
  if(dirtySourceFiles.length&&!allowDirty)throw Error('QA_UNCOMMITTED_SOURCE:'+dirtySourceFiles.join(','));
@@ -128,13 +135,14 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  imports[substitutions.get('src/engine/adapters/iana-browser.mjs')]=dataUrl(`export * from ${json(moduleKey('src/engine/adapters/iana-browser.mjs'))};import {createBrowserIanaProvider as original} from ${json(moduleKey('src/engine/adapters/iana-browser.mjs'))};import {qaFetch} from ${json(runtime)};export const createBrowserIanaProvider=options=>original({...options,origin:'https://qa-lab.invalid',fetcher:qaFetch});`);
  imports[substitutions.get('src/engine/adapters/email-browser.mjs')]=dataUrl(`export * from ${json(moduleKey('src/engine/adapters/email-browser.mjs'))};import {createBrowserEmailService as original} from ${json(moduleKey('src/engine/adapters/email-browser.mjs'))};import {qaFetch} from ${json(runtime)};export const createBrowserEmailService=options=>original({...options,fetcher:qaFetch});`);
  identity.transformedModules=transformed;identity.bundleGraphSha256=hash(JSON.stringify(imports));
- const styleTag='<link rel="stylesheet" href="/styles.css">',entryTag='<script type="module" src="/main.mjs"></script>';
+ const styleTag=styleLinks[0][0],entryTag='<script type="module" src="/main.mjs"></script>';
  if(html.split(styleTag).length!==2||html.split(entryTag).length!==2||/<script\b/i.test(html.replace(entryTag,'')))throw Error('QA_HTML_ENTRY_CONTRACT_CHANGED');
  if(/@import\b|url\s*\(/i.test(css))throw Error('QA_EXTERNAL_CSS_ASSET_REQUIRES_EXPLICIT_BUNDLING');
  const banner=`<aside id="qa-lab-toolbar" aria-label="로컬 QA LAB"><strong>로컬 QA LAB</strong><code id="qa-lab-commit" data-source-state="${identity.sourceState}">${commitSha}</code><span>${identity.sourceState==='EXACT_GIT_COMMIT'?'고정 Git 소스':'미커밋 변경 포함 · 검토용'}</span><p>제품과 격리된 메모리 저장 · 실제 지속 저장/온라인 DNS/주소 제공자 검증 아님 · 실제 개인정보를 입력하지 마세요.</p><div><button type="button" id="qa-lab-fixture">합성 200 / A50 / B제안 불러오기</button><button type="button" id="qa-lab-fail-next">다음 저장 1회 실패</button><button type="button" id="qa-lab-conflict">다른 작성자 충돌 만들기</button><button type="button" id="qa-lab-restart">LAB 다시 시작</button><label>DNS <select id="qa-lab-dns"><option value="offline">오프라인 UNKNOWN</option><option value="example-route">example.com 합성 경로</option></select></label><label>주소 <select id="qa-lab-address"><option value="offline">오프라인 · 검색 장애</option><option value="synthetic">합성 주소 후보</option><option value="empty">후보 없음</option><option value="unavailable">검색 장애</option></select></label></div><output id="qa-lab-status" aria-live="polite"></output></aside>`;
  const qaStyles='#qa-lab-toolbar{position:relative;z-index:2;padding:12px 16px;border-bottom:2px solid #333;background:#fff9db;color:#222;font:13px/1.5 system-ui;overflow-wrap:anywhere}#qa-lab-toolbar>strong,#qa-lab-toolbar>code,#qa-lab-toolbar>span{display:inline-block;margin-right:12px}#qa-lab-toolbar p{margin:6px 0}#qa-lab-toolbar>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center}#qa-lab-toolbar button,#qa-lab-toolbar select{min-height:44px;padding:8px;border:1px solid #777;border-radius:6px;background:white;color:#222;font:inherit;cursor:pointer}#qa-lab-status{display:block;margin-top:6px}';
  const policy=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
- let outputHtml=html.replace(styleTag,policy+'<style>'+css.replace(/<\/style/gi,'<\\/style')+'\n'+qaStyles+'</style>')
+ let bundledHtml=html;for(const match of styleLinks.slice(1))bundledHtml=bundledHtml.replace(match[0],'');
+ let outputHtml=bundledHtml.replace(styleTag,policy+'<style>'+css.replace(/<\/style/gi,'<\\/style')+'\n'+qaStyles+'</style>')
   .replace('<body>','<body>'+banner)
   .replace(entryTag,`<script type="application/json" id="qa-lab-identity">${json(identity)}</script><script type="importmap">${json({imports})}</script><script>{const raw=window.frameElement?.getAttribute('data-qa-envelope');const meta=raw?JSON.parse(raw):window.name.startsWith('order-qa-envelope:')?JSON.parse(window.name.slice(18)):null;if(meta){window.__orderQaEnvelope=meta;document.documentElement.dataset.qaSeedGeneration=String(meta.seedGeneration??'');document.documentElement.dataset.qaSeedCase=String(meta.caseId??'');if(meta.asOf){const OriginalDate=Date,at=OriginalDate.parse(meta.asOf+'T03:00:00Z');if(Number.isFinite(at)){window.Date=class extends OriginalDate{constructor(...args){super(...(args.length?args:[at]));}static now(){return at;}};document.documentElement.dataset.qaClock=meta.asOf;}}}}</script><script type="module">import ${json(moduleKey('web/main.mjs'))};${qaEntry?`import * as cases from ${json(moduleKey(qaEntry))};window.OrderQa0528=cases;`:''}document.documentElement.dataset.qaLabReady='true';</script>`);
  if(!outputHtml.includes(banner))throw Error('QA_BODY_CONTRACT_CHANGED');

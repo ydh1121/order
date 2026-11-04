@@ -5,16 +5,18 @@ import {readFileSync} from 'node:fs';
 import {createCadence,startDateRange,inspectStartDate,syncMonthlyPreferredDate,holidayPolicyFromSelection} from '../../web/cadence-contract.mjs';
 import {createMonthlyAllocationDraft} from '../../web/allocation-ui.mjs';
 import {orderQuantityInput} from '../../web/q4-planning.mjs';
-import {bindNumericInputs} from '../../web/numeric-input.mjs';
+import {editQuantityCadence,selectCadence,cadenceForPeriod,quantityIssue} from '../../web/approved-schedule.mjs';
+import {nearestMonthly} from '../../web/order-date.mjs';
+import {bindNumericInputs,formatNumericText} from '../../web/numeric-input.mjs';
 const source=readFileSync(new URL('../../web/q4-review.mjs',import.meta.url),'utf8');
 const plain=value=>JSON.parse(JSON.stringify(value));
 function harness({count=1,mode='FIXED',period='2주',asOf='2026-12-04',preferredDate='',review}={}){
  const cadence=createCadence(period);if(period==='매월')cadence.dayRule=31;cadence.preferredDate=preferredDate;cadence.nominalAnchor=preferredDate;
  const repeat={period,date:period==='매월'?'31일':'',cadence},h={days:[],none:true,irregular:false,conflict:'협의 후 조정',weekend:'휴무 다음날 희망',holiday:'휴무 다음날 희망',subholiday:'휴무 다음날 희망',request:''};
- const state={count,mode,asOfLocalDate:asOf,...structuredClone(repeat),siteRepeat:Array.from({length:count},()=>structuredClone(repeat)),siteModes:Array(count).fill(mode),siteContacts:Array.from({length:count},()=>({phone:true})),contact:{phone:true},siteHolidays:Array.from({length:count},()=>structuredClone(h)),holidayDays:[],holidayNone:true,holidayIrregular:false,holiday:h,request:'',process:'contact',siteProcess:Array(count).fill('contact'),values:Array.from({length:count},()=>({base:'30',monthly:'200'})),qtySources:Array(count).fill('user'),deliveryPlans:Array(count).fill(null),preferredDates:{},preferredTouched:new Set(),startDateReviews:{},startDateResults:{},dateTouched:new Set(),datesByAllocation:{},attempted:false};
+ const state={count,mode,asOfLocalDate:asOf,...structuredClone(repeat),siteRepeat:Array.from({length:count},()=>structuredClone(repeat)),siteModes:Array(count).fill(mode),siteContacts:Array.from({length:count},()=>({phone:true})),contact:{phone:true},siteHolidays:Array.from({length:count},()=>structuredClone(h)),holidayDays:[],holidayNone:true,holidayIrregular:false,holiday:h,request:'',process:'contact',siteProcess:Array(count).fill('contact'),values:Array.from({length:count},()=>({base:'30',monthly:'200'})),qtySources:Array(count).fill('user'),deliveryPlans:Array(count).fill(null),preferredDates:{},preferredTouched:new Set(),startDateReviews:{},startDateResults:{},dateTouched:new Set(),datesByAllocation:{},attempted:false,quantityAdjusted:Array(count).fill(false),quantityTouched:new Set(),approvedDateParts:{}};
  const regularContext={line:{id:'L'},allocations:Array.from({length:count},(_,i)=>({id:'A'+i,locationId:'S'+i,cadence:structuredClone(cadence),q4Review:review?{startDateReview:review}:{}}))};
- const scope={state,regularContext,createCadence,startDateRange,inspectStartDate,syncMonthlyPreferredDate,holidayPolicyFromSelection,orderQuantityInput,structuredClone,clone:structuredClone,numericComposing:new Set(),Set,Map,document:{querySelector:()=>null},q4Numeric:{replace:()=>{}},syncMonthlyFields:()=>{},render:()=>{},refreshStatus:()=>{},refreshResultsOnly:()=>{},syncRegularQuantityErrors:()=>{},datePolicy:{blank:()=>({year:'',month:'',day:''}),validate:()=>({valid:true})},OrderRepeatContract:{days:['월','화','수','목','금','토','일'],monthValue:value=>({valid:value==='말일'||/^(?:[1-9]|[12]\d|3[01])일$/.test(value)}),snapshot:r=>plain({period:r.period,date:r.date,cadence:r.cadence}),resetPeriod:(r,period)=>{r.period=period;r.cadence=createCadence(period);}}};
- scope.repeatDraft=i=>i===null?state:state.siteRepeat[i];scope.isIndividual=()=>state.count>1&&state.mode==='MIXED';scope.siteMode=i=>scope.isIndividual()?state.siteModes[i]:state.mode;scope.activeRepeat=i=>scope.isIndividual()?state.siteRepeat[i]:state;scope.dateKey=i=>JSON.stringify(['L','A'+i]);scope.preferredKey=i=>scope.isIndividual()?'site:'+scope.dateKey(i):'common:L';scope.preferredDateActive=i=>scope.siteMode(i)==='FIXED';scope.monthlyRow=i=>({quantity:{raw:state.values[i].monthly}});scope.monthlyLocation=i=>'S'+i;
+ const scope={state,regularContext,editQuantityCadence,selectCadence,cadenceForPeriod,quantityIssue,nearestMonthly,approvedDateBindings:new Map(),approvedDateActive:()=>false,approvedDateId:i=>'date'+i,renderRepeatOnly:()=>{},quantityEditedFields:new WeakSet(),Date:class extends Date{constructor(value){super(value??asOf+'T12:00:00+09:00');}},createCadence,startDateRange,inspectStartDate,syncMonthlyPreferredDate,holidayPolicyFromSelection,orderQuantityInput,structuredClone,clone:structuredClone,numericComposing:new Set(),Set,Map,document:{querySelector:()=>null},q4Numeric:{replace:()=>{}},syncMonthlyFields:()=>{},render:()=>{},refreshStatus:()=>{},refreshResultsOnly:()=>{},syncRegularQuantityErrors:()=>{},datePolicy:{blank:()=>({year:'',month:'',day:''}),validate:()=>({valid:true})},OrderRepeatContract:{days:['월','화','수','목','금','토','일'],monthValue:value=>({valid:value==='말일'||/^(?:[1-9]|[12]\d|3[01])일$/.test(value)}),snapshot:r=>plain(Object.fromEntries(['period','frequency','date','cadence','weeklyCheck','weekdays','weekdayOrder','monthlyMemory','quantityEditVersion','semantics','legacyReviewRequired'].filter(k=>r[k]!==undefined).map(k=>[k,r[k]]))),resetPeriod:(r,period)=>{r.period=period;r.cadence=createCadence(period);}}};
+ scope.approvedDateValue=i=>nearestMonthly(scope.activeRepeat(i).date==='말일'?'last':Number(String(scope.activeRepeat(i).date||'').replace(/일$/,'')),new scope.Date())||'';scope.repeatDraft=i=>i===null?state:state.siteRepeat[i];scope.isIndividual=()=>state.count>1&&state.mode==='MIXED';scope.siteMode=i=>scope.isIndividual()?state.siteModes[i]:state.mode;scope.activeRepeat=i=>scope.isIndividual()?state.siteRepeat[i]:state;scope.dateKey=i=>JSON.stringify(['L','A'+i]);scope.preferredKey=i=>scope.isIndividual()?'site:'+scope.dateKey(i):'common:L';scope.preferredDateActive=i=>scope.siteMode(i)==='FIXED';scope.monthlyRow=i=>({quantity:{raw:state.values[i].monthly}});scope.monthlyLocation=i=>'S'+i;
  vm.createContext(scope);vm.runInContext(source.slice(source.indexOf('function preferredParts('),source.indexOf('function localDateISO('))+source.slice(source.indexOf('function dateOwnerIndex('),source.indexOf('function monthDayCount(')).replace('syncDateFields(i);','')+source.slice(source.indexOf('function materializeCommonSettings('),source.indexOf('function completeQuantityInputs(')),scope);
  return scope;
 }
@@ -46,7 +48,7 @@ test('C28 explicit STARTED and untouched LEGACY past anchors survive; NEW is rev
 });
 test('C28 date drafts retain independent site owners across common view and optional blank does not activate',()=>{
  const q=harness({count:2,mode:'MIXED'});q.state.siteModes=['FIXED','FIXED'];q.storePreferredDate(1,{year:3000,month:1,day:2},{completed:false});q.state.mode='FIXED';assert.deepEqual(plain(q.dateData(1)),{year:'',month:'',day:''});q.state.mode='MIXED';assert.equal(q.dateData(1).year,3000);
- const monthly=harness({period:'매월'});monthly.syncPreferredRule();assert.equal(monthly.state.cadence.preferredDate,'');assert.equal(monthly.dateInspection(0).empty,true);
+ const monthly=harness({period:'매월'});monthly.syncPreferredRule();assert.equal(monthly.state.cadence.version,'3.0.0');assert.equal(monthly.state.cadence.preferredDate,'2026-12-31','MSG0540 derives monthly date from required rule');
 });
 test('C28 shared FIXED direct overshoot materializes peers then changes only edited site atomically',()=>{
  const q=harness({count:2});q.applyQuantityInput(0,'base','201',{phase:'input',direct:true});assert.equal(q.state.mode,'MIXED');assert.equal(q.state.values[0].base,'200');assert.equal(q.state.siteRepeat[0].period,'매월');assert.equal(q.state.siteRepeat[0].cadence.dayRule,'');assert.equal(q.state.siteRepeat[1].period,'2주');assert.equal(q.state.values[1].base,'30');assert.equal(q.state.siteProcess[1],'contact');
@@ -78,7 +80,7 @@ function attachQuantityInput(q){
  const doc=q.document;doc.defaultView={Event};q.quantityEditedFields=new WeakSet();
  const field=value=>({value,dataset:{qty:'0:base'},disabled:false,readOnly:false,ownerDocument:doc,selectionStart:value.length,selectionEnd:value.length,selectionDirection:'none',matches:()=>true,closest:()=>null,getAttribute:()=>null,setSelectionRange(start,end,direction='none'){Object.assign(this,{selectionStart:start,selectionEnd:end,selectionDirection:direction});},focus(){doc.activeElement=this;this.dispatchEvent(new Event('focusin'));},dispatchEvent(event){event.target=this;for(const capture of [true,false])for(const listener of listeners.get(event.type)||[]){if(listener.capture!==capture)continue;listener.fn(event);if(event.stopped)return !event.defaultPrevented;}return !event.defaultPrevented;}});
  current=field(q.state.values[0].base);const root={querySelectorAll:()=>[current],addEventListener(type,fn,options={}){listeners.set(type,[...(listeners.get(type)||[]),{fn,capture:!!options.capture}]);},removeEventListener(){}};
- const numeric=bindNumericInputs(root,{selector:'[data-qty]',options:{grouped:true,allowEmpty:true,allowZero:true,maxDigits:5}});q.q4Numeric=numeric;q.document.querySelector=()=>current;q.render=()=>{current=field(q.state.values[0].base);numeric.refresh();};
+ const numeric=bindNumericInputs(root,{selector:'[data-qty]',options:{grouped:true,allowEmpty:true,allowZero:true,maxDigits:12}});q.q4Numeric=numeric;q.document.querySelector=()=>current;q.render=()=>{current=field(q.state.values[0].base);numeric.refresh();};
  q.$=()=>root;q.refreshQuantitySupport=()=>{};
  vm.runInContext(source.slice(source.indexOf("$('q4-regular-dialog').addEventListener('input',e=>{const el=e.target,packet=e.orderNumeric;"),source.indexOf("$('q4-regular-dialog').addEventListener('numericstatechange',")),q);
  vm.runInContext(source.slice(source.indexOf("$('q4-regular-dialog').addEventListener('compositionstart',"),source.indexOf("$('q4-regular-dialog').addEventListener('focusout',")),q);
@@ -111,4 +113,75 @@ test('C28 calendar arrow crosses a disabled weekend and holiday without losing f
 });
 test('C28 calendar navigation at the allowed endpoint safely retains the current view/focus',()=>{
  const h=calendarHarness({from:{year:2027,month:1,day:28},invalid:[20270129]});h.press('ArrowRight');assert.deepEqual(h.rendered,[]);assert.deepEqual(h.focused,[]);assert.deepEqual(plain(h.q.state.calendarView),{year:2027,month:1});
+});
+
+test('C54 explicit monthly selection Undo/Redo preserves quantity and monthly restoration memory atomically',()=>{
+ const q=harness();Object.assign(q.state,{period:'협의',frequency:'협의',cadence:cadenceForPeriod('협의')});q.state.values[0]={monthly:'1000',base:'100'};
+ q.q4ValidationEpoch=0;q.closeQ4Dropdown=()=>{};q.monthEditing=new Set();
+ const h=attachQuantityInput(q);
+ vm.runInContext(source.slice(source.indexOf('function selectedOption('),source.indexOf('function disposeProductModal(')),q);
+ q.selectedOption('period','매월');assert.equal(q.state.values[0].base,'1000');assert.equal(h.input.value,'1,000');assert.equal(q.state.period,'매월');assert.equal(q.state.monthlyMemory.quantity,'100');
+ h.undo();assert.equal(q.state.values[0].base,'100');assert.equal(q.state.period,'협의');assert.equal(q.state.monthlyMemory,undefined);
+ h.redo();assert.equal(q.state.values[0].base,'1000');assert.equal(q.state.period,'매월');assert.equal(q.state.monthlyMemory.quantity,'100');
+ h.replace('500');assert.equal(q.state.values[0].base,'500');assert.equal(q.state.period,'2주');assert.equal(q.state.monthlyMemory,undefined);
+ h.undo();assert.equal(q.state.values[0].base,'1000');assert.equal(q.state.period,'매월');assert.equal(q.state.monthlyMemory.quantity,'100');
+});
+
+test('C54 monthly edit preserves Q even when below it and only accepted numeric edits replace explicit negotiation',()=>{
+ const q=harness();Object.assign(q.state,{period:'매월',frequency:'1회',cadence:cadenceForPeriod('매월')});q.state.values[0]={monthly:'600',base:'600'};
+ q.monthlyEditor={set:(id,value)=>q.state.values[0].monthly=value};q.applyQuantityInput(0,'monthly','599');assert.equal(q.state.values[0].base,'600');assert.equal(q.state.period,'협의');
+ q.state.period='협의';q.state.values[0]={monthly:'600',base:'40'};q.applyQuantityInput(0,'min','30');assert.equal(q.state.period,'협의');q.applyQuantityInput(0,'base','40');assert.equal(q.state.period,'협의','boundary no-change is not an accepted edit');q.applyQuantityInput(0,'base','44');assert.equal(q.state.period,'매주');assert.equal(q.state.frequency,'약 3회');
+});
+
+test('C54 copy reclassifies changed FIXED target quantities once and mode-only copy preserves dormant legacy cadence',()=>{
+ const q=harness({count:2,mode:'MIXED'});q.state.siteModes=['FIXED','FIXED'];q.state.values=[{monthly:'600',base:'40'},{monthly:'600',base:'300'}];q.state.copySource=0;q.state.copyTargets=[1];q.state.copyFields={base:true};
+ Object.assign(q,{copyEligibility:()=>({valid:true}),copyIncompatibleReason:()=>'',validateCopyAttempt:()=>assert.fail('unexpected invalid copy'),closeCopy:()=>{},travel:()=>{}});
+ vm.runInContext(source.slice(source.indexOf('function plannedCopyRepeat('),source.indexOf('function copyReviewPatches('))+source.slice(source.indexOf('function applyCopyDraft('),source.indexOf('function animateCopyCardHeight(')),q);
+ q.applyCopyDraft(0,q.state.copyFields,[1]);assert.equal(q.state.values[1].base,'40');assert.equal(q.state.siteRepeat[1].period,'매주');assert.equal(q.state.siteRepeat[1].frequency,'약 3회','December31day actual basis');assert.equal(q.state.siteRepeat[1].cadence.version,'3.0.0');assert.equal(q.state.values[0].base,'40');
+ q.state.values[1].monthly='20';q.applyCopyDraft(0,q.state.copyFields,[1]);assert.equal(q.state.values[1].base,'40','copy never silently shrinks manual typical quantity');assert.equal(q.state.siteRepeat[1].period,'협의');
+ const legacy={period:'3주',frequency:'2회',semantics:'per-week-v1',weekdays:{'1:월':true}};q.state.siteRepeat[1]=structuredClone(legacy);q.state.copyFields={mode:true};q.applyCopyDraft(0,q.state.copyFields,[1]);assert.deepEqual(plain(q.state.siteRepeat[1]),legacy);
+});
+
+test('C54 changing monthly quantity exposes its dependent Q>M cause at Q without marking an untouched empty Q',()=>{
+ const q=harness();q.state.values[0]={monthly:'999',base:'1000'};q.state.variable=[false];q.state.quantityTouched.add('0:monthly');q.unit=()=> '판';q.isValid=value=>/^[1-9]\d{0,11}$/.test(String(value??''));
+ const note={hidden:true,textContent:''},group={dataset:{},querySelector:()=>note},field={dataset:{qty:'0:base'},attributes:{},setAttribute(key,value){this.attributes[key]=value;},closest:()=>group};q.$=()=>({querySelectorAll:()=>[field]});
+ q.quantityIssue=quantityIssue;
+ vm.runInContext(source.slice(source.indexOf('function quantityFeedbackVisible('),source.indexOf('\n\n})();')),q);
+ q.syncRegularQuantityErrors(0);assert.equal(note.hidden,false);assert.equal(note.textContent,'회당 수량이 월 수량보다 큽니다.');assert.equal(field.attributes['aria-invalid'],'true');assert.equal(q.state.values[0].base,'1000');assert.equal(q.state.quantityTouched.has('0:base'),false);
+ q.state.values[0].base='';q.syncRegularQuantityErrors(0);assert.equal(note.hidden,true,'entering M must not expose an untouched missing Q');
+ q.state.values[0].base='900';q.syncRegularQuantityErrors(0);assert.equal(note.hidden,true);assert.equal(field.attributes['aria-invalid'],'false');
+});
+
+test('C54 opening a site accordion cannot steal a later numeric focus before Undo',()=>{
+ const q=harness({count:2,mode:'MIXED'}),frames=[],header={focus(){q.document.activeElement=this;}};
+ q.state.siteOpen=1;q.document.activeElement=header;q.requestAnimationFrame=callback=>frames.push(callback);q.setOpen=()=>Promise.resolve(true);
+ const input={id:'monthly-A'},site={isConnected:true,getBoundingClientRect:()=>({top:50})},scroll={scrollTop:0,getBoundingClientRect:()=>({top:0,bottom:600})};q.$=id=>id==='q4-regular-scroll'?scroll:site;q.document.querySelector=()=>header;
+ vm.runInContext(source.slice(source.indexOf('function travel('),source.indexOf('function invalid(')),q);
+ q.travel(0);q.document.activeElement=input;frames.shift()();assert.equal(q.document.activeElement,input,'a later accepted input focus owns the upcoming Undo key');
+ q.document.activeElement=header;q.travel(1);frames.shift()();assert.equal(q.document.activeElement,header,'navigation still retains its original header focus when no user moves it');
+});
+
+
+function copyReviewHarness(){
+ const q=harness({count:2,mode:'MIXED'});q.state.siteModes=['FIXED','FIXED'];q.state.values=[{monthly:'600',base:'40'},{monthly:'600',base:'300'}];q.state.copySource=0;q.state.copyTargets=[1];q.state.copyFields={base:true};q.state.dialogClosed=false;
+ const nodes=new Map(),patches=[];const node=selector=>{if(!nodes.has(selector))nodes.set(selector,{textContent:'',hidden:false,disabled:false,innerHTML:'',classList:{toggle(){},remove(){}},focus(){}});return nodes.get(selector);};
+ const host={open:true,dataset:{copyStage:'select'},setAttribute(){},querySelector:node};
+ Object.assign(q,{copyReview:null,copyPending:false,copyClosing:false,copyApplied:false,copyContext:q.regularContext,copyGeneration:1,commitEpoch:1,monthlyEditor:null,formatNumericText,names:['사업장 A','사업장 B'],mName:{FIXED:'정기 주문',FLEX:'소진 시 주문',ONCE:'1회 주문'},unit:()=> '판',$:()=>host,copyEligibility:()=>({valid:true}),copyIncompatibleReason:()=>'',validateCopyAttempt:()=>assert.fail('invalid copy'),updateCopyValidation:()=>{},travel:()=>{},closeCopy:()=>{host.open=false;q.copyClosing=true;},window:{OrderModalShell:{resize:(host,mutate)=>mutate()},OrderCopyDialog:{renderReview:rows=>{patches.push(plain(rows));return '<shared-review>'; }},OrderRegularQ4Bridge:{isCurrent:async()=>true}}});
+ vm.runInContext(source.slice(source.indexOf('function copyDraftFingerprint('),source.indexOf('function animateCopyCardHeight(')),q);
+ return {q,host,patches,nodes};
+}
+test('C54 Q4 copy common review is read-only and shows its derived target cadence before one private confirmation',async()=>{
+ const {q,host,patches}=copyReviewHarness(),before=plain(q.state),durable=plain(q.regularContext);
+ await q.applyCopy();assert.equal(host.dataset.copyStage,'review');assert.deepEqual(plain(q.state),before,'review must not modify even the parent private draft');assert.equal(patches[0][0].changes.find(c=>c.key==='base').after,'40판');assert.equal(patches[0][0].changes.find(c=>c.key==='period').after,'매주');assert.equal(patches[0][0].changes.find(c=>c.key==='frequency').after,'약 3회');
+ let release,checks=0;q.window.OrderRegularQ4Bridge.isCurrent=()=>{checks++;return new Promise(resolve=>release=resolve);};const pending=q.applyCopy();await q.applyCopy();assert.equal(checks,1,'a pending confirmation cannot start a second application');assert.equal(q.state.values[1].base,'300');release(true);await pending;assert.equal(q.state.values[1].base,'40');assert.equal(q.state.siteRepeat[1].period,'매주');assert.equal(host.open,false);await q.applyCopy();assert.deepEqual(plain(q.regularContext),durable,'only parent Save may persist the reviewed draft');
+});
+test('C54 Q4 review rejects changed source, stale durable version and closed-parent pending confirmation',async()=>{
+ for(const failure of ['source','durable','parent']){const {q,host}=copyReviewHarness();await q.applyCopy();let release;q.window.OrderRegularQ4Bridge.isCurrent=()=>new Promise(resolve=>release=resolve);const pending=q.applyCopy();if(failure==='source')q.state.values[0].base='41';if(failure==='parent'){q.state.dialogClosed=true;q.copyGeneration++;}release(failure!=='durable');await pending;assert.equal(q.state.values[1].base,'300',failure+' must not apply the reviewed private change');assert.equal(q.copyApplied,false);if(failure!=='parent')assert.equal(host.dataset.copyStage,'select');}
+ const {q,host}=copyReviewHarness(),before=plain(q.state);await q.applyCopy();q.closeCopy();await q.applyCopy();assert.equal(host.open,false);assert.deepEqual(plain(q.state),before,'review cancel leaves the parent private draft unchanged');
+});
+
+test('C54 closing an older copy dialog cannot clear a newer parent copy transaction',()=>{
+ const {q,host}=copyReviewHarness();let finish;host.remove=()=>{};q.copyOpenAnimation=null;q.copyHeightAnimation=null;q.window.OrderModalShell.close=(dialog,{after})=>finish=after;
+ vm.runInContext(source.slice(source.indexOf('function disposeCopy('),source.indexOf('function bindCopyDialogEvents(')),q);
+ q.disposeCopy(false);q.copyGeneration++;q.copyContext={newParent:true};q.state.copySource=1;q.state.copyTargets=[0];q.state.copyFields={contact:true};finish();assert.equal(q.state.copySource,1);assert.deepEqual(plain(q.state.copyTargets),[0]);assert.deepEqual(plain(q.state.copyFields),{contact:true});
 });

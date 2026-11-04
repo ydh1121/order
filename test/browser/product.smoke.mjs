@@ -1,3 +1,4 @@
+import {approved0540,chooseQuantityUnit,superseded0540} from './approved-contract-helpers.mjs';
 /** Actual Chromium + built product DOM. DNS/contact/address fixtures are synthetic.
  * Run after npm run build: node test/browser/product.smoke.mjs
  * No public QA host, provider success, mailbox ownership, OS or order acceptance.
@@ -93,15 +94,15 @@ try{
   await page.locator('[data-line-qty]').fill('120');await page.locator('[data-line-price]').fill('8000');
   assert.equal((await persisted()).lines[0].qty,'120');assert.equal((await persisted()).lines[0].price,'8000');
   assert.match(await page.locator('#q2-total').innerText(),/960,000/);
-  await page.locator('[data-line-qty-unit]').selectOption('each');
+  await chooseQuantityUnit(page.locator('[data-line-qty-unit]'),'each');
   assert.equal((await persisted()).lines[0].qtyUnit,'tray');assert.equal((await persisted()).lines[0].qty,'120');assert.equal((await persisted()).lines[0].qtyDisplayUnit,'each');assert.equal(await page.locator('[data-line-qty]').inputValue(),'3,600');
   assert.match(await page.locator('#q2-total').innerText(),/960,000/,'unit changes preserve 3,600 eggs and the original current purchase cost');
-  await page.locator('[data-line-qty-unit]').selectOption('tray');assert.equal((await persisted()).lines[0].qty,'120');assert.match(await page.locator('#q2-total').innerText(),/960,000/);
-  await page.locator('[data-line-qty-unit]').selectOption('each');await page.locator('[data-line-qty]').fill('50');await page.locator('[data-line-qty-unit]').selectOption('tray');
+  await chooseQuantityUnit(page.locator('[data-line-qty-unit]'),'tray');assert.equal((await persisted()).lines[0].qty,'120');assert.match(await page.locator('#q2-total').innerText(),/960,000/);
+  await chooseQuantityUnit(page.locator('[data-line-qty-unit]'),'each');await page.locator('[data-line-qty]').fill('50');await chooseQuantityUnit(page.locator('[data-line-qty-unit]'),'tray');
   const fractional=(await persisted()).lines[0];assert.equal(fractional.qty,'50');assert.equal(fractional.qtyUnit,'each');assert.equal(fractional.qtyDisplayUnit,'tray');assert.equal(fractional.qtyExact,undefined);
-  assert.equal(await page.locator('[data-line-qty]').inputValue(),'2');assert.match(await page.locator('#q2-total').innerText(),/13,333/,'50 eggs retain exact proportional cost with HALF_UP whole-won display');
+  assert.equal(await page.locator('[data-line-qty]').inputValue(),'2');assert.match(await page.locator('#q2-total').innerText(),(approved0540?/16,000/:/13,333/),'50 eggs retain exact proportional cost with HALF_UP whole-won display');
   await page.reload();await stage('q2');assert.equal(await page.locator('[data-line-qty]').inputValue(),'2');assert.equal((await persisted()).lines[0].qty,'50');
-  await page.locator('[data-line-qty-unit]').selectOption('each');assert.equal((await persisted()).lines[0].qty,'50');await page.locator('[data-line-qty]').fill('3600');await page.locator('[data-line-qty-unit]').selectOption('tray');assert.equal((await persisted()).lines[0].qty,'3600');assert.equal(await page.locator('[data-line-qty]').inputValue(),'120');
+  await chooseQuantityUnit(page.locator('[data-line-qty-unit]'),'each');assert.equal((await persisted()).lines[0].qty,'50');await page.locator('[data-line-qty]').fill('3600');await chooseQuantityUnit(page.locator('[data-line-qty-unit]'),'tray');assert.equal((await persisted()).lines[0].qty,'3600');assert.equal(await page.locator('[data-line-qty]').inputValue(),'120');
   await page.locator('#q2-next').click();await page.locator('#add-site').click();await page.locator('#site-editor-dialog[open]').waitFor();
  });
  await check('P02_PHONE_KEYBOARD_02_EXPLICIT_3',async()=>{

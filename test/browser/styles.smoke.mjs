@@ -12,6 +12,7 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const currentPath=resolve(root,process.env.ORDER_STYLE_CURRENT_CSS||'dist/styles.css');
 const evidence=resolve(process.env.ORDER_STYLE_EVIDENCE_DIR||join(root,'browser-evidence/styles'));
 const widths=[320,375,390,768,1440],checks=[],observations=[],pageErrors=[],externalRequests=[];
+const approved0540=process.env.ORDER_QA_CONTRACT==='MSG0540';
 const report={schemaVersion:1,classification:'ACTUAL_CHROMIUM_COMPUTED_STYLES_SYNTHETIC_DOM_SET_CONTENT',status:'RUNNING',
  scope:{productJavaScript:false,sourceDelivery:'setContent',publicHosting:false,dns:false,storage:false,
    visualAcceptance:false,runtimePerformance:false,fullProductRegression:false},checks,observations,pageErrors,externalRequests};
@@ -53,19 +54,27 @@ function restoredDOM(kind,invalid){
 
 const flatten=(obj,prefix='',out={})=>{for(const [key,value]of Object.entries(obj)){const p=prefix?prefix+'.'+key:key;if(value!==null&&typeof value==='object')flatten(value,p,out);else out[p]=value;}return out;};
 function differences(a,b){const x=flatten(a),y=flatten(b);return [...new Set([...Object.keys(x),...Object.keys(y)])].filter(k=>typeof x[k]==='number'&&typeof y[k]==='number'?Math.abs(x[k]-y[k])>0.05:x[k]!==y[k]).map(path=>({path,before:x[path],after:y[path]}));}
-// MSG0528 authorizes only egg-number geometry and the shared pair gap.
-// Non-egg morphology is compared exactly against the pinned 6768f95 source.
+// MSG0540 replaces only the approved N1 numeric underline and A23 pair geometry.
+// Historical runs retain MSG0528 expectations. Non-egg morphology still compares
+// exactly against the pinned 6768f95 source: no global delta allowlist.
 const near=(a,b)=>Math.abs(a-b)<=.1;
 function eggContract(after,options){
  const i=after.input,p=after['input-parent'],u=after['input-unit'];
  const color=options.invalid?'rgb(217, 45, 72)':options.state==='focus-visible'?'rgb(49, 93, 222)':'rgb(203, 213, 220)';
+ if(approved0540)return near(i.rect.height,44)&&near(p.rect.height,44)&&near(i.rect.y,p.rect.y)&&i.style.fontSize==='19px'&&i.style.fontWeight==='750'&&i.style.color==='rgb(32, 39, 42)'&&i.style.paddingTop==='0px'&&i.style.paddingBottom==='8px'&&i.style.borderRadius==='0px'&&p.style.borderTopWidth==='0px'&&p.style.borderBottomWidth==='0px'&&p.style.boxShadow==='none'&&p.underline?.bottom==='6px'&&p.underline.height===(options.invalid||options.state==='focus-visible'?'2px':'1px')&&p.underline.backgroundColor===color&&p.style.backgroundColor==='rgb(255, 255, 255)'&&p.style.alignItems==='baseline'&&u&&near(u.rect.x-i.rect.x-i.rect.width,6)&&p.rect.width<160&&i.rect.width>=30;
  return near(i.rect.height,44)&&near(p.rect.height,45)&&near(i.rect.y,p.rect.y)&&i.style.fontSize==='19px'&&i.style.fontWeight==='750'&&i.style.color==='rgb(32, 39, 42)'&&i.style.paddingTop==='0px'&&i.style.paddingBottom==='0px'&&i.style.borderRadius==='0px'&&p.style.borderTopWidth==='0px'&&p.style.borderBottomWidth==='1px'&&p.style.borderBottomColor===color&&p.style.backgroundColor==='rgb(255, 255, 255)'&&p.style.alignItems==='center'&&u&&near(u.rect.x-i.rect.x-i.rect.width,6)&&p.rect.width<160&&i.rect.width>=30;
 }
-function pairContract(after){
+function pairContract(after,options){
  const p=after.pair,a=after.first.rect,b=after.second.rect,sameRow=near(a.y,b.y);
+ if(approved0540){
+  if(options.width<375)return p.style.display==='grid'&&p.style.columnGap==='28px'&&p.style.rowGap==='16px'&&!sameRow&&near(a.x,b.x)&&near(a.width,b.width)&&near(b.y-a.y-a.height,16);
+  if(options.width<768)return p.style.display==='grid'&&p.style.columnGap==='28px'&&sameRow&&near(a.width,140)&&near(b.x-a.x-a.width,28);
+  return p.style.display==='flex'&&p.style.columnGap==='32px'&&p.style.rowGap==='20px'&&sameRow&&a.width>0&&b.width>0&&near(b.x-a.x-a.width,32);
+ }
  return p.style.columnGap==='24px'&&p.style.rowGap==='18px'&&near(a.width,b.width)&&a.width>0&&(sameRow?near(b.x-a.x-a.width,24):near(a.x,b.x)&&near(b.y-a.y-a.height,18));
 }
-const numericPairDOM=({qty,price,unit,invalid})=>`<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair"><div class="numeric-field ui-egg-field"><label data-probe="qty-label">월 구매량</label><div class="input-unit ui-egg-number" data-probe="qty-row" data-order-invalid="${invalid}"><input data-probe="qty-input" value="${qty}" aria-invalid="${invalid}" placeholder="0"><select class="ui-quantity-unit" data-probe="qty-unit"><option>${unit}</option></select></div></div><div class="numeric-field ui-egg-field"><label data-probe="price-label">현재 구매가격</label><div class="input-unit ui-egg-number" data-probe="price-row" data-order-invalid="${invalid}"><input data-probe="price-input" value="${price}" aria-invalid="${invalid}" placeholder="0"><span data-probe="price-unit">원/판</span></div></div></div></fieldset></div></div></main>`;
+const numericUnitDOM=unit=>approved0540?`<span class="ui-quantity-choice"><span class="ui-quantity-label">${unit}</span><span class="ui-quantity-chevron">${chevron}</span><button type="button" class="ui-quantity-trigger" data-probe="qty-unit" aria-label="수량 단위" aria-expanded="false"></button><select class="ui-quantity-unit"><option>${unit}</option></select></span>`:`<select class="ui-quantity-unit" data-probe="qty-unit"><option>${unit}</option></select>`;
+const numericPairDOM=({qty,price,unit,invalid})=>`<main id="page-form" class="page active"><div class="main"><div id="q2-lines"><fieldset class="line-panel"><legend>합성 품목</legend><div class="pair"><div class="numeric-field ui-egg-field"><label data-probe="qty-label">월 구매량</label><div class="input-unit ui-egg-number" data-probe="qty-row" data-order-invalid="${invalid}"><input data-probe="qty-input" value="${qty}" aria-invalid="${invalid}" placeholder="0">${numericUnitDOM(unit)}</div></div><div class="numeric-field ui-egg-field"><label data-probe="price-label">현재 구매가격</label><div class="input-unit ui-egg-number" data-probe="price-row" data-order-invalid="${invalid}"><input data-probe="price-input" value="${price}" aria-invalid="${invalid}" placeholder="0"><span data-probe="price-unit">원/판</span></div></div></div></fieldset></div></div></main>`;
 let browser;
 async function observe(page,css,html,{width,state='default',target=null,kind,id}){
  await page.setViewportSize({width,height:900});await page.mouse.move(0,0);
@@ -88,6 +97,7 @@ async function observe(page,css,html,{width,state='default',target=null,kind,id}
    if(kind==='pair'&&key!=='pair'){output[key]={rect:rect(el)};continue;}
    const cs=getComputedStyle(el),style=Object.fromEntries(properties.map(p=>[p,cs[p]]));
    const r=rect(el);output[key]={style,rect:r};
+   if(el.matches('.ui-egg-number')){const line=getComputedStyle(el,'::after');output[key].underline={content:line.content,bottom:line.bottom,height:line.height,backgroundColor:line.backgroundColor};}
    if(el.matches('button,input'))output[key].pseudo={hover:el.matches(':hover'),active:el.matches(':active'),focusVisible:el.matches(':focus-visible'),disabled:el.matches(':disabled')};
    if(el.matches('button')&&el.firstChild){const range=document.createRange();range.selectNodeContents(el);const t=range.getBoundingClientRect();output[key].text={width:t.width,height:t.height,x:t.x-r.x,y:t.y-r.y};}
   }return output;
@@ -119,8 +129,8 @@ try{
   const before=await observe(page,parent.toString(),html,{...options,id:id+'-before'});
   const after=await observe(page,current.toString(),html,{...options,id:id+'-after'});
   const delta=differences(before,after),egg=options.kind==='input'&&options.owner!=='q3',pair=options.kind==='pair';
-  const accepted=egg?eggContract(after,options):pair?pairContract(after):delta.length===0;
-  observations.push({id,...options,before,after,delta,classification:egg?'EXPECTED_MSG0528_EGG_COMPACT_VARIANT':pair?'EXPECTED_MSG0528_COMMON_PAIR_GAP':delta.length?'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE':'UNCHANGED'});
+  const accepted=egg?eggContract(after,options):pair?pairContract(after,options):delta.length===0;
+  observations.push({id,...options,before,after,delta,classification:egg?(approved0540?'EXPECTED_MSG0540_N1_SINGLE_UNDERLINE':'EXPECTED_MSG0528_EGG_COMPACT_VARIANT'):pair?(approved0540?'EXPECTED_MSG0540_A23_QUANTITY_PRICE_TRACK':'EXPECTED_MSG0528_COMMON_PAIR_GAP'):delta.length?'UNEXPECTED_STYLE_OR_GEOMETRY_CHANGE':'UNCHANGED'});
   check(id+':COMPARISON',accepted,{deltaCount:delta.length,eggVariant:egg,sharedPair:pair});
   if(options.target&&['hover','active','focus-visible','disabled'].includes(options.state)){
    const key={'focus-visible':'focusVisible',hover:'hover',active:'active',disabled:'disabled'}[options.state];
@@ -141,9 +151,13 @@ try{
    const currentValues=await observe(page,current.toString(),numericPairDOM({qty:value,price:value,unit,invalid}),{width,state,target:'qty-input',kind:'numeric-current',id});
    const q=currentValues['qty-input'],p=currentValues['price-input'],qr=currentValues['qty-row'],pr=currentValues['price-row'],ql=currentValues['qty-label'],pl=currentValues['price-label'];
    const equal=keys=>keys.every(k=>q.style[k]===p.style[k]);
-   check(id+':CONTROL_HEIGHT_BASELINE',Math.abs(qr.rect.height-45)<.1&&Math.abs(pr.rect.height-45)<.1&&Math.abs(q.rect.height-44)<.1&&Math.abs(p.rect.height-44)<.1&&equal(['fontFamily','fontSize','fontWeight','lineHeight','paddingTop','paddingBottom']));
+   check(id+':CONTROL_HEIGHT_BASELINE',Math.abs(qr.rect.height-(approved0540?44:45))<.1&&Math.abs(pr.rect.height-(approved0540?44:45))<.1&&Math.abs(q.rect.height-44)<.1&&Math.abs(p.rect.height-44)<.1&&equal(['fontFamily','fontSize','fontWeight','lineHeight','paddingTop','paddingBottom']));
    check(id+':LABEL_SPACING_TARGET',Math.abs(qr.rect.y-ql.rect.y-ql.rect.height-10.4)<.1&&Math.abs(pr.rect.y-pl.rect.y-pl.rect.height-10.4)<.1&&currentValues['qty-unit'].rect.height>=44&&currentValues['qty-unit'].rect.width>=44);
-   observations.push({id,width,value,unit,invalid,state,after:currentValues,classification:'MSG0528_CURRENT_EGG_NUMERIC_EQUALITY'});
+   if(approved0540){
+    const color=invalid?'rgb(217, 45, 72)':state==='focus-visible'?'rgb(49, 93, 222)':'rgb(203, 213, 220)';
+    check(id+':SINGLE_UNDERLINE',qr.style.borderBottomWidth==='0px'&&qr.style.boxShadow==='none'&&qr.underline.bottom==='6px'&&qr.underline.height===(invalid||state==='focus-visible'?'2px':'1px')&&qr.underline.backgroundColor===color);
+   }
+   observations.push({id,width,value,unit,invalid,state,after:currentValues,classification:approved0540?'MSG0540_CURRENT_N1_NUMERIC_EQUALITY':'MSG0528_CURRENT_EGG_NUMERIC_EQUALITY'});
   }
 
   for(const owner of ['phone','address','dropdown','date','request'])for(const invalid of [false,true])for(const state of ['default','hover','focus-visible'])await compare(`RESTORE_${width}_${owner}_${invalid?'INVALID':'NORMAL'}_${state}`,restoredDOM(owner,invalid),{width,kind:'restored',owner,invalid,state,target:'input'});
@@ -162,7 +176,7 @@ try{
 }catch(error){report.status='FAIL_EXECUTION';report.error=String(error.stack||error);process.exitCode=1;}
 finally{
  await browser?.close();await mkdir(evidence,{recursive:true});
- report.summary={comparisons:observations.length,checks:checks.length,failures:checks.filter(c=>c.status==='FAIL').length,unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,eggVariantCases:observations.filter(o=>o.classification==='EXPECTED_MSG0528_EGG_COMPACT_VARIANT').length,commonPairCases:observations.filter(o=>o.classification==='EXPECTED_MSG0528_COMMON_PAIR_GAP').length,currentNumericCases:observations.filter(o=>o.classification==='MSG0528_CURRENT_EGG_NUMERIC_EQUALITY').length};
+ report.summary={comparisons:observations.length,checks:checks.length,failures:checks.filter(c=>c.status==='FAIL').length,unchanged:observations.filter(o=>o.classification==='UNCHANGED').length,eggVariantCases:observations.filter(o=>['EXPECTED_MSG0528_EGG_COMPACT_VARIANT','EXPECTED_MSG0540_N1_SINGLE_UNDERLINE'].includes(o.classification)).length,commonPairCases:observations.filter(o=>['EXPECTED_MSG0528_COMMON_PAIR_GAP','EXPECTED_MSG0540_A23_QUANTITY_PRICE_TRACK'].includes(o.classification)).length,currentNumericCases:observations.filter(o=>['MSG0528_CURRENT_EGG_NUMERIC_EQUALITY','MSG0540_CURRENT_N1_NUMERIC_EQUALITY'].includes(o.classification)).length};
  await writeFile(join(evidence,'styles.json'),JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify({status:report.status,source:report.source,runtime:report.runtime,summary:report.summary,error:report.error,failedChecks:checks.filter(c=>c.status==='FAIL'),evidence:join(evidence,'styles.json')},null,2));
 }
