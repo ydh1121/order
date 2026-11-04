@@ -172,8 +172,27 @@ jobs:
           fi
       - name: Install Korean glyphs for identical before and after rendering
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y fonts-noto-cjk
+          . /etc/os-release
+          test "$ID:$VERSION_ID:${VERSION_CODENAME:-}" = "ubuntu:24.04:noble"
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('/etc/apt/apt-mirrors.txt')
+          original = path.read_text()
+          updated, count = re.subn(
+              r'(?m)^http://azure\.archive\.ubuntu\.com/ubuntu/?(?=\s|$)',
+              'https://archive.ubuntu.com/ubuntu/',
+              original,
+          )
+          if count != 1:
+              raise SystemExit('Unexpected Ubuntu mirror configuration')
+          path.write_text(updated)
+          PY
+          font_apt_options=(-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=1)
+          sudo apt-get "${font_apt_options[@]}" -o APT::Update::Error-Mode=any update -qq
+          sudo apt-get "${font_apt_options[@]}" install -y 'fonts-noto-cjk=1:20230817+repack1-3'
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
+          dpkg-query -W fonts-noto-cjk
           fc-match ':lang=ko'
       - run: npm run build
       - name: MSG0540 approved nine groups on actual product source
