@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "d0321ba3271f147fa944ca8f21b7b0b4be5f5cd6a68eefdb78c5bdb18fcfdd8b"
+      "sha256": "8856d2476a45ab225258d130402d924f06300d4ad78a9be7bde4882dba02ae5e"
     },
     {
       "source": "web/cadence-contract.mjs",

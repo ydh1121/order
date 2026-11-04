@@ -1699,7 +1699,7 @@ button,input,select,textarea{font-family:inherit}
 .ui-copy-review-site{--ui-copy-review-label-width:9rem;--ui-copy-review-direction-lane:2.5rem;gap:var(--ui-gap-dependent)}
 .ui-copy-review-site .ui-copy-review-field{display:grid;grid-template-columns:var(--ui-copy-review-label-width) minmax(0,1fr);column-gap:var(--ui-field-control-gap);row-gap:var(--ui-gap-dependent);align-items:start;padding-block:.5rem;border-bottom:1px solid var(--line)}
 .ui-copy-review-site .ui-copy-review-field:last-child{border-bottom:0}
-.ui-copy-review-site .ui-copy-review-field>legend{float:left;grid-column:1;grid-row:1;align-self:start;font-size:var(--type-small);line-height:var(--info-line-height);white-space:nowrap;overflow-wrap:normal}
+.ui-copy-review-site .ui-copy-review-field>legend{float:left;grid-column:1;grid-row:1;align-self:start;min-width:0;max-width:100%;font-size:var(--type-small);line-height:var(--info-line-height);white-space:normal;overflow-wrap:anywhere}
 .ui-copy-review-site .ui-copy-review-values{grid-column:2;grid-row:1;grid-template-columns:minmax(0,1fr) var(--ui-copy-review-direction-lane) minmax(0,1fr);column-gap:0;row-gap:0;margin-top:0;align-items:start}
 .ui-copy-review-site .ui-copy-review-value[data-copy-value="before"]>dd{grid-column:1;grid-row:1;text-align:start}
 .ui-copy-review-site .ui-copy-review-value[data-copy-value="after"]>dd{grid-column:3;grid-row:1;text-align:start}
