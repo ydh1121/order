@@ -9,3 +9,8 @@ browser-evidence/
 .dev.vars.*
 .env
 .env.*
+
+# Local execution checkpoints and test byproducts never enter product/Git artifacts.
+.order-harness/
+tools/order_harness/test-output/
+**/__pycache__/

@@ -18,19 +18,19 @@ test('restored accepted plan requires original M/links/cadence evidence and matc
  assert.equal(deliveryPlanIsCurrent({...plan,distribution:[{quantity:'20',visits:8}]},input),false);
  assert.equal(planningInputSignature({a:1,b:2}),planningInputSignature({b:2,a:1}));
 });
-test('per-site nominal values retain their own months without a hidden matching-month requirement',async()=>{
+test('C55 per-site nominal values retain month groups without a cross-month total',async()=>{
  const {sumNominalByReference}=await import('../../web/q4-planning.mjs');
  const a={reference:{year:2026,month:11},value:nominalQuantity({quantity:'10',visits:9})};
  const b={reference:{year:2026,month:12},value:nominalQuantity({quantity:'20',visits:8})};
  const mixed=sumNominalByReference([a,b]);
- assert.equal(mixed.sameReference,false);assert.equal(mixed.complete,true);assert.equal(mixed.total.low.n,250n);
+ assert.equal(mixed.sameReference,false);assert.equal(mixed.complete,false);assert.equal(mixed.total,null);
  assert.deepEqual(mixed.groups.map(group=>[group.month,group.total.low.n]),[[11,90n],[12,160n]]);
  const sameMonth=sumNominalByReference([a,{...b,reference:a.reference}]);
  assert.equal(sameMonth.complete,true);assert.equal(sameMonth.total.low.n,250n);
  const partial=sumNominalByReference([a,{reference:a.reference,value:null}]);
  assert.equal(partial.sameReference,true);assert.equal(partial.complete,false);assert.equal(partial.total.low.n,90n);
- assert.equal(sumNominalByReference([a,{...b,reference:{year:2027,month:11}}]).total.low.n,250n);
- assert.equal(sumNominalByReference([a,{reference:{year:2026,month:''},value:b.value}]).total.low.n,250n);
+ assert.equal(sumNominalByReference([a,{...b,reference:{year:2027,month:11}}]).total,null);
+ assert.equal(sumNominalByReference([a,{reference:{year:2026,month:''},value:b.value}]).total,null);
 });
 test('restored mode is authoritative over stale common profile and dormant draft mode',async()=>{
  const {restoredDeliveryModes}=await import('../../web/q4-planning.mjs');
@@ -95,6 +95,7 @@ test('production serialization updates only active mode settings and preserves d
  const original={id:'A1',lineId:'L',locationId:'A',mode:'ONCE',qty:'9',advanced:{contactChannels:['email'],fixedOrderProcess:'auto',storeOffDays:['월'],memo:'confirmed'},q4Review:{activeHoliday:oldHoliday,activeRepeat:oldRepeat}};
  const state={count:1,mode:'ONCE',pack:'30',values:[{once:'9',base:'12'}],qtySources:['user'],variable:[true],siteQuality:[true],siteModes:['ONCE'],siteProcess:['contact'],siteContacts:[{email:true}],contact:{email:true},process:'contact',quality:true,siteHolidays:[{...oldHoliday,request:'dormant'}],siteRepeat:[dormantRepeat],holidayDays:['화'],holidayNone:false,holidayIrregular:false,holiday:{conflict:'협의 후 조정'},request:'dormant',period:'매주',frequency:'3회',datesByAllocation:{aa:{}},planningReferences:[reference],nominalVisitCounts:[''],deliveryPlans:[null],deliveryPlanFingerprints:['']};
  const context={state,regularContext:{line:{id:'L',pack:'30'},allocations:[original]},monthlyEditor:null,clone:value=>JSON.parse(JSON.stringify(value)),siteMode:()=>state.mode,isIndividual:()=>false,dateData:()=>({}),dateKey:()=>'aa',legacyPolicy:()=> 'ask',OrderRepeatContract:{snapshot:r=>({period:r.period,frequency:r.frequency}),serialize:()=>({ok:true,value:{}})}};
+ context.repeatForSite=()=>context.OrderRepeatContract.snapshot(state);
  const serialize=vm.runInNewContext(source.slice(node.start,node.end)+'\nserializedAllocations',context),before=structuredClone(original);
  const once=JSON.parse(JSON.stringify(serialize(true)))[0];assert.deepEqual(once.advanced.contactChannels,['email']);assert.equal(once.qualityTest,true);assert.deepEqual(once.advanced.storeOffDays,['월']);assert.equal(once.advanced.memo,'confirmed');assert.equal(once.advanced.fixedOrderProcess,'auto');assert.deepEqual(once.q4Review.activeHoliday,oldHoliday);assert.deepEqual(once.q4Review.activeRepeat,oldRepeat);assert.deepEqual(once.q4Review.draft.repeat,dormantRepeat);
  state.mode='FLEX';const flex=JSON.parse(JSON.stringify(serialize(true)))[0];assert.deepEqual(flex.advanced.storeOffDays,['화']);assert.equal(flex.advanced.memo,'dormant');assert.equal(flex.advanced.fixedOrderProcess,'auto');assert.deepEqual(flex.q4Review.activeRepeat,oldRepeat);assert.deepEqual(original,before);

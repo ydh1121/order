@@ -21,13 +21,13 @@ const expression=parse(source,{ecmaVersion:'latest',sourceType:'module'}).body.f
 function owner(){const context=vm.createContext({window:{},createCadence,createApprovedCadence,inspectCadence,structuredClone});vm.runInContext(source.slice(expression.start,expression.end),context);return context.window.OrderRepeatContract;}
 
 test('C54-22 schema7 keeps approved cadence, selection order, monthly restoration memory and twelve digits exactly',async()=>{
- assert.equal(STORAGE_SCHEMA_VERSION,7);const data=body(),repeat=approvedRepeat();repeat.monthlyMemory.quantity='999999999999';data.allocations[0].qty='999999999999';data.allocations[0].cadence=repeat.cadence;data.allocations[0].q4Review={version:'0460',activeRepeat:repeat,draft:{mode:'FIXED',repeat:structuredClone(repeat)},common:{repeat:structuredClone(repeat)}};
+ assert.equal(STORAGE_SCHEMA_VERSION,8);const data=body(),repeat=approvedRepeat();repeat.monthlyMemory.quantity='999999999999';data.allocations[0].qty='999999999999';data.allocations[0].cadence=repeat.cadence;data.allocations[0].q4Review={version:'0460',activeRepeat:repeat,draft:{mode:'FIXED',repeat:structuredClone(repeat)},common:{repeat:structuredClone(repeat)}};
  const env=setup(),read=await env.api.load(),saved=await env.api.commit(data,settings(read));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);assert.equal((await env.api.commit(data,settings(read))).status,'IDEMPOTENT');assert.equal(env.local.writes,1);assert.deepEqual((await setup(env.local,env.lock).api.load()).data,data);assert.deepEqual(projectStoredPayload(JSON.parse(JSON.stringify(saved.data))),data);
 });
 test('C54-22 schema6 and historical cadence read unchanged, upgrade only on successful explicit commit',async()=>{
  for(const version of ['2.0.0','2.1.0']){
   const data=body();data.allocations[0].cadence={version,kind:'INTERVAL_DAYS',intervalDays:21,preferredDate:'2025-01-01',...(version==='2.1.0'?{nominalAnchor:'2025-01-01'}:{})};const raw=envelope(6,data),env=setup(new Store(raw)),read=await env.api.load();assert.equal(read.status,'LOADED');assert.deepEqual(read.data,data);assert.equal(env.local.writes,0);assert.equal(env.local.raw,raw);
-  const draft=structuredClone(read.data);draft.locations[0].name='수정';env.local.fail=true;assert.equal((await env.api.commit(draft,settings(read))).status,'WRITE_FAILED');assert.equal(env.local.raw,raw);env.local.fail=false;const saved=await env.api.commit(draft,settings(read));assert.equal(saved.status,'COMMITTED');assert.equal(JSON.parse(env.local.raw).schemaVersion,7);assert.deepEqual(saved.data.allocations[0].cadence,data.allocations[0].cadence);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');
+  const draft=structuredClone(read.data);draft.locations[0].name='수정';env.local.fail=true;assert.equal((await env.api.commit(draft,settings(read))).status,'WRITE_FAILED');assert.equal(env.local.raw,raw);env.local.fail=false;const saved=await env.api.commit(draft,settings(read));assert.equal(saved.status,'COMMITTED');assert.equal(JSON.parse(env.local.raw).schemaVersion,8);assert.deepEqual(saved.data.allocations[0].cadence,data.allocations[0].cadence);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');
  }
 });
 test('C54-22 old envelopes cannot smuggle new cadence, memory, weekday order or Kakao provenance',async()=>{
@@ -62,4 +62,20 @@ test('C54-22 snapshot and allocation restoration preserve memory without changin
 test('C54-22 approved transactions retain cancel0, confirm1, duplicate0 and cross-tab conflict protection',async()=>{
  const env=setup(),tab=setup(env.local,env.lock).api,[first,second]=await Promise.all([env.api.load(),tab.load()]),data=body();data.allocations[0].cadence=selected('협의','');assert.equal(env.local.writes,0);
  assert.equal((await env.api.commit(data,{...settings(first,'cancel'),canCommit:()=>false})).status,'CANCELLED');assert.equal(env.local.writes,0);const outcomes=await Promise.all([env.api.commit(data,settings(first,'A')),tab.commit(data,settings(second,'B'))]);assert.deepEqual(outcomes.map(item=>item.status).sort(),['COMMITTED','CONFLICT']);assert.equal(env.local.writes,1);const winner=outcomes[0].status==='COMMITTED'?{api:env.api,read:first,id:'A'}:{api:tab,read:second,id:'B'};assert.equal((await winner.api.commit(data,settings(winner.read,winner.id))).status,'IDEMPOTENT');assert.equal(env.local.writes,1);const read=await env.api.load();assert.equal((await env.api.reset(settings(read,'reset'))).status,'RESET');assert.equal((await tab.commit(data,settings(second,'stale'))).status,'CONFLICT');assert.equal((await env.api.load()).status,'RESET');
+});
+
+test('C55 schema7 reads without writes; explicit manual consultation upgrades only after one successful schema8 commit',async()=>{
+ const data=body(),repeat={...approvedRepeat(),period:'협의',frequency:'',cadence:selected('협의','')};data.allocations[0].cadence=repeat.cadence;data.allocations[0].q4Review={version:'0460',activeRepeat:repeat,draft:{mode:'FIXED',repeat:structuredClone(repeat)},common:{repeat:structuredClone(repeat)}};
+ const original=envelope(7,data),env=setup(new Store(original)),read=await env.api.load();assert.equal(read.status,'LOADED');assert.equal(env.local.writes,0);assert.equal(env.local.raw,original);assert.deepEqual(read.data,data);
+ const draft=structuredClone(read.data);for(const r of [draft.allocations[0].q4Review.activeRepeat,draft.allocations[0].q4Review.draft.repeat,draft.allocations[0].q4Review.common.repeat])r.cadenceSelection='manual';
+ env.local.fail=true;assert.equal((await env.api.commit(draft,settings(read,'manual'))).status,'WRITE_FAILED');assert.equal(env.local.raw,original);assert.equal(env.local.writes,0);
+ env.local.fail=false;const saved=await env.api.commit(draft,settings(read,'manual'));assert.equal(saved.status,'COMMITTED');assert.equal(JSON.parse(env.local.raw).schemaVersion,8);assert.equal(env.local.writes,1);assert.equal((await env.api.commit(draft,settings(read,'manual'))).status,'IDEMPOTENT');assert.equal(env.local.writes,1);
+ const restored=await setup(env.local,env.lock).api.load();assert.deepEqual(restored.data,draft);assert.equal(env.local.writes,1);const repeatOwner=owner(),snapshot=plain(repeatOwner.snapshot(restored.data.allocations[0].q4Review.activeRepeat));assert.equal(snapshot.cadenceSelection,'manual');assert.equal(repeatOwner.fromAllocation(restored.data.allocations[0]).cadenceSelection,'manual');
+});
+test('C55 strict schema rejects unknown manual intent and pre8 envelope smuggling without deleting the original',async()=>{
+ for(const path of ['activeRepeat','draft','common']){
+  const data=body(),repeat={...approvedRepeat(),cadenceSelection:'manual'};data.allocations[0].q4Review={version:'0460',[path]:path==='activeRepeat'?repeat:{repeat}};
+  const original=envelope(7,data),env=setup(new Store(original));assert.equal((await env.api.load()).status,'CORRUPT');assert.equal(env.local.raw,original);assert.equal(env.local.writes,0);
+  repeat.cadenceSelection='automatic';assert.throws(()=>projectStoredPayload(data));repeat.cadenceSelection=true;assert.throws(()=>projectStoredPayload(data));
+ }
 });

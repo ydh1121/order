@@ -19,9 +19,23 @@ export function syntheticDns(name,type){
 }
 
 // Deliberately synthetic address labels and provider-shaped identifiers. These
-// are a local LAB response fixture, never a claim of a Juso observation.
-export function syntheticAddressResult(query,page=1,mode='synthetic'){
+// are a local LAB response fixture, never a claim of a live provider observation.
+export function syntheticAddressResult(query,page=1,mode='synthetic',request={}){
  if(mode==='unavailable'||mode==='offline')return {version:1,status:'UNAVAILABLE',reason:'NOT_CONFIGURED',items:[]};
+ // Only the declared C55 examples opt into place fixtures. Historical road
+ // queries keep the exact v1 rows below so existing LAB consumers stay stable.
+ const name=typeof query==='string'?query.trim().replace(/ +/g,' '):'';
+ const placeIndex=['엽기떡볶이 언주역','서울시청','관악구청'].indexOf(name);
+ if(placeIndex>=0||request.action==='resolve'){
+  const places=placeIndex<0?[]:[0,1].map(index=>({kind:'PLACE',placeId:String(550100+placeIndex*10+index+1),name:`합성 QA ${index?'같은 건물 별도 매장':name+(placeIndex===0?'점':'')} — 실제 장소 아님`,road:'합성 QA 도로 10 — 실제 주소 아님',jibun:'합성 QA 지번 10',page:1,addressProvider:'KAKAO'}));
+  if(request.action==='resolve'){
+   const selected=mode==='synthetic'&&page===1?places.find(item=>item.placeId===request.placeId):null;
+   if(!selected)return {version:3,status:'UNAVAILABLE',reason:'PLACE_CHANGED',items:[]};
+   return {version:3,status:'OK',reason:'RESOLVED',placeId:selected.placeId,item:{road:selected.road,postal:'08843',jibun:selected.jibun,region:'합성 QA 지역',providerId:'KAKAO:v1:'+selected.placeId.padStart(64,'0'),addressProvider:'KAKAO'}};
+  }
+  const items=mode==='empty'||page!==1?[]:places,total=mode==='empty'?0:places.length;
+  return {version:3,status:items.length?'OK':'EMPTY',reason:items.length?'RESULTS':'NO_RESULTS',items,page,total,hasMore:false,sources:{address:{total:0,pageable:0,hasMore:false},place:{total,pageable:total,hasMore:false}}};
+ }
  const items=mode==='empty'||page!==1?[]:[
   {road:'합성 QA 도로 10 — 실제 주소 아님',postal:'08843',jibun:'합성 QA 지번 10',region:'합성 QA 지역',providerId:'9999999999999999999900001',addressProvider:'JUSO'},
   {road:'합성 QA 도로 20 — 실제 주소 아님',postal:'00001',jibun:'합성 QA 지번 20',region:'합성 QA 지역',providerId:'9999999999999999999900002',addressProvider:'JUSO'},

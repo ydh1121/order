@@ -1,4 +1,4 @@
-import {addressFields, addressLines, isVerifiedAddress, selectAddress} from './address-contract.mjs';
+import {addressFields, addressLines, isVerifiedAddress, isPlaceCandidate, addressCandidateKey, selectAddress} from './address-contract.mjs';
 import {createAddressSearchService} from './address-service.mjs';
 
 /* One child transaction. Searches never mutate the parent, and confirmation only
@@ -13,6 +13,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
   let timer = null, controller = null, searchGeneration = 0, editingGeneration = 0;
   let composing = false, listOpen = false, explicitClear = false, confirming = false, baseline = '';
   let page = 1, hasMore = false, requestQuery = '', status = 'IDLE';
+  let retryTask = null, selectedName = '';
   const counts = {opened: 0, canceled: 0, confirmed: 0, stale: 0, searches: 0, discarded: 0};
   const normalize = value => String(value ?? '').normalize('NFC').trim().replace(/\s+/gu, ' ');
   const snapshot = () => JSON.stringify({query: query.value, address: addressFields({...draft, detail: detail.value, dropoff: dropoff.value})});
@@ -62,7 +63,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     $('address-clear').hidden = !hasAddress;
     $('address-selected-title').textContent = selectionMatchesQuery() ? '선택한 주소' : '기존 선택 주소';
     const target = $('address-selected-lines'); target.replaceChildren();
-    for (const value of addressLines({...draft, detail: '', dropoff: ''})) {
+    for (const value of [selectedName,...addressLines({...draft, detail: '', dropoff: ''})].filter(Boolean)) {
       const line = doc.createElement('span'); line.textContent = value; target.append(line);
     }
     detail.value = draft.detail; dropoff.value = draft.dropoff;
@@ -77,9 +78,11 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
       row.setAttribute('role', 'option'); row.setAttribute('aria-selected', 'false');
       const image = doc.createElement('span'); image.className = 'ui-choice-row__icon'; image.innerHTML = icon('search');
       const copy = doc.createElement('span'); copy.className = 'ui-choice-row__copy';
-      const road = doc.createElement('span'); road.className = 'ui-choice-row__title'; road.textContent = address.road; copy.append(road);
-      if (address.jibun) { const jibun = doc.createElement('span'); jibun.className = 'ui-choice-row__meta'; jibun.textContent = address.jibun; copy.append(jibun); }
-      const postal = doc.createElement('span'); postal.className = 'ui-choice-row__meta'; postal.textContent = address.postal; copy.append(postal);
+      const place = isPlaceCandidate(address);
+      const road = doc.createElement('span'); road.className = 'ui-choice-row__title'; road.textContent = place ? address.name : address.road; copy.append(road);
+      for (const value of place ? [address.road,address.jibun].filter((value,index,all)=>value&&all.indexOf(value)===index) : [address.jibun,address.postal].filter(Boolean)) {
+        const meta = doc.createElement('span'); meta.className = 'ui-choice-row__meta'; meta.textContent = value; copy.append(meta);
+      }
       row.append(image, copy); list.append(row);
     }
     setList(options.length > 0);
@@ -94,12 +97,26 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     query.setAttribute('aria-activedescendant', chosen.id);
     chosen.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'instant'});
   }
-  function choose(index) {
-    if (!current() || !options[index]) return false;
-    const candidate = options[index];
+  async function choose(index) {
+    if (!current() || !options[index] || status === 'RESOLVING') return false;
+    let candidate = options[index]; const name = isPlaceCandidate(candidate) ? candidate.name : '';
+    if (name) {
+      abortSearch(); const generation=searchGeneration,owner=session;
+      controller=new AbortController(); const request=controller;
+      retryTask=null; status='RESOLVING';
+      mutate(()=>{showStatus('선택한 장소의 우편주소 확인 중…',{loading:true});$('address-next-page').hidden=true;});
+      let result;try{result=await service.resolve(requestQuery,candidate,{signal:request.signal});}catch{result={status:'UNAVAILABLE'};}
+      if(generation!==searchGeneration||session!==owner||!current()||request.signal.aborted){counts.discarded++;return false;}
+      controller=null;
+      if(result.status!=='OK'||!isVerifiedAddress(result.item)){
+        status='UNAVAILABLE';retryTask={kind:'resolve',index};
+        mutate(()=>{setList(true);showStatus('이 장소의 우편주소를 확인할 수 없습니다. 다시 시도하거나 다른 결과를 선택해 주세요.',{retry:true});});return false;
+      }
+      candidate=result.item;
+    }
     try { draft = selectAddress({...draft, detail: detail.value, dropoff: dropoff.value}, candidate); }
     catch { return false; }
-    abortSearch(); explicitClear = false; status = 'SELECTED';
+    abortSearch(); retryTask=null; selectedName=name; explicitClear = false; status = 'SELECTED';
     mutate(() => {
       query.value = draft.road; setList(false); hasMore = false; $('address-next-page').hidden = true;
       showStatus(); renderSelection();
@@ -107,14 +124,15 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     setError(); detail.focus({preventScroll: true});
     return true;
   }
-  async function search({next = false} = {}) {
-    if (!current() || composing) return;
+  async function search({next = false, retryPage} = {}) {
+    if (!current() || composing || status==='LOADING' || status==='RESOLVING') return;
     const text = normalize(query.value);
     if (text.length < 2) return;
     abortSearch();
-    const generation = searchGeneration, owner = session, requestedPage = next ? page + 1 : 1;
+    const generation = searchGeneration, owner = session, requestedPage = retryPage ?? (next ? page + 1 : 1);
+    const append = requestedPage>1 && text===requestQuery;
     controller = new AbortController(); const request = controller;
-    status = 'LOADING'; counts.searches++;
+    status = 'LOADING'; retryTask=null; counts.searches++;
     mutate(() => { showStatus('검색 중…', {loading: true}); $('address-next-page').hidden = true; });
     let result;
     try { result = await service.search(text, {page: requestedPage, signal: request.signal}); }
@@ -122,28 +140,25 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     if (generation !== searchGeneration || session !== owner || !current() || request.signal.aborted) { counts.discarded++; return; }
     controller = null;
     if (result.status === 'ABORTED') return;
-    page = requestedPage; requestQuery = text; hasMore = result.hasMore === true;
-    if (result.status === 'OK') {
-      const incoming = (result.items || []).filter(isVerifiedAddress);
-      const combined = next ? [...options, ...incoming] : incoming;
-      options = [...new Map(combined.map(item => [item.addressProvider + ':' + item.providerId + ':' + item.postal, item])).values()];
+    if (result.status === 'OK' || result.status === 'EMPTY') {
+      page = requestedPage; requestQuery = text; hasMore = result.hasMore === true;
+      const incoming = (result.items || []).filter(item=>isPlaceCandidate(item)||isVerifiedAddress(item));
+      const combined = append ? [...options, ...incoming] : incoming;
+      options = [...new Map(combined.map(item => [addressCandidateKey(item), item])).values()];
       status = options.length ? 'RESULTS' : 'EMPTY';
-      mutate(() => { renderOptions(); showStatus(options.length ? `${options.length}개 주소` : '검색 결과가 없습니다.'); });
-    } else if (result.status === 'EMPTY') {
-      if (!next) options = []; status = 'EMPTY';
-      mutate(() => { renderOptions(); showStatus('검색 결과가 없습니다.'); });
+      mutate(() => { renderOptions(); showStatus(options.length ? `${options.length}개 검색 결과` : result.reason==='NO_SELECTABLE_ADDRESSES' ? '선택 가능한 주소가 없습니다. 건물번호나 구체적인 장소명을 입력해 주세요.' : '검색 결과가 없습니다.'); });
     } else if (result.status === 'INVALID_REQUEST') {
       status = 'INVALID_REQUEST'; hasMore = false;
       mutate(() => { setList(false); showStatus('검색어는 한글 40자, 영문 80자 이내로 입력해 주세요.'); });
     } else {
-      status = 'UNAVAILABLE'; hasMore = false;
-      mutate(() => { setList(false); showStatus('주소를 검색할 수 없습니다. 다시 시도해 주세요.', {retry: true}); });
+      status = 'UNAVAILABLE'; retryTask={kind:'search',page:requestedPage};
+      mutate(() => { setList(options.length>0); showStatus(append?'추가 결과를 불러오지 못했습니다. 다시 시도해 주세요.':'주소를 검색할 수 없습니다. 다시 시도해 주세요.', {retry: true}); });
     }
   }
   function queueSearch() {
     if (!session) return;
     if (normalize(query.value)) explicitClear = false;
-    abortSearch(); options = []; hasMore = false; page = 1; requestQuery = '';
+    abortSearch(); retryTask=null; options = []; hasMore = false; page = 1; requestQuery = '';
     setError();
     mutate(() => { setList(false); $('address-next-page').hidden = true; showStatus(); renderSelection(); });
     status = 'EDITING';
@@ -161,7 +176,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     if (!session || confirming || !dialog.open) return false;
     if (!current()) { counts.stale++; close('stale'); return false; }
     draft = {...draft, detail: detail.value, dropoff: dropoff.value};
-    if (!explicitClear && (!isVerifiedAddress(draft) || !selectionMatchesQuery())) {
+    if (status==='RESOLVING' || !explicitClear && (!isVerifiedAddress(draft) || !selectionMatchesQuery())) {
       setError('검색 결과에서 주소를 선택해 주세요.', {focus: true}); return false;
     }
     confirming = true;
@@ -183,7 +198,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
     abortSearch(); editingGeneration++; counts.opened++;
     session = {siteId: parent.siteId, generation: parent.generation, epoch: editingGeneration};
     draft = addressFields(parent.site); options = []; active = -1; page = 1; hasMore = false; requestQuery = '';
-    explicitClear = false; confirming = false; composing = false; status = 'IDLE';
+    retryTask=null; selectedName=''; explicitClear = false; confirming = false; composing = false; status = 'IDLE';
     query.value = draft.road; setList(false); list.replaceChildren(); showStatus(); renderSelection(); setError();
     baseline = snapshot();
     $('address-next-page').hidden = true;
@@ -200,7 +215,7 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
       // A discard prompt can outlive the debounce or an in-flight response.
       // Pause transport while retaining the text and previous selected address.
       abortSearch();
-      if (status === 'EDITING' || status === 'LOADING') {
+      if (status === 'EDITING' || status === 'LOADING' || status === 'RESOLVING') {
         status = 'EDITING';
         mutate(() => showStatus('', {retry: normalize(query.value).length >= 2 && !selectionMatchesQuery()}));
       }
@@ -220,18 +235,18 @@ export function createAddressEditor({getParent, onConfirm, onInvalid = () => {},
   dialog.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || event.isComposing || composing) return;
     event.preventDefault(); event.stopImmediatePropagation();
-    if (listOpen) { abortSearch(); mutate(() => { setList(false); $('address-next-page').hidden = true; showStatus(); }); }
+    if (listOpen) { abortSearch(); retryTask=null; status=options.length?'RESULTS':'EDITING'; mutate(() => { setList(false); $('address-next-page').hidden = true; showStatus(); }); }
     else requestClose('escape');
   }, {capture: true});
   list.addEventListener('pointerdown', event => { if (event.target.closest('[data-address-option]')) event.preventDefault(); });
   list.addEventListener('click', event => { const item = event.target.closest('[data-address-option]'); if (item) choose(Number(item.dataset.addressOption)); });
   detail.addEventListener('input', () => { if (session) draft.detail = detail.value; });
   dropoff.addEventListener('input', () => { if (session) draft.dropoff = dropoff.value; });
-  $('address-retry').addEventListener('click', () => search());
+  $('address-retry').addEventListener('click', () => retryTask?.kind==='resolve'?choose(retryTask.index):search({retryPage:retryTask?.page}));
   $('address-next-page').addEventListener('click', () => { if (hasMore && normalize(query.value) === requestQuery) search({next: true}); });
   $('address-clear').addEventListener('click', () => {
     if (!current()) return;
-    abortSearch(); draft = addressFields({}); explicitClear = true; options = []; hasMore = false; status = 'CLEARED';
+    abortSearch(); retryTask=null; selectedName=''; draft = addressFields({}); explicitClear = true; options = []; hasMore = false; status = 'CLEARED';
     mutate(() => { query.value = ''; setList(false); $('address-next-page').hidden = true; renderSelection(); showStatus(); });
     setError(); query.focus({preventScroll: true});
   });

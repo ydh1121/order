@@ -7,6 +7,7 @@ import {webcrypto} from 'node:crypto';
 import {validMonthlyQuantity,convertMonthlyUnit,monthlyPlanSnapshot,quantityDisplayUnit} from '../../web/quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/allocation-ui.mjs';
 import {inspectStoredOrderQuantity} from '../../web/q4-planning.mjs';
+import {q4Issue,quantityBoundIssue,inspectQ4Allocation,inspectQ4Groups,monthlyIssues} from '../../web/q4-validation.mjs';
 import {createBrowserStorage,emptyStoredPayload,projectStoredPayload} from '../../web/storage.mjs';
 
 // Execute the production gate functions, extracted by AST, without booting a DOM.
@@ -28,12 +29,12 @@ function find(node, predicate) {
 }
 const declaration = find(commonAst, node => node.type === 'VariableDeclaration' && node.declarations.some(row => row.id.name === 'CODE1_ORDER_VALIDATION'));
 assert.ok(declaration, 'Production common validation declaration exists');
-const functions = ['q4ReviewIssue', 'quantityBoundIssue', 'q4ReviewAllocationIssues', 'monthlyIssues', 'q4ReviewVerdict'].map(name => {
+const functions = ['q4ReviewIssue', 'q4ReviewAllocationIssues', 'q4ReviewVerdict'].map(name => {
   const node = find(appAst, node => node.type === 'FunctionDeclaration' && node.id.name === name);
   assert.ok(node, `Production ${name} exists`); return app.slice(node.start, node.end);
 });
 const gate = vm.runInNewContext(common.slice(declaration.start, declaration.end) + '\n' + functions.join('\n') + '\nq4ReviewVerdict', {
-  validMonthlyQuantity, inspectMonthlyAllocations, inspectOnceAllocations, monthlyPlanSnapshot, inspectStoredOrderQuantity,
+  validMonthlyQuantity, inspectMonthlyAllocations, inspectOnceAllocations, monthlyPlanSnapshot, inspectStoredOrderQuantity, q4Issue,quantityBoundIssue,inspectQ4Allocation,inspectQ4Groups,monthlyIssues,
   window: {OrderDatePolicy: {validate: () => ({valid: true})}}, OrderSiteContract: {issues: () => []}
 });
 function restored(mode = 'ONCE') {
@@ -123,7 +124,7 @@ function q4CommitHarness() {
     JSON, structuredClone, localDateISO: () => '2026-12-04', dateIssue: () => ({valid: true}),
     validateForSave: () => true,
     showCommitError: result => { errors.push(result); },
-    window: {OrderRegularQ4Bridge: {commit: (patches, confirmation, canCommit) => {
+    bridge: {commit: (patches, confirmation, canCommit) => {
       const held = deferred();
       pending.push({patches: structuredClone(patches), confirmation, canCommit, held});
       return held.promise.then(result => {
@@ -131,7 +132,7 @@ function q4CommitHarness() {
         if (result.ok) writes++;
         return result;
       });
-    }}},
+    }},
     recordClose: () => { closes++; }
   });
   vm.runInContext(`
@@ -260,7 +261,7 @@ test('R05 current transaction email proof reaches site and final gates without p
   const siteNode = commonAst.body.find(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && node.expression.left.property?.name === 'OrderSiteContract');
   const proof = {state: 'VALID', ttl: 0}, email = 'local@example.test';
   let active = true;
-  const context = vm.createContext({window: {}, addressStatus: () => ({valid: true}),
+  const context = vm.createContext({inspectQ4Groups,window: {}, addressStatus: () => ({valid: true}),
     OrderPhone: {parse: () => ({valid: true})}, OrderEmail: {parse: () => ({valid: true})},
     OrderEmailDomain: {status: () => ({state: 'UNKNOWN'}), isCurrent: (p, raw) => active && p === proof && raw === email,
       isHard: () => false, isSuccess: p => p.state === 'VALID'}});
@@ -535,4 +536,13 @@ test('C54-06 reset can inspect the old Q2 controls after the durable model clear
  assert.equal(options(input).step,'30');assert.equal(options(input).maxDigits,12);
  lines.clear();assert.doesNotThrow(()=>options(input));assert.equal(options(input).step,1);assert.equal(options(input).maxDigits,12);
  assert.equal(options({dataset:{linePrice:'L'}}).step,1);
+});
+
+test('C55 shared linewide monthly failure does not blame only the first site or mutate frozen saved input',()=>{
+ const state=restored('FLEX');state.lines[0].qty='300';
+ const before=structuredClone(state),freeze=value=>{if(value&&typeof value==='object'){Object.freeze(value);Object.values(value).forEach(freeze);}return value;};freeze(state);
+ const group=inspectQ4Groups(state),monthly=group.issues.filter(issue=>issue.fieldKey==='monthly');
+ assert.ok(monthly.length>0);assert.ok(monthly.every(issue=>issue.lineId==='L'&&issue.siteId===null));
+ const verdict=gate(state);for(const site of state.locations)assert.ok(verdict.fieldErrors.some(issue=>issue.stage==='q4'&&issue.lineId==='L'&&(!issue.siteId||issue.siteId===site.id)));
+ assert.deepEqual(state,before);assert.deepEqual(gate(state),verdict,'Repeated verdict read is stable');
 });

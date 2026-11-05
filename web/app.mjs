@@ -1,17 +1,19 @@
+import {q4Issue,inspectQ4Allocation,monthlyIssues} from './q4-validation.mjs';
 import {createBrowserStorage,projectStoredPayload} from './storage.mjs';
 import {bindNumericInputs} from './numeric-input.mjs';
 import {bindQuantityMenu} from './quantity-menu.mjs';
-import {inspectStoredOrderQuantity} from './q4-planning.mjs';
-import {inspectStartDate,holidayPolicyFromSelection,seoulDate} from './cadence-contract.mjs';
-import {validateApprovedStart} from './order-date.mjs';
+
+
+
 import {calendarForecast} from '../src/engine/calculation/calendar-forecast.mjs';
 import {compare,fromRatio,multiply} from '../src/engine/calculation/exact.mjs';
 import {quantityUnit,quantityDisplayUnit,quantityInputText,quantityDisplayNote,numericInput,moneyDisplay,quantityLabel,validMonthlyQuantity,monthlyQuantityText,convertMonthlyUnit,currentPurchaseCost,totalPurchaseCost,exactDisplay,baseQuantity,quantityFactor,monthlyPlanSnapshot} from './quantity-contract.mjs';
-import {inspectMonthlyAllocations,inspectOnceAllocations} from './allocation-ui.mjs';
+
 import {CODE1_UI,CODE1_ORDER_VALIDATION,CODE1_ORDER_ERRORS} from './common-ui.mjs';
 import {addressFields,addressStatus,addressLines} from './address-contract.mjs';
 import {createAddressEditor} from './address-ui.mjs';
-(()=>{'use strict';
+export function createOrderApp(){
+let q4ReviewUI=null;
 const $=id=>document.getElementById(id),w=n=>moneyDisplay(n)+'원';const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const valid=n=>/^[1-9]\d*$/.test(String(n))&&Number.isSafeInteger(+n); const sum=(a,b)=>{let n=Number(a)*Number(b);return Number.isSafeInteger(n)&&n>=0?n:null};const DAYS=['월','화','수','목','금','토','일'];const H=['1','2','3','4'],SZ=['왕란','특란','대란','중란','소란'],PK=['10','20','30'];const unit=x=>String(x)==='30'?'판':'팩';const selected=l=>l?.housing&&l?.size&&l?.pack;const sku=l=>selected(l)?`${l.housing}번 · ${l.size} · ${l.pack}구`:'';
 const empty=()=>({id:'sku-'+(crypto.randomUUID?.()||Math.random().toString(36).slice(2)),housing:'',size:'',pack:'',qty:'',price:''});
@@ -40,16 +42,7 @@ const deliveryLabel=a=>a.mode==='FIXED'?(()=>{const r=OrderRepeatContract.fromAl
 const addressComplete=()=>S.locations.length>0&&S.locations.every(siteValid);
 const allocationValid=a=>{
  if(!lineById(a.lineId)||!locationById(a.locationId)||!siteValid(locationById(a.locationId)))return false;
- if(quantityBoundIssue(a,lineById(a.lineId)))return false;
- if(a.q4Review?.version==='0460')return q4ReviewAllocationIssues(a).length===0;
- if(!lineById(a.lineId)||!locationById(a.locationId)||!['FLEX','FIXED','ONCE'].includes(a.mode))return false;
- // Q4-60: base per-delivery quantity is required even when a valid variable range exists.
- if(a.mode==='ONCE'&&S.allocations.filter(x=>x.lineId===a.lineId).length>=2)return S.allocations.filter(x=>x.lineId===a.lineId).every(x=>q4ValidAmount(x.oneTimeDeliveryQty));
- if(!q4ValidAmount(a.qty))return false;
- if(a.mode!=='ONCE'&&a.variableQty){if(!q4ValidAmount(a.qtyMin)||!q4ValidAmount(a.qtyMax)||Number(a.qtyMin)>Number(a.qtyMax))return false;}
- else if(!valid(a.qty))return false;
- if(a.mode!=='FIXED')return true;
-  return OrderRepeatContract.inspect(OrderRepeatContract.fromAllocation(a)).valid;
+ return !q4ReviewVerdict(S).fieldErrors.some(issue=>issue.stage==='q4'&&issue.lineId===a.lineId&&(!issue.siteId||issue.siteId===a.locationId));
 };
 const siteValid=site=>window.OrderSiteContract.valid(site);
 const deliveryComplete=()=>addressComplete()&&S.allocations.length>0&&!orderVerdict('full').fieldErrors.some(e=>e.stage==='q4');
@@ -316,7 +309,7 @@ function navigateOrderIssue(issue,{animate=true}={}){
   const edit=document.querySelector(`[data-edit-allocation="${CSS.escape(saved.id)}"]`);
   if(!edit)return false;
   edit.click();
-  requestAnimationFrame(()=>window.OrderQ4Review.validate());return true;
+  requestAnimationFrame(()=>q4ReviewUI.validate());return true;
  }
  if(S.open!==issue.stage&&!changeOpen(issue.stage))return false;
  requestAnimationFrame(()=>{
@@ -328,7 +321,7 @@ function navigateOrderIssue(issue,{animate=true}={}){
 }
 function requestValidationFeedback(action='finish',scope='full'){
  orderErrorExposure=true;const verdict=orderValidationProjection(scope);renderOrderPageFeedback();paintStageCompletion();updateResultCTA();
- if(verdict.valid)return true;const first=verdict.actionableErrors[0];if(verdict.pendingIssues.length)window.OrderEmailLifecycle?.retry();if(first)navigateOrderIssue(first,{animate:true});else if(verdict.confirmations.length){const line=verdict.confirmations[0].lineId,a=S.allocations.find(x=>x.lineId===line);if(a){openRegularQ4(a.id,document.querySelector(`[data-edit-allocation="${CSS.escape(a.id)}"]`));requestAnimationFrame(()=>OrderQ4Review.validate());}}
+ if(verdict.valid)return true;const first=verdict.actionableErrors[0];if(verdict.pendingIssues.length)window.OrderEmailLifecycle?.retry();if(first)navigateOrderIssue(first,{animate:true});else if(verdict.confirmations.length){const line=verdict.confirmations[0].lineId,a=S.allocations.find(x=>x.lineId===line);if(a){openRegularQ4(a.id,document.querySelector(`[data-edit-allocation="${CSS.escape(a.id)}"]`));requestAnimationFrame(()=>q4ReviewUI.validate());}}
  return false;
 }
 function paintStageCompletion(projection=orderValidationProjection()){
@@ -909,7 +902,7 @@ const q4ValidAmount=v=>q4ValidInteger(v)&&String(v).length<=12;
 
 function openRegularQ4(id,trigger){return q4ReviewOpen(id,trigger);}
 
-function closeRegularQ4(){window.OrderQ4Review.close();}
+function closeRegularQ4(){q4ReviewUI.close();}
 
 
 
@@ -998,71 +991,16 @@ function fromHash(event){if(event?.defaultPrevented||document.querySelector('dia
 // MSG0460: explicit regular-state boundary. No provider, price or DB writes.
 let q4ReviewContext=null,q4ReviewPending=null,q4ReviewCommitCount=0;
 const q4ReviewClone=x=>JSON.parse(JSON.stringify(x));
-function q4ReviewIssue(a,key,message){return {issueId:`q4:${a.lineId}:${a.locationId}:${key}`,stage:'q4',field:`${a.id}:${key}`,fieldKey:key,lineId:a.lineId,siteId:a.locationId,code:'BLOCK_REQUIRED',errorCode:'BLOCK_REQUIRED',severity:'error',blocking:true,message,humanMessage:message};}
-function quantityBoundIssue(a,line){
- if(a.mode==='ONCE'||!line)return null;const plan=monthlyPlanSnapshot(line,a);if(plan.status!=='VALID')return null;
- const result=inspectStoredOrderQuantity({mode:a.mode,monthlyPlan:plan.qty,quantity:String(a.qty??''),...(a.q4Review?.asOfLocalDate!==undefined?{asOfLocalDate:a.q4Review.asOfLocalDate}:{})});
- return result.valid?null:q4ReviewIssue(a,'qty',result.reason==='ORDER_QUANTITY_MAXIMUM'?'회당 예상 주문 수량은 월 주문 수량 이하여야 합니다.':'회당 예상 주문 수량을 확인해 주세요.');
-}
-function q4ReviewAllocationIssues(a,all=S.allocations,line=lineById(a.lineId)){
-
- if(a.q4Review?.version!=='0460')return null;
- const z=[],put=(k,m)=>z.push(q4ReviewIssue(a,k,m)),num=v=>/^[1-9]\d{0,11}$/.test(String(v??''));
- if(!a.modeExplicit||!['FLEX','FIXED','ONCE'].includes(a.mode))put('mode','주문 방식을 선택해 주세요.');
- if(!a.advanced?.contactChannels?.length)put('contact','연락 수단을 하나 이상 선택해 주세요.');
- if(!num(a.qty))put('qty',a.mode==='ONCE'?'1회 주문량을 입력해 주세요.':'회당 예상 주문 수량을 입력해 주세요.');else{const bound=quantityBoundIssue(a,line);if(bound)z.push(bound);}
- if(a.mode==='ONCE'){const result=window.OrderDatePolicy.validate(a.q4Review?.deliveryDate);if(!result.valid)put('desired-date',result.message);}
- if(a.mode!=='ONCE'){
-  // Monthly quantities and explicit units are validated once by the shared allocation contract.
-  if(a.variableQty){if(!num(a.qtyMin))put('min','최소 수량을 입력해 주세요.');if(!num(a.qtyMax))put('max','최대 수량을 입력해 주세요.');
-   if(num(a.qtyMin)&&num(a.qtyMax)&&+a.qtyMin>+a.qtyMax)put('min','최소 수량이 최대 수량을 초과합니다.');
-   if(num(a.qty)&&num(a.qtyMin)&&+a.qty<+a.qtyMin)put('qty','회당 수량이 최소 수량보다 작습니다.');
-   if(num(a.qty)&&num(a.qtyMax)&&+a.qty>+a.qtyMax)put('qty','회당 수량이 최대 수량보다 큽니다.');}
-  const h=a.q4Review.activeHoliday;if(!h||!(h.days?.length||h.none||h.irregular))put('holiday-days','매장 정기 휴무일 또는 없음·일정하지 않음을 선택해 주세요.');
-  if(a.mode==='FIXED'&&(!h||['','선택 안 함',null,undefined].includes(h.conflict)))put('holiday-conflict','휴무일 납품 충돌 시 대응을 선택해 주세요.');
- }
-  if(a.mode==='FIXED'){
-   const r=OrderRepeatContract.fromAllocation(a),contract=OrderRepeatContract.inspect(r);if(!contract.valid){if(contract.issue.kind==='weekdays'){for(const week of contract.week.filter(w=>!w.complete))put('weekdays-'+week.number,week.number+'주차 희망요일 개수를 확인해 주세요.');}else put(contract.issue.kind,contract.issue.message);}
-   else if(r.semantics==='per-week-v1'){const expected=OrderRepeatContract.serialize(r).value;for(const key of ['intervalWeeks','frequencyPerWeek','freq','cycleCount','monthDay','scheduleDetail','weekPlans'])if(JSON.stringify(a[key])!==JSON.stringify(expected[key])){put('repeat-contract','반복 횟수와 저장된 주차 계획이 일치하지 않습니다. 다시 저장해 주세요.');break;}}
-   if(contract.valid&&a.cadence?.version==='3.0.0'){
-    const start=validateApprovedStart(a.cadence,new Date());
-    if(!start.valid)put('repeat-preferred',start.message);
-   }
-   if(contract.valid&&a.cadence?.preferredDate&&a.cadence.version!=='3.0.0'){
-    const today=seoulDate(),asOfLocalDate=`${today.year}-${String(today.month).padStart(2,'0')}-${String(today.day).padStart(2,'0')}`;
-    const start=inspectStartDate(a.cadence.preferredDate,{asOfLocalDate,cadence:a.cadence,lifecycle:a.q4Review?.startDateReview?.lifecycle||'LEGACY',savedAnchor:a.cadence.preferredDate,edited:false,adjust:false,holidayPolicy:holidayPolicyFromSelection(a.q4Review?.activeHoliday||a.advanced)});
-    if(!start.valid)put('repeat-preferred',start.message);
-   }
-  }
-
- return z;
-}
-function monthlyIssues(source,line,allocations){
- const result=inspectMonthlyAllocations({line,allocations,locations:source.locations,revision:source.allocationRevision||0});
- return (result.issues||[]).map(issue=>{const allocation=allocations.find(a=>a.locationId===issue.locationId)||allocations[0];return {...q4ReviewIssue(allocation,'monthly',issue.message),code:issue.code,fieldKey:'monthly'};});
-}
-function q4ReviewVerdict(source=S,confirmation=null,emailProofs=null){
- const legacy=CODE1_ORDER_VALIDATION.validateOrderDraft(source,{scope:'full',confirmedFingerprint:confirmation,emailProofs});
- const currentLines=new Set(source.lines.filter(l=>{const a=source.allocations.filter(x=>x.lineId===l.id);return a.length&&a.every(x=>x.q4Review?.version==='0460');}).map(l=>l.id));
- const issues=legacy.fieldErrors.filter(e=>e.stage!=='q4'||!currentLines.has(e.lineId)||e.code==='BLOCK_ASSIGNMENT');
- const confirmations=[]; // Shared ONCE quantities own warnings for both restored and current records.
- for(const a of source.allocations){const line=source.lines.find(l=>l.id===a.lineId);if(currentLines.has(a.lineId))issues.push(...q4ReviewAllocationIssues(a,source.allocations,line));else{const bound=quantityBoundIssue(a,line);if(bound)issues.push(bound);}}
- for(const line of source.lines){
-  const allocations=source.allocations.filter(a=>a.lineId===line.id);if(!allocations.length)continue;
-  issues.push(...monthlyIssues(source,line,allocations));
-  const once=inspectOnceAllocations({line,allocations,locations:source.locations,revision:source.allocationRevision||0});
-  for(const issue of once.issues||[]){const a=allocations.find(a=>a.locationId===issue.locationId)||allocations[0];issues.push({...q4ReviewIssue(a,'once',issue.message),code:issue.code});}
-  if(once.confirmation&&once.confirmation.fingerprint!==confirmation)confirmations.push({...once.confirmation,stage:'q4',code:'ONCE_AT_LEAST_MONTH',sites:once.confirmation.sites.map(site=>({...site,name:source.locations.find(l=>l.id===site.locationId)?.name||'사업장'}))});
- }
- return {...legacy,issues,fieldErrors:issues,confirmations,groupErrors:issues.filter(x=>x.fieldKey==='monthly'),valid:issues.length===0,resultStatus:issues.length?'BLOCK_REQUIRED':confirmations.length?'NEED_CONFIRMATION':'ESTIMATE_VALID'};
-}
+function q4ReviewIssue(a,key,message){return q4Issue(a,key,message);}
+function q4ReviewAllocationIssues(a,all=S.allocations,line=lineById(a.lineId)){return inspectQ4Allocation(a,{all,line,repeatContract:OrderRepeatContract});}
+function q4ReviewVerdict(source=S,confirmation=null,emailProofs=null){return CODE1_ORDER_VALIDATION.validateOrderDraft(source,{scope:'full',confirmedFingerprint:confirmation,emailProofs});}
 function q4ReviewOpen(id,trigger){if(deliveryDraft||q4AssignmentDraft)return false;const a=allocationById(id);if(!a)return false;return beginQ4Context(a.lineId,S.allocations.filter(x=>x.lineId===a.lineId),id,trigger,false);}
 function beginQ4Context(lineId,allocations,id,trigger,selectionPending=false){
  const line=lineById(lineId);if(!line||!allocations.length)return false;const locations=allocations.map(a=>locationById(a.locationId));if(locations.some(x=>!x))return false;
  const selector=trigger?.dataset.q3Q4Edit?`[data-q3-q4-edit="${CSS.escape(id)}"]`:trigger?.dataset.q4SelectSites?`[data-q4-select-sites="${CSS.escape(lineId)}"]`:`[data-edit-allocation="${CSS.escape(id)}"]`;
  q4ReviewContext={openingAllocations:q4ReviewClone(allocations),id,lineId,ids:allocations.map(a=>a.id),selectionPending,signature:JSON.stringify([line,S.allocations.filter(a=>a.lineId===lineId),S.locations]),returnSelector:selector,trigger,scrollY:scrollY};
  deliveryDraft=q4ReviewClone(allocations.find(a=>a.id===id)||allocations[0]);editingAllocationId=id;
- window.OrderQ4Review.open({revision:S.allocationRevision||0,line:q4ReviewClone(line),allocations:q4ReviewClone(allocations),locations:q4ReviewClone(locations),selectedIndex:Math.max(0,allocations.findIndex(a=>a.id===id)),returnSelector:selector});$('q4-regular-dialog').dataset.entryOrigin=trigger?.dataset.q3Q4Edit?'q3':'q4';$('q4-regular-save').textContent=trigger?.dataset.q3Q4Edit?'적용':'저장';refreshCompletionBadges();return true;
+ q4ReviewUI.open({revision:S.allocationRevision||0,line:q4ReviewClone(line),allocations:q4ReviewClone(allocations),locations:q4ReviewClone(locations),selectedIndex:Math.max(0,allocations.findIndex(a=>a.id===id)),returnSelector:selector});$('q4-regular-dialog').dataset.entryOrigin=trigger?.dataset.q3Q4Edit?'q3':'q4';$('q4-regular-save').textContent=trigger?.dataset.q3Q4Edit?'적용':'저장';refreshCompletionBadges();return true;
 }
 function q4ReviewClosed(){q4ReviewContext=null;deliveryDraft=null;editingAllocationId=null;q4ReviewPending=null;q4ValidationAttempted=false;q4SiteDemandDraft=null;q4OnceDraft=null;if(q4OnceConfirmDialog.open)OrderModalShell.close(q4OnceConfirmDialog,{immediate:true});err('err-q4','');renderDelivery();renderAddress();refreshCompletionBadges();}
 async function q4ReviewCommit(patches,confirmedFingerprint=null,canCommit=()=>true){
@@ -1117,7 +1055,7 @@ window.OrderRegularQ4Bridge=Object.freeze({
 });
 $('q4-once-return').onclick=()=>{q4ReviewPending=null;window.OrderModalShell.close(q4OnceConfirmDialog,{after:()=> $('q4-regular-save').focus({preventScroll:true})});};
 let onceSaving=false;
-$('q4-once-approve').onclick=async()=>{if(!q4ReviewPending||onceSaving)return;onceSaving=true;const p=q4ReviewPending,r=await q4ReviewCommit(p.patches,p.warning.fingerprint,p.canCommit);onceSaving=false;if(!q4OnceConfirmDialog.open||!r.ok&&q4ReviewPending!==p)return;if(r.ok){window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>window.OrderQ4Review.complete()});}else if(!r.confirmation){q4ReviewPending=null;window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>window.OrderQ4Review.commitError(r)});}};
+$('q4-once-approve').onclick=async()=>{if(!q4ReviewPending||onceSaving)return;onceSaving=true;const p=q4ReviewPending,r=await q4ReviewCommit(p.patches,p.warning.fingerprint,p.canCommit);onceSaving=false;if(!q4OnceConfirmDialog.open||!r.ok&&q4ReviewPending!==p)return;if(r.ok){window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>q4ReviewUI.complete()});}else if(!r.confirmation){q4ReviewPending=null;window.OrderModalShell.close(q4OnceConfirmDialog,{immediate:true,after:()=>q4ReviewUI.commitError(r)});}};
 window.OrderModalShell.bind(q4OnceConfirmDialog,()=> $('q4-once-return').click());
 
 
@@ -1143,4 +1081,5 @@ window.OrderEmailLifecycle=Object.freeze((()=>{
 })());
 
 window.OrderValidationState=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify(orderValidationProjection())),line:id=>JSON.parse(JSON.stringify(lineById(id)||null))});window.__orderReviewBoot=async()=>{const restored=await storageHydration;storageRevision=restored.revision;storageToken=restored.versionToken;document.documentElement.dataset.storageStatus=restored.status;if(restored.ok&&restored.data){S=ensureMigration(restored.data);lastCommitted=structuredClone(S);editorMode=S.lines.length?null:'initial';if(editorMode==='initial'&&S.bodyCheckpoint)editing={...empty(),...S.bodyCheckpoint.q1Selection};}else if(!restored.ok)storageFailure=restored;storageReady=true;$('app').inert=false;render();fromHash();if(storageFailure)storageFeedback(storageFailure);OrderEmailLifecycle.boot();document.documentElement.dataset.storageReady='true';storagePaint();};
-})();
+return Object.freeze({regularBridge:window.OrderRegularQ4Bridge,connectQ4(controller){if(q4ReviewUI)throw Error('Q4_ALREADY_CONNECTED');q4ReviewUI=controller;},boot:window.__orderReviewBoot});
+}

@@ -1,4 +1,4 @@
-/* MSG0540 approved D1R6 policy. Pure, clock-injected; ONCE does not consume it.
+/* MSG0540 approved D1R6 policy. Pure, clock-injected; explicit mode options preserve legacy ONCE bounds.
  * Holiday observations describe notices, not supplier availability or acceptance. */
 import {KR_HOLIDAY_SNAPSHOT} from '../src/engine/reference/kr-holidays.mjs';
 export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
@@ -14,14 +14,16 @@ export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
  function utcDate(key){if(!validDate(key))return null;const [y,m,d]=key.split('-').map(Number);return new Date(Date.UTC(y,m-1,d));}
  function kstParts(now){const t=now instanceof Date?now.getTime():Date.parse(now);if(!Number.isFinite(t))return null;const d=new Date(t+KST);return {date:dateKey(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate()),hour:d.getUTCHours(),minute:d.getUTCMinutes()};}
  const todayKST=now=>kstParts(now)?.date||null;
- function dateBounds(now){
+ function dateBounds(now,{selectionPeriod='D1R6'}={}){
   const minimum=todayKST(now);if(!minimum)return null;
   const [year,month]=minimum.split('-').map(Number),next=new Date(Date.UTC(year,month,1));
-  const maximum=dateKey(next.getUTCFullYear(),next.getUTCMonth()+1,new Date(Date.UTC(next.getUTCFullYear(),next.getUTCMonth()+1,0)).getUTCDate());
+  if(!['D1R6','ONCE_LEGACY'].includes(selectionPeriod))return null;
+  const maximum=selectionPeriod==='ONCE_LEGACY'?'2100-12-31':dateKey(next.getUTCFullYear(),next.getUTCMonth()+1,new Date(Date.UTC(next.getUTCFullYear(),next.getUTCMonth()+1,0)).getUTCDate());
+  if(minimum>maximum)return null;
   return {minimum,maximum,minimumMonth:minimum.slice(0,7),maximumMonth:maximum.slice(0,7)};
  }
- function normalizeDateParts(parts,now){
-  const bounds=dateBounds(now),raw=['year','month','day'].map(key=>String(parts?.[key]??'').trim());
+ function normalizeDateParts(parts,now,options={}){
+  const bounds=dateBounds(now,options),raw=['year','month','day'].map(key=>String(parts?.[key]??'').trim());
   if(!bounds)return {status:'invalid',date:null,changed:false,code:'INVALID_NOW'};
   if(raw.every(x=>x===''))return {status:'empty',date:null,changed:false,bounds};
   if(raw.some(x=>x===''))return {status:'incomplete',date:null,changed:false,bounds};
@@ -40,29 +42,33 @@ export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
   return {status:'valid',date:result,changed:code!=='UNCHANGED',code,bounds};
  }
  // Date drafts are normalized on every input, independently of DOM events.
- // A prefix is permitted only while at least one selectable date can complete it.
- // For example, November's month "1" can still become 11 or 12; "22" cannot.
- function normalizeDateDraft(parts,now,{final=false,editingPart=null}={}){
-  const bounds=dateBounds(now),keys=['year','month','day'],raw=Object.fromEntries(keys.map(key=>[key,String(parts?.[key]??'')]));
+ // Positive short fields remain editable; a leading zero only remains when
+ // it can complete a selectable padded value. Completed fields clamp.
+ function normalizeDateDraft(parts,now,{final=false,editingPart=null,...options}={}){
+  const bounds=dateBounds(now,options),keys=['year','month','day'],raw=Object.fromEntries(keys.map(key=>[key,String(parts?.[key]??'')]));
   if(!bounds)return {status:'invalid',date:null,parts:raw,changed:false,code:'INVALID_NOW'};
   if(keys.some(key=>!/^\d*$/.test(raw[key])))return {status:'invalid',date:null,parts:raw,changed:false,code:'NON_NUMERIC',bounds};
+  // Month spans keep the legacy ONCE horizon inexpensive without enumerating
+  // every day between today and 2100 on each keystroke.
   let candidates=[];
-  for(let key=bounds.minimum;key<=bounds.maximum;key=addDays(key,1)){
-   const [year,month,day]=key.split('-').map(Number);candidates.push({date:key,year,month,day});
+  const [minYear,minMonth,minDay]=bounds.minimum.split('-').map(Number),[maxYear,maxMonth,maxDay]=bounds.maximum.split('-').map(Number);
+  for(let year=minYear;year<=maxYear;year++)for(let month=year===minYear?minMonth:1;month<=(year===maxYear?maxMonth:12);month++){
+   candidates.push({year,month,first:year===minYear&&month===minMonth?minDay:1,last:year===maxYear&&month===maxMonth?maxDay:new Date(Date.UTC(year,month,0)).getUTCDate()});
   }
+  const has=(item,part,value)=>part==='day'?value>=item.first&&value<=item.last:item[part]===value;
   const normalized={...raw},states={},corrections=[];
   for(const part of keys){
-   const text=raw[part],width=part==='year'?4:2,values=[...new Set(candidates.map(item=>item[part]))].sort((a,b)=>a-b);
+   const text=raw[part],width=part==='year'?4:2,values=[...new Set(candidates.flatMap(item=>part==='day'?Array.from({length:item.last-item.first+1},(_,i)=>item.first+i):[item[part]]))].sort((a,b)=>a-b);
    if(text===''){states[part]='empty';continue;}
    const n=Number(text),exact=text.length<=width&&Number.isSafeInteger(n)&&values.includes(n);
    const prefix=values.filter(value=>[String(value),String(value).padStart(width,'0')].some(valueText=>valueText.startsWith(text)));
-   if(exact){normalized[part]=String(n);states[part]='valid';candidates=candidates.filter(item=>item[part]===n);continue;}
-   if(!final&&(!editingPart||editingPart===part)&&text.length<width&&prefix.length){states[part]='prefix';candidates=candidates.filter(item=>prefix.includes(item[part]));continue;}
-   // A short impossible year such as "3" cannot become an allowed 202x year.
-   // Compare its full-width lower bound so it clamps toward the correct edge.
+   if(exact){normalized[part]=String(n);states[part]='valid';candidates=candidates.filter(item=>has(item,part,n));continue;}
+   if(!final&&(!editingPart||editingPart===part)&&text.length<width&&(prefix.length||n>0)){states[part]='prefix';if(prefix.length)candidates=candidates.filter(item=>prefix.some(value=>has(item,part,value)));continue;}
+   // A zero without a selectable padded completion is already impossible.
+   // Positive first digits remain editable until completion.
    const comparable=part==='year'&&text.length<width?Number(text.padEnd(width,'0')):n;
    const corrected=comparable<=values[0]?values[0]:comparable>=values.at(-1)?values.at(-1):values.reduce((best,value)=>Math.abs(value-comparable)<Math.abs(best-comparable)?value:best,values[0]);
-   normalized[part]=String(corrected);states[part]='valid';corrections.push({part,from:text,to:String(corrected),code:comparable<values[0]?'MINIMUM':'MAXIMUM'});candidates=candidates.filter(item=>item[part]===corrected);
+   normalized[part]=String(corrected);states[part]='valid';corrections.push({part,from:text,to:String(corrected),code:comparable<values[0]?'MINIMUM':'MAXIMUM'});candidates=candidates.filter(item=>has(item,part,corrected));
   }
   const complete=keys.every(key=>states[key]==='valid'),date=complete?dateKey(Number(normalized.year),Number(normalized.month),Number(normalized.day)):null;
   return {status:complete?'valid':keys.every(key=>raw[key]==='')?'empty':'incomplete',date,parts:normalized,states,changed:keys.some(key=>normalized[key]!==raw[key]),code:corrections[0]?.code||'UNCHANGED',corrections,bounds};
@@ -71,11 +77,12 @@ export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
  function daysBetween(a,b){const x=utcDate(a),y=utcDate(b);return x&&y?Math.round((y-x)/DAY):NaN;}
  function dayInfo(key){const d=utcDate(key);if(!d)return {valid:false,weekday:null,holiday:null,covered:false};return {valid:true,weekday:d.getUTCDay(),holiday:holidayMap.get(key)||null,covered:coverage.includes(d.getUTCFullYear())};}
  function isUnavailable(key,items){return (items||[]).some(x=>typeof x==='string'?x===key:x&&x.date===key&&x.available!==true);}
- function evaluateDate({date,now,unavailable=[],serviceKind='undecided'}={}){
+ function evaluateDate({date,now,unavailable=[],serviceKind='undecided',selectionPeriod='D1R6'}={}){
   const k=kstParts(now),info=dayInfo(date);if(!k||!info.valid)return {selectable:false,code:'INVALID_DATE',codes:['INVALID_DATE'],messages:['날짜를 다시 선택해 주세요.'],notice:baseNotice,daysAhead:null,today:k?.date||null};
-  const bounds=dateBounds(now),daysAhead=daysBetween(k.date,date),base={daysAhead,today:k.date,weekday:info.weekday,holiday:info.holiday,covered:info.covered,notice:baseNotice,bounds};
+  const bounds=dateBounds(now,{selectionPeriod});if(!bounds)return {selectable:false,code:'INVALID_RANGE',codes:['INVALID_RANGE'],messages:['선택 가능한 날짜 범위를 확인해 주세요.'],notice:baseNotice,daysAhead:null,today:k.date};
+  const daysAhead=daysBetween(k.date,date),base={daysAhead,today:k.date,weekday:info.weekday,holiday:info.holiday,covered:info.covered,notice:baseNotice,bounds};
   if(daysAhead<0)return {...base,selectable:false,code:'PAST',codes:['PAST'],messages:['오늘 이후 날짜를 선택해 주세요.']};
-  if(date>bounds.maximum)return {...base,selectable:false,code:'AFTER_RANGE',codes:['AFTER_RANGE'],messages:['다음 달 말일까지 선택할 수 있습니다.']};
+  if(date>bounds.maximum)return {...base,selectable:false,code:'AFTER_RANGE',codes:['AFTER_RANGE'],messages:[selectionPeriod==='ONCE_LEGACY'?'2100년 12월 31일까지 선택할 수 있습니다.':'다음 달 말일까지 선택할 수 있습니다.']};
   if(isUnavailable(date,unavailable))return {...base,selectable:false,code:'PROVIDER_UNAVAILABLE',codes:['PROVIDER_UNAVAILABLE'],messages:['납품사가 지정한 휴무일입니다.']};
   const messages=[],codes=[];
   if(daysAhead===0){codes.push(k.hour<12?'SAME_DAY_MORNING':'SAME_DAY_AFTERNOON');messages.push(k.hour<12?'당일 납품은 납품사 확인이 필요합니다.':'당일 납품은 시간이 촉박해 어려울 수 있습니다.');}
@@ -92,6 +99,16 @@ export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
   if(serviceKind==='parcel'&&date.endsWith('-08-14')){codes.push('PARCEL_REST_DAY');messages.push('택배 이용 시 휴무 일정을 확인해 주세요.');}
   if(!info.covered){codes.push('HOLIDAY_DATA_OUTSIDE_SNAPSHOT');messages.push('해당 연도 휴일 일정은 추가 확인이 필요합니다.');}
   return {...base,selectable:true,code:codes[0]||'ORDINARY',codes,messages:!info.covered&&messages.length>2?[messages[0],messages.at(-1)]:messages.slice(0,2)};
+ }
+ /** Read-only gate shared by editor completion, persistence and submission.
+  * Normalization is an explicit edit action; inspection never repairs input. */
+ function inspectDateParts(parts,now,{required=false,...options}={}){
+  const raw=Object.fromEntries(['year','month','day'].map(key=>[key,String(parts?.[key]??'')]));
+  if(raw.day==='')return {valid:!required,empty:true,code:required?'DATE_REQUIRED':'EMPTY',message:required?'날짜를 선택해 주세요.':'',value:'',evaluation:null};
+  if(Object.values(raw).some(value=>!/^\d+$/.test(value)))return {valid:false,empty:false,code:'INVALID_DATE',message:'해당 월에 존재하는 날짜를 입력해 주세요.',value:'',evaluation:null};
+  const value=dateKey(Number(raw.year),Number(raw.month),Number(raw.day));
+  const evaluation=evaluateDate({date:value,now,...options});
+  return {valid:evaluation.selectable,empty:false,code:evaluation.selectable?'VALID':evaluation.code,message:evaluation.selectable?'':evaluation.messages[0],value:validDate(value)?value:'',evaluation};
  }
  function nearestMonthly(dayRule,now,{unavailable=[]}={}){
   const today=todayKST(now);if(!today)return null;const isLast=dayRule==='last';const day=isLast?31:Number(dayRule);if(!Number.isInteger(day)||day<1||day>31)return null;
@@ -112,9 +129,9 @@ export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
   return {valid:evaluation.selectable,empty:false,code:evaluation.selectable?'VALID':evaluation.code,message:evaluation.selectable?'':'시작 예상일을 다시 선택해 주세요.',value,derived:monthly,evaluation};
  }
  function formatDate(key){if(!validDate(key))return '—';const [y,m,d]=key.split('-').map(Number);return `${y}년 ${m}월 ${d}일`;}
- return {version:'ORDER-DATE-D1R6-20261105',baseNotice,validDate,dateKey,utcDate,kstParts,todayKST,dateBounds,normalizeDateParts,normalizeDateDraft,addDays,daysBetween,dayInfo,evaluateDate,nearestMonthly,validateApprovedStart,formatDate};
+ return {version:'ORDER-DATE-D1R6-20261105',baseNotice,validDate,dateKey,utcDate,kstParts,todayKST,dateBounds,normalizeDateParts,normalizeDateDraft,addDays,daysBetween,dayInfo,evaluateDate,inspectDateParts,nearestMonthly,validateApprovedStart,formatDate};
 }
 const policy=createDatePolicy(KR_HOLIDAY_SNAPSHOT.records.filter(row=>row.isHoliday).map(row=>({...row,kind:row.type})));
-export const {version,baseNotice,validDate,dateKey,utcDate,kstParts,todayKST,dateBounds,normalizeDateParts,normalizeDateDraft,addDays,daysBetween,dayInfo,evaluateDate,nearestMonthly,validateApprovedStart,formatDate}=policy;
+export const {version,baseNotice,validDate,dateKey,utcDate,kstParts,todayKST,dateBounds,normalizeDateParts,normalizeDateDraft,addDays,daysBetween,dayInfo,evaluateDate,inspectDateParts,nearestMonthly,validateApprovedStart,formatDate}=policy;
 export const holidayVersion=KR_HOLIDAY_SNAPSHOT.version;
 export default policy;

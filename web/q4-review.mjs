@@ -5,9 +5,10 @@ import {bindNumericInputs,formatNumericText} from './numeric-input.mjs';
 import {frequencyPresentation,orderQuantityInput,repeatVisitPlan,nominalQuantity,sumNominalByReference,restoredDeliverySettings} from './q4-planning.mjs';
 import {dateFieldMarkup,bindDateField} from './date-field.mjs';
 import {nearestMonthly,validateApprovedStart} from './order-date.mjs';
+import {dateModeOptions,inspectOneTimeDate,oneTimeDateValue,oneTimeDateParts} from './q4-date.mjs';
 import {APPROVED_PERIODS,cadenceForPeriod,weeklyEstimate,availableCadences,quantityIssue,fixedFrequencyPresentation,editQuantityCadence,selectCadence,weekdayState} from './approved-schedule.mjs';
 import {fromRatio,toJSON,compare} from '../src/engine/calculation/exact.mjs';
-(()=>{'use strict';
+export function createQ4Review({bridge}){
 // Preserved UX shell and interactions; monthly quantities use the shared engine.
 // The regular-state bridge remains the sole persistence owner.
 const iconChevron=window.OrderAccordionView.chevron;
@@ -40,12 +41,11 @@ const requiredStar='<span class="ui-required qa-required-star" aria-hidden="true
 const holidayComplete=()=>((state.holidayNone||state.holidayIrregular||state.holidayDays.length>0)&&(state.mode==='FLEX'||!['','선택 안 함'].includes(state.holiday.conflict)));
 const isValid=v=>/^\d+$/.test(String(v??''))&&Number(v)>=1&&String(v).length<=12;
 function fields(i){const m=siteMode(i);return m==='ONCE'?['once']:['monthly','base',...(state.variable[i]?['min','max']:[])];}
-function status(i,acceptProposal=false){const v=state.values[i]||{},keys=fields(i),present=keys.filter(k=>String(v[k]??'')!=='').length,amountComplete=keys.every(k=>!q4QuantityInvalid(i,k));
- const contactOk=!isIndividual()||siteContactComplete(i);
- const holidayOk=!isIndividual()||!appliesSiteHoliday(i)||siteHolidayComplete(i);
- const repeatOk=siteMode(i)!=='FIXED'||OrderRepeatContract.inspect(isIndividual()?state.siteRepeat[i]:state).valid;
- const all=!numericComposing.size&&![...approvedDateBindings.values()].some(binding=>binding.inspect().valid===false)&&amountComplete&&contactOk&&holidayOk&&repeatOk&&dateIssue(i).valid;
+function status(i,acceptProposal=false){const v=state.values[i]||{},keys=fields(i),present=keys.filter(k=>String(v[k]??'')!=='').length,allocation=regularContext.allocations[i];
+ const issues=bridge.inspect(serializedAllocations(true)),blocked=issues.some(issue=>issue.stage==='q4'&&issue.lineId===regularContext.line.id&&(!issue.siteId||issue.siteId===allocation.locationId));
+ const all=!numericComposing.size&&![...approvedDateBindings.values()].some(binding=>binding.inspect().valid===false)&&!blocked;
  if(state.attempted&&!all)return 'error';if(all)return !acceptProposal&&monthlyPending(i)?'partial':'complete';if(present||state.variable[i]||(isIndividual()&&appliesSiteHoliday(i)&&state.siteHolidays[i].days.length)||(isIndividual()&&siteMode(i)==='FIXED'&&state.siteRepeat?.[i]?.weeklyCheck))return 'partial';return 'empty';}
+
 function checkbox(id,label,checked,attrs='',multiline=false){
  return `<label class="q4-check-row${multiline?' q4-check-row--multiline':''}"><input id="${id}" type="checkbox" ${checked?'checked':''} ${attrs}><span class="q4-check-icon" aria-hidden="true">✓</span><span class="q4-check-copy">${label}</span></label>`;
 }
@@ -88,7 +88,7 @@ function weekContent(n,site=null){const r=repeatDraft(site),v=OrderRepeatContrac
 }
 function repeatSection(site=null){if(site===null?state.mode!=='FIXED':siteMode(site)!=='FIXED')return '';
  const r=repeatDraft(site),i=site??0,prefix=site===null?'':`site-repeat-${site}-`,v=OrderRepeatContract.inspect(r),legacy=!r.cadence&&!['매주','매월','협의'].includes(r.period),interval=r.cadence?.kind==='INTERVAL_DAYS',approved=r.cadence?.version==='3.0.0';
- const allowed=availableCadences(state.values[i]?.monthly,state.values[i]?.base,r);
+ const owners=site===null?Array.from({length:state.count},(_,index)=>index):[i],allowed=APPROVED_PERIODS.filter(period=>owners.every(index=>availableCadences(state.values[index]?.monthly,state.values[index]?.base,repeatForSite(index),state.asOfLocalDate).includes(period)));
  const periodic=dropdown(prefix+'period','주문 주기 *',APPROVED_PERIODS,r.period,{disabled:APPROVED_PERIODS.filter(p=>!allowed.includes(p))});
  const computed=weeklyEstimate(state.values[i]?.monthly,state.values[i]?.base,state.asOfLocalDate).text;
  const freq=r.period==='협의'?'':r.period==='매월'?dropdown(prefix+'date','희망 납품일 *',['직접 입력','1일','5일','10일','15일','20일','25일','30일','31일','말일'],r.date):interval?`<div class="qa-field" data-field-size="short"><span class="qa-label ui-field-title" id="${prefix}fixed-frequency-label">주기 내 예상 납품횟수</span><output id="${prefix}fixed-frequency" class="qa-computed-output" aria-labelledby="${prefix}fixed-frequency-label">1회</output></div>`:dropdown(prefix+'freq','주기 내 예상 납품횟수 *',approved?['협의',computed]:['1회','2회','3회','4회','5회','6회','7회'],r.frequency);
@@ -267,7 +267,7 @@ async function applyCopy(){const host=$('qa-copy-confirm');if(!host||!host.open|
  if(copyReview.fingerprint!==copyDraftFingerprint()||JSON.stringify(copyReview.patches)!==JSON.stringify(copyReviewPatches())){setCopyStage();return;}
  const from=state.copySource,f={...state.copyFields},targets=[...state.copyTargets];if(targets.some(n=>copyIncompatibleReason(n))){setCopyStage();validateCopyAttempt();return;}
  const generation=copyGeneration,review=copyReview,context=regularContext;copyPending=true;host.querySelector('[data-copy-apply]').disabled=true;
- let current=false;try{current=await window.OrderRegularQ4Bridge.isCurrent();}catch{}
+ let current=false;try{current=await bridge.isCurrent();}catch{}
  if(generation!==copyGeneration||context!==regularContext||copyClosing||state.dialogClosed||!host.open||host!==$('qa-copy-confirm'))return;copyPending=false;
  if(!current||copyReview!==review||review.fingerprint!==copyDraftFingerprint()||JSON.stringify(review.patches)!==JSON.stringify(copyReviewPatches())){setCopyStage();if(!current){const feedback=host.querySelector('#qa-copy-feedback');feedback.textContent='변경을 적용하지 못했습니다. 입력을 확인한 후 다시 시도해 주세요.';feedback.classList.remove('ui-feedback-sr');}return;}
  copyApplied=true;applyCopyDraft(from,f,targets);closeCopy(false);render();travel(from);
@@ -281,12 +281,13 @@ function applyCopyDraft(from,f,targets){const srcMode=state.siteModes[from];
  }if(f.monthly)monthlyEditor?.clone(monthlyLocation(from),targets.map(monthlyLocation));syncMonthlyFields();
  // Copy confirmation is one private transaction. Reclassify the actually
  // copied quantities without clamping a destination's explicit manual Q.
- if(f.monthly||f.base)for(const dest of targets){if(siteMode(dest)!=='FIXED')continue;const r=state.siteRepeat[dest],next=plannedCopyRepeat(from,dest,f,state.values[dest].monthly);Object.assign(r,next);if(!next.monthlyMemory)delete r.monthlyMemory;state.quantityAdjusted[dest]=false;if(r.period==='매월')syncPreferredRule(dest);state.deliveryPlans[dest]=null;}
+ if(f.monthly||f.base)for(const dest of targets){if(siteMode(dest)!=='FIXED')continue;const r=state.siteRepeat[dest],next=plannedCopyRepeat(from,dest,f,state.values[dest].monthly);Object.assign(r,next);if(!next.cadenceSelection)delete r.cadenceSelection;if(!next.monthlyMemory)delete r.monthlyMemory;state.quantityAdjusted[dest]=false;if(r.period==='매월')syncPreferredRule(dest);state.deliveryPlans[dest]=null;}
  state.siteOpen=from;}
 function animateCopyCardHeight(){/* The disclosure body owns height; compact flex panel follows it naturally. No second animation on the same size change. */}
 function resizeCopyCardAfterToggle(){/* Error/target content changes use natural height within the common capped, single-scroll shell. */}
 function activeRepeat(i){return isIndividual()?state.siteRepeat[i]:state;}
-function supportInput(i){return {asOfLocalDate:state.asOfLocalDate,monthlyPlan:numericComposing.size||q4Numeric.inspect?.().valid===false?'':monthlyRow(i)?.quantity.raw||'',repeat:OrderRepeatContract.snapshot(activeRepeat(i)),reference:state.planningReferences?.[i],count:state.nominalVisitCounts?.[i]||'',quantity:state.values[i]?.base||'',variable:!!state.variable[i],min:state.values[i]?.min||'',max:state.values[i]?.max||''};}
+function repeatForSite(i){const repeat=OrderRepeatContract.snapshot(activeRepeat(i));if(state.count>1&&!isIndividual()&&state.commonMonthlyMemories){const memory=state.commonMonthlyMemories[i];if(memory)repeat.monthlyMemory=clone(memory);else delete repeat.monthlyMemory;}return repeat;}
+function supportInput(i){return {asOfLocalDate:state.asOfLocalDate,monthlyPlan:numericComposing.size||q4Numeric.inspect?.().valid===false?'':monthlyRow(i)?.quantity.raw||'',repeat:repeatForSite(i),reference:state.planningReferences?.[i],count:state.nominalVisitCounts?.[i]||'',quantity:state.values[i]?.base||'',variable:!!state.variable[i],min:state.values[i]?.min||'',max:state.values[i]?.max||''};}
 function frequencyMarkup(i){const input=supportInput(i),fallback=fixedFrequencyPresentation({monthly:input.monthlyPlan,quantity:input.quantity,variable:input.variable,min:input.min,max:input.max,unit:unit()}),flex=siteMode(i)==='FLEX'?frequencyPresentation(input):null,result=siteMode(i)==='FIXED'?fallback:flex.valid?flex:fallback;return `<span data-frequency-value>${escapeHTML(result.text)}</span>${result.valid&&result.basisText?`<span class="qa-computed-basis" data-frequency-basis>${escapeHTML(result.basisText||'')}</span>`:''}`;}
 function frequencyField(i){return `<div class="qa-field qa-frequency-field"><span class="qa-label ui-field-title" id="q4-frequency-label-${i}">월 예상 납품횟수</span><output id="q4-frequency-${i}" class="qa-computed-output" data-frequency-output="${i}" aria-labelledby="q4-frequency-label-${i}">${frequencyMarkup(i)}</output></div>`;}
 function refreshQuantitySupport(){if(!regularContext||!state.values)return;for(let i=0;i<state.count;i++){const output=document.querySelector(`[data-frequency-output="${i}"]`);if(output)output.innerHTML=frequencyMarkup(i);}}
@@ -334,16 +335,16 @@ function holidayStatus(){return holidayComplete()?'complete':state.attempted?'er
 
 
 const approvedDateBindings=new Map();
-function approvedDateActive(i){return siteMode(i)==='FIXED'&&APPROVED_PERIODS.includes(activeRepeat(i).period)&&activeRepeat(i).period!=='협의';}
-function readOnlyDate(i){return activeRepeat(i).period==='매월';}
+function approvedDateActive(i){return siteMode(i)==='ONCE'||siteMode(i)==='FIXED'&&APPROVED_PERIODS.includes(activeRepeat(i).period)&&activeRepeat(i).period!=='협의';}
+function readOnlyDate(i){return siteMode(i)==='FIXED'&&activeRepeat(i).period==='매월';}
 function approvedDateId(i){return `order-fixed-date-${dateDOMKey(i)}`;}
-function approvedDateValue(i){const r=activeRepeat(i);return r.period==='매월'?nearestMonthly(r.date==='말일'?'last':Number(String(r.date||'').replace(/일$/,'')),new Date())||'':r.cadence?.preferredDate||'';}
-function approvedDateIssue(i){const r=activeRepeat(i),cadence=cadenceForPeriod(r.period,r.cadence);if(r.period==='매월')cadence.dayRule=r.date==='말일'?'last':Number(String(r.date||'').replace(/일$/,''));return validateApprovedStart(cadence,new Date());}
+function approvedDateValue(i){if(siteMode(i)==='ONCE')return oneTimeDateValue(state.datesByAllocation[dateKey(i)]);const r=activeRepeat(i);return r.period==='매월'?nearestMonthly(r.date==='말일'?'last':Number(String(r.date||'').replace(/일$/,'')),new Date())||'':r.cadence?.preferredDate||'';}
+function approvedDateIssue(i){if(siteMode(i)==='ONCE')return inspectOneTimeDate(state.datesByAllocation[dateKey(i)],new Date());const r=activeRepeat(i),cadence=cadenceForPeriod(r.period,r.cadence);if(r.period==='매월')cadence.dayRule=r.date==='말일'?'last':Number(String(r.date||'').replace(/일$/,''));return validateApprovedStart(cadence,new Date());}
 function destroyApprovedDateFields(root=null){for(const [id,binding]of approvedDateBindings){if(!root||root.contains($(id))){binding.destroy();approvedDateBindings.delete(id);}}}
-function bindApprovedDateFields(root=$('q4-regular-fields')){root?.querySelectorAll('[data-approved-date-site]').forEach(wrapper=>{const i=Number(wrapper.dataset.approvedDateSite),field=wrapper.querySelector('[data-order-date-field]');if(!field||approvedDateBindings.has(field.id))return;const r=activeRepeat(i),key=preferredKey(i);
- const binding=bindDateField(field,{now:()=>new Date(),getDate:()=>approvedDateValue(i),onChange:(value,result)=>{if(!regularContext||state.dialogClosed)return;const current=activeRepeat(i);if(!approvedDateActive(i)||current.period==='매월')return;current.cadence=cadenceForPeriod(current.period,current.cadence);current.cadence.preferredDate=value||'';current.cadence.nominalAnchor=value||'';current.semantics='cadence-v3';state.approvedDateParts[key]={...result.parts};state.preferredTouched.add(key);state.preferredDates[key]=result.parts;refreshStatus(i);refreshResultsOnly();},error:state.attempted?approvedDateIssue(i).message:''});approvedDateBindings.set(field.id,binding);if(!readOnlyDate(i)&&state.approvedDateParts[key])binding.restoreParts(state.approvedDateParts[key]);
+function bindApprovedDateFields(root=$('q4-regular-fields')){root?.querySelectorAll('[data-approved-date-site]').forEach(wrapper=>{const i=Number(wrapper.dataset.approvedDateSite),field=wrapper.querySelector('[data-order-date-field]');if(!field||approvedDateBindings.has(field.id))return;const once=siteMode(i)==='ONCE',key=once?dateKey(i):preferredKey(i);
+ const binding=bindDateField(field,{...dateModeOptions(siteMode(i)),now:()=>new Date(),getDate:()=>approvedDateValue(i),...(once?{getParts:()=>state.datesByAllocation[dateKey(i)]}:{}),onChange:(value,result)=>{if(!regularContext||state.dialogClosed||!approvedDateActive(i)||readOnlyDate(i))return;if(once){state.datesByAllocation[key]=oneTimeDateParts(result.parts);state.dateTouched.add(key);}else{const current=activeRepeat(i);current.cadence=cadenceForPeriod(current.period,current.cadence);current.cadence.preferredDate=value||'';current.cadence.nominalAnchor=value||'';current.semantics='cadence-v3';state.preferredTouched.add(key);state.preferredDates[key]={...result.parts};}state.approvedDateParts[key]={...result.parts};refreshStatus(i);refreshResultsOnly();},error:state.attempted?approvedDateIssue(i).message:''});approvedDateBindings.set(field.id,binding);if(!readOnlyDate(i)&&state.approvedDateParts[key])binding.restoreParts(state.approvedDateParts[key]);
  });}
-function approvedDateSection(i){const r=activeRepeat(i),readOnly=r.period==='매월';return `<div data-approved-date-site="${i}">${dateFieldMarkup({id:approvedDateId(i),value:approvedDateValue(i),readOnly,required:!readOnly,now:new Date(),error:state.attempted?approvedDateIssue(i).message:''})}</div>`;}
+function approvedDateSection(i){const once=siteMode(i)==='ONCE',readOnly=readOnlyDate(i),options=dateModeOptions(siteMode(i));return `<div data-approved-date-site="${i}">${dateFieldMarkup({...options,label:readOnly?'정기 주문 시작 예상일':options.label,id:approvedDateId(i),value:approvedDateValue(i),...(once?{parts:state.datesByAllocation[dateKey(i)]}:{}),readOnly,required:options.required&&!readOnly,now:new Date(),error:state.attempted?approvedDateIssue(i).message:''})}</div>`;}
 // MSG0465 shared desired-date field. Keys use stable line+allocation identity, never a row index.
 const datePolicy=window.OrderDatePolicy;
 const dateKey=i=>JSON.stringify([regularContext.line.id,regularContext.allocations[i].id]);
@@ -494,7 +495,7 @@ function schedulePopupBadges(){
 }
 function paintPopupBadges(){
  if(!regularContext||state.dialogClosed)return;
- const issues=window.OrderRegularQ4Bridge.inspect(serializedAllocations(true)).map(i=>({...i,groupKey:[i.stage,i.lineId||'',i.siteId||'',i.fieldKey||i.issueId].join('|')}));
+ const issues=bridge.inspect(serializedAllocations(true)).map(i=>({...i,groupKey:[i.stage,i.lineId||'',i.siteId||'',i.fieldKey||i.issueId].join('|')}));
  const root=$('q4-regular-dialog'),title=$('q4-regular-title'),owners=[{key:'q4-draft',title,depth:0,available:true,matches:()=>true}];
  const available=node=>{for(let body=node.parentElement;body&&body!==root;body=body.parentElement){if(body.classList.contains('ui-accordion__body')&&body.parentElement.querySelector(':scope > .accordion-trigger')?.getAttribute('aria-expanded')!=='true')return false;}return true;};
  for(const item of root.querySelectorAll('#q4-regular-fields [data-ui-subaccordion]')){
@@ -651,7 +652,8 @@ function selectedOption(id,val){
  const match=id.match(/^site-repeat-(\d+)-(period|freq|date)$/),key=match?match[2]:id;
  if(match||['period','freq','date'].includes(id)){
   const site=match?Number(match[1]):null,r=repeatDraft(site);q4ValidationEpoch++;
-  if(key==='period'){if(r.cadence?.version==='3.0.0'&&r.period===val){closeQ4Dropdown();return;}const i=site??0,before=quantityCadenceSnapshot(i),beforeQuantity=state.values[i].base,result=selectCadence({repeat:OrderRepeatContract.snapshot(r),monthly:state.values[i].monthly,quantity:state.values[i].base,period:val,asOfLocalDate:state.asOfLocalDate});if(!result.accepted)return;Object.assign(r,result.repeat);if(!result.repeat.monthlyMemory)delete r.monthlyMemory;state.values[i].base=result.quantity;state.quantityAdjusted[i]=result.adjusted;if(r.period==='매월')syncPreferredRule(site);const input=document.querySelector(`[data-qty="${i}:base"]`);if(input){q4Numeric.replace(input,result.quantity,{notify:false,history:'append'});const history=q4Numeric.inspectHistory(input);if(history&&String(beforeQuantity)!==result.quantity){const edits=quantityCadenceHistory.get(input)||new Map();edits.set(history.key,{before,after:quantityCadenceSnapshot(i)});quantityCadenceHistory.set(input,edits);}}state.attempted=false;}
+  if(key==='period'&&site===null&&state.count>1){const selections=Array.from({length:state.count},(_,i)=>selectCadence({repeat:repeatForSite(i),monthly:state.values[i].monthly,quantity:state.values[i].base,period:val,asOfLocalDate:state.asOfLocalDate}));if(selections.some(result=>!result.accepted))return;if(selections.some(result=>result.repeat.frequency!==selections[0].repeat.frequency)){materializeCommonSettings();for(let i=0;i<state.count;i++){state.siteRepeat[i]=selections[i].repeat;state.values[i].base=selections[i].quantity;state.quantityAdjusted[i]=selections[i].adjusted;}state.attempted=false;closeQ4Dropdown();render();return;}Object.assign(state,selections[0].repeat);if(!selections[0].repeat.monthlyMemory)delete state.monthlyMemory;state.commonMonthlyMemories=selections.map(result=>result.repeat.monthlyMemory?clone(result.repeat.monthlyMemory):null);for(let i=0;i<state.count;i++){state.values[i].base=selections[i].quantity;state.quantityAdjusted[i]=selections[i].adjusted;}if(val==='매월')syncPreferredRule(null);state.attempted=false;closeQ4Dropdown();render();return;}
+  if(key==='period'){if(r.cadence?.version==='3.0.0'&&r.period===val&&r.cadenceSelection==='manual'){closeQ4Dropdown();return;}const i=site??0,before=quantityCadenceSnapshot(i),beforeQuantity=state.values[i].base,result=selectCadence({repeat:OrderRepeatContract.snapshot(r),monthly:state.values[i].monthly,quantity:state.values[i].base,period:val,asOfLocalDate:state.asOfLocalDate});if(!result.accepted)return;Object.assign(r,result.repeat);if(!result.repeat.cadenceSelection)delete r.cadenceSelection;if(!result.repeat.monthlyMemory)delete r.monthlyMemory;state.values[i].base=result.quantity;state.quantityAdjusted[i]=result.adjusted;if(r.period==='매월')syncPreferredRule(site);const input=document.querySelector(`[data-qty="${i}:base"]`);if(input){q4Numeric.replace(input,result.quantity,{notify:false,history:'append'});const history=q4Numeric.inspectHistory(input);if(history&&String(beforeQuantity)!==result.quantity){const edits=quantityCadenceHistory.get(input)||new Map();edits.set(history.key,{before,after:quantityCadenceSnapshot(i)});quantityCadenceHistory.set(input,edits);}}state.attempted=false;}
   else if(key==='freq'){r.frequency=val;r.legacyReviewRequired=false;r.semantics=r.cadence?.version==='3.0.0'?'cadence-v3':r.cadence?'cadence-v2':'per-week-v1';}
   else {r.date=val==='직접 입력'?'':val;r.dateMode=val==='직접 입력'?'custom':'preset';monthEditing.delete(id);if(!r.cadence)r.cadence=createCadence('매월');syncPreferredRule(site);}
   closeQ4Dropdown();renderRepeatOnly(site);
@@ -716,7 +718,7 @@ $('q4-regular-dialog').addEventListener('click',e=>{
  const siteDay=e.target.closest('[data-site-weekday]');if(siteDay){const [si,n,d]=siteDay.dataset.siteWeekday.split(':');toggleRepeatDay(Number(si),Number(n),d,siteDay);return;}
  const day=e.target.closest('[data-weekday]');if(day){const [n,d]=day.dataset.weekday.split(':');toggleRepeatDay(null,Number(n),d,day);return;}
  const accB=e.target.closest('[data-acc]');if(accB){const id=accB.dataset.acc;if(id==='qa-copy-fields'){const open=accB.getAttribute('aria-expanded')!=='true';const card=document.querySelector('#qa-copy-confirm .qa-copy-card'),body=$('qa-copy-fields-body');const from=card?.getBoundingClientRect().height||0;const prior=body?.getBoundingClientRect().height||0;setOpen(id,open);const targetBody=open?(body?.scrollHeight||0):0;animateCopyCardHeight(from,from+targetBody-prior);return;}if(id==='business-parent'){state.parentOpen=!state.parentOpen;setOpen(id,state.parentOpen);}else if(id==='qa-holiday'){state.advancedOpen=!state.advancedOpen;setOpen(id,state.advancedOpen);}else if(id.startsWith('site-holiday-')){const i=Number(id.split('-').at(-1));state.siteHolidayOpen[i]=!state.siteHolidayOpen[i];setOpen(id,state.siteHolidayOpen[i]);}else if(id.startsWith('site-week-')){const m=id.match(/^site-week-(\d+)-(\d+)$/);if(m){const r=state.siteRepeat[+m[1]],n=+m[2];r.weekOpen=r.weekOpen===n?0:n;setOpen(id,r.weekOpen===n);}}else if(id.startsWith('week-')){state.weekOpen=state.weekOpen===Number(id.slice(5))?0:Number(id.slice(5));setOpen(id,state.weekOpen===Number(id.slice(5)));}else if(id.startsWith('site-')){const i=Number(id.slice(5));if(state.siteOpen===i){state.siteOpen=-1;setOpen(id,false);}else travel(i);}else if(id==='q1-ref'){setOpen(id,accB.getAttribute('aria-expanded')!=='true');}return;}
- if(e.target.closest('[data-individual]')){state.mode='MIXED';render();return;}
+ if(e.target.closest('[data-individual]')){materializeCommonSettings();state.mode='MIXED';render();return;}
  const siteChoice=e.target.closest('[data-site-choice]');if(siteChoice){const i=Number(siteChoice.dataset.siteChoice);state.siteModes[i]=siteChoice.dataset.value;/* preserve existing per-site values and variable state */renderSite(i);refreshResultsOnly();travel(i);return;}
  const siteProcess=e.target.closest('[data-site-process]');if(siteProcess){const i=Number(siteProcess.dataset.siteProcess);state.siteProcess[i]=siteProcess.dataset.value;document.querySelectorAll(`[data-site-process="${i}"]`).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.value===state.siteProcess[i])));return;}
  const scday=e.target.closest('[data-site-closed-day]');if(scday){const [a,d]=scday.dataset.siteClosedDay.split(':');const i=Number(a),h=state.siteHolidays[i];h.none=false;h.irregular=false;h.days=h.days.includes(d)?h.days.filter(x=>x!==d):[...h.days,d];document.querySelectorAll(`[data-site-closed-day^="${i}:"]`).forEach(el=>el.setAttribute('aria-pressed',String(h.days.includes(el.dataset.siteClosedDay.split(':')[1]))));const none=$(`qa-holiday-none-site-${i}`),irr=$(`qa-holiday-irregular-site-${i}`);if(none)none.checked=false;if(irr)irr.checked=false;q4ValidationEpoch++;siteHolidayMark(i);return;}
@@ -748,7 +750,7 @@ $('q4-regular-dialog').addEventListener('change',e=>{const el=e.target;if(!el.ma
  else if('var' in el.dataset){const i=Number(el.dataset.var);state.variable[i]=el.checked;changeVariant(i);}
 });
 function materializeCommonSettings(){if(isIndividual()||state.count<2)return;const mode=state.mode,holiday={days:[...state.holidayDays],none:state.holidayNone,irregular:state.holidayIrregular,...state.holiday,request:state.request},repeat=OrderRepeatContract.snapshot(state),raw=state.preferredDates[preferredKey(0)],approvedParts=state.approvedDateParts[preferredKey(0)],touched=state.preferredTouched.has(preferredKey(0)),review=state.startDateReviews[preferredKey(0)],result=state.startDateResults[preferredKey(0)];
- for(let i=0;i<state.count;i++){state.siteModes[i]=mode;state.siteContacts[i]=clone(state.contact);state.siteHolidays[i]=clone(holiday);state.siteRepeat[i]=clone(repeat);state.siteProcess[i]=state.process;}
+ for(let i=0;i<state.count;i++){state.siteModes[i]=mode;state.siteContacts[i]=clone(state.contact);state.siteHolidays[i]=clone(holiday);state.siteRepeat[i]=repeatForSite(i);state.siteProcess[i]=state.process;}
  state.mode='MIXED';for(let i=0;i<state.count;i++){if(approvedParts)state.approvedDateParts[preferredKey(i)]=clone(approvedParts);if(raw)state.preferredDates[preferredKey(i)]=clone(raw);else delete state.preferredDates[preferredKey(i)];if(review)state.startDateReviews[preferredKey(i)]=clone(review);else delete state.startDateReviews[preferredKey(i)];if(result)state.startDateResults[preferredKey(i)]=clone(result);else delete state.startDateResults[preferredKey(i)];if(touched)state.preferredTouched.add(preferredKey(i));else state.preferredTouched.delete(preferredKey(i));}
 }
 // Numeric history owns the quantity; this sidecar only couples the explicitly
@@ -769,7 +771,7 @@ function applyQuantityInput(i,key,raw,{phase='input',direct=true,input=null,comp
  if(key==='monthly'){monthlyEditor?.set(monthlyLocation(i),value,{composing:false,complete:direct});value=monthlyRow(i)?.quantity.raw??value;state.values[i].monthly=value;syncMonthlyFields();}
  else if(key==='base'&&siteMode(i)==='FLEX'){const result=orderQuantityInput({mode:'FLEX',monthlyPlan:monthlyRow(i)?.quantity.raw||'',quantity:value,asOfLocalDate:state.asOfLocalDate,phase,direct,composing:false});value=result.quantity;state.values[i][key]=value;}
  else state.values[i][key]=value;
- if(acceptedEdit&&!restored&&!historyConflict){const r=activeRepeat(i),result=editQuantityCadence({repeat:OrderRepeatContract.snapshot(r),monthly:state.values[i].monthly,quantity:state.values[i].base,field:key,value,asOfLocalDate:state.asOfLocalDate});Object.assign(r,result.repeat);if(!result.repeat.monthlyMemory)delete r.monthlyMemory;state.values[i].base=result.quantity;state.quantityAdjusted[i]=result.adjusted;if(r.period==='매월'){delete state.preferredDates[preferredKey(i)];syncPreferredRule(isIndividual()?i:null);}value=state.values[i][key];repeatChanged=true;}
+ if(acceptedEdit&&!restored&&!historyConflict){const r=activeRepeat(i),result=editQuantityCadence({repeat:OrderRepeatContract.snapshot(r),monthly:state.values[i].monthly,quantity:state.values[i].base,field:key,value,asOfLocalDate:state.asOfLocalDate});Object.assign(r,result.repeat);if(!result.repeat.cadenceSelection)delete r.cadenceSelection;if(!result.repeat.monthlyMemory)delete r.monthlyMemory;state.values[i].base=result.quantity;state.quantityAdjusted[i]=result.adjusted;if(r.period==='매월'){delete state.preferredDates[preferredKey(i)];syncPreferredRule(isIndividual()?i:null);}value=state.values[i][key];repeatChanged=true;}
  if(!['monthly','base'].includes(key)&&oldValue!==value)state.quantityAdjusted[i]=false;if(key==='base'&&direct)state.qtySources[i]='user';state.deliveryPlans[i]=null;
  if(direct&&oldValue!==value)state.quantityTouched.add(`${i}:${key}`);if(input)q4Numeric.replace(input,value,{notify:false,history:'replace'});
  if(cadenceEdit&&acceptedEdit&&!restored&&!historyConflict){const history=input&&q4Numeric.inspectHistory(input);if(history){const entries=edits||new Map();for(const k of entries.keys())if(!history.keys.includes(k))entries.delete(k);entries.set(history.key,{before,after:quantityCadenceSnapshot(i)});quantityCadenceHistory.set(input,entries);}}
@@ -827,25 +829,25 @@ function initializeFromRegular(context){
   siteProcess:restoredSites.map(site=>site.process),
   siteContacts:restoredSites.map(site=>clone(site.contact)),
   siteHolidays:restoredSites.map(site=>clone(site.holiday)),
-  siteHolidayOpen:Array(count).fill(false),siteRepeat:restoredSites.map((site,i)=>normalizeSavedRepeat(site.repeat,context.allocations[i])),siteQuality:restoredSites.map(site=>site.quality)});
+  commonMonthlyMemories:restoredSites.map(site=>site.repeat?.monthlyMemory?clone(site.repeat.monthlyMemory):null),siteHolidayOpen:Array(count).fill(false),siteRepeat:restoredSites.map((site,i)=>normalizeSavedRepeat(site.repeat,context.allocations[i])),siteQuality:restoredSites.map(site=>site.quality)});
  const h=common.holiday,r=normalizeSavedRepeat(common.repeat,first);
- Object.assign(state,{contact:common.contact,process:common.process,quality:common.quality,period:r.period,frequency:r.frequency,date:r.date,dateMode:r.dateMode,semantics:r.semantics,weekdayOrder:clone(r.weekdayOrder||[]),monthlyMemory:r.monthlyMemory?clone(r.monthlyMemory):undefined,quantityEditVersion:r.quantityEditVersion,legacyReviewRequired:!!r.legacyReviewRequired,legacyOriginal:r.legacyOriginal,cadence:r.cadence?clone(r.cadence):undefined,weeklyCheck:r.weeklyCheck,weekdays:r.weekdays,weekOpen:r.weekOpen||0,
+ Object.assign(state,{contact:common.contact,process:common.process,quality:common.quality,period:r.period,frequency:r.frequency,date:r.date,dateMode:r.dateMode,semantics:r.semantics,weekdayOrder:clone(r.weekdayOrder||[]),monthlyMemory:r.monthlyMemory?clone(r.monthlyMemory):undefined,quantityEditVersion:r.quantityEditVersion,cadenceSelection:r.cadenceSelection,legacyReviewRequired:!!r.legacyReviewRequired,legacyOriginal:r.legacyOriginal,cadence:r.cadence?clone(r.cadence):undefined,weeklyCheck:r.weeklyCheck,weekdays:r.weekdays,weekOpen:r.weekOpen||0,
   holidayDays:[...h.days],holidayNone:h.none,holidayIrregular:h.irregular,holiday:{closed:'',conflict:h.conflict,weekend:h.weekend,holiday:h.holiday,subholiday:h.subholiday},request:h.request});
- monthlyEditor=createMonthlyAllocationDraft(context,{readCurrentContext:()=>window.OrderRegularQ4Bridge.allocationContext?.(context.line.id)||context});syncMonthlyFields();
+ monthlyEditor=createMonthlyAllocationDraft(context,{readCurrentContext:()=>bridge.allocationContext?.(context.line.id)||context});syncMonthlyFields();
  returnFocus=document.activeElement;render();dirtyBaseline=dirtyFingerprint();openProductModal();fitAllResultNumbers();
 }
 function serializedAllocations(forReview=false){const patches=regularContext.allocations.map((original,i)=>{
- const a=clone(original),m=siteMode(i),v=state.values[i],r=isIndividual()?state.siteRepeat[i]:state;
+ const a=clone(original),m=siteMode(i),v=state.values[i],r=repeatForSite(i);
  const h=isIndividual()?state.siteHolidays[i]:{days:state.holidayDays,none:state.holidayNone,irregular:state.holidayIrregular,...state.holiday,request:state.request};
  const c=isIndividual()?state.siteContacts[i]:state.contact,process=isIndividual()?state.siteProcess[i]:state.process;
  const period=r.period==='매월'?0:r.period==='매주'?1:parseInt(r.period,10);
  const plans=Array.from({length:period===0?0:Math.max(1,period)},(_,w)=>({weekdays:['월','화','수','목','금','토','일'].filter(d=>r.weekdays?.[`${w+1}:${d}`])}));
  Object.assign(a,{mode:m,modeExplicit:true,qty:String(m==='ONCE'?v.once??'':v.base??''),qtySource:state.qtySources[i],deliveryQtyUnit:state.pack==='30'?'tray':'pack',variableQty:m!=='ONCE'&&!!state.variable[i],qtyMin:m!=='ONCE'&&state.variable[i]?v.min??'':'',qtyMax:m!=='ONCE'&&state.variable[i]?v.max??'':'',qualityTest:!!state.siteQuality[i]});
  if(m==='ONCE')a.oneTimeDeliveryQty=String(v.once??'');if(state.deliveryPlans[i])a.deliveryPlan=clone(state.deliveryPlans[i]);else delete a.deliveryPlan;
- if(m==='FIXED'){if(r.period==='매월'&&r.cadence?.version==='3.0.0'){const value=approvedDateValue(i);r.cadence.preferredDate=value;r.cadence.nominalAnchor=value;}const packed=OrderRepeatContract.serialize(r);if(!packed.ok&&!forReview)throw new Error(packed.issue.message);if(packed.ok)Object.assign(a,packed.value);}
+ if(m==='FIXED'){if(r.period==='매월'&&r.cadence?.version==='3.0.0'){const value=approvedDateValue(i);r.cadence.preferredDate=value;r.cadence.nominalAnchor=value;}const packed=OrderRepeatContract.serialize(r);if(!packed.ok&&!forReview)throw new Error(packed.issue.message);if(packed.ok)Object.assign(a,packed.value);else if(forReview){if(r.cadence)a.cadence=clone(r.cadence);else delete a.cadence;}}
  a.advanced={...(a.advanced||{}),contactChannels:Object.keys(c).filter(k=>c[k]),...(m!=='ONCE'?{storeOffDays:[...h.days],storeOffNone:!!h.none,storeOffIrregular:!!h.irregular,memo:h.request||''}:{}),...(m==='FIXED'?{storeOffPolicy:legacyPolicy(h.conflict,'conflict'),weekend:legacyPolicy(h.weekend,'weekend'),holiday:legacyPolicy(h.holiday,'holiday'),substituteHoliday:legacyPolicy(h.subholiday,'subholiday')}:{})};
  a.q4Review={version:'0460',asOfLocalDate:state.asOfLocalDate,...(m==='FIXED'&&r.cadence?.preferredDate?{startDateReview:clone(startDateReview(i))}:original.q4Review?.startDateReview?{startDateReview:clone(original.q4Review.startDateReview)}:{}),pack:String(regularContext.line.pack),profile:state.mode,activeHoliday:m==='ONCE'?clone(original.q4Review?.activeHoliday||h):clone(h),activeRepeat:m==='FIXED'?OrderRepeatContract.snapshot(r):clone(original.q4Review?.activeRepeat||OrderRepeatContract.snapshot(r)),deliveryDate:clone(state.datesByAllocation[dateKey(i)]),
-  common:{contact:clone(state.contact),process:state.process,quality:state.quality,holiday:{days:[...state.holidayDays],none:state.holidayNone,irregular:state.holidayIrregular,...state.holiday,request:state.request},repeat:OrderRepeatContract.snapshot(state)},
+  common:{contact:clone(state.contact),process:state.process,quality:state.quality,holiday:{days:[...state.holidayDays],none:state.holidayNone,irregular:state.holidayIrregular,...state.holiday,request:state.request},repeat:m==='FIXED'&&!isIndividual()?clone(r):OrderRepeatContract.snapshot(state)},
   draft:{mode:state.siteModes[i],process:state.siteProcess[i],values:clone(v),variable:state.variable[i],contact:clone(state.siteContacts[i]),holiday:clone(state.siteHolidays[i]),repeat:OrderRepeatContract.snapshot(state.siteRepeat[i]),quality:state.siteQuality[i]}};
  return a;
 });return monthlyEditor?monthlyEditor.serialize(patches):patches;}
@@ -869,39 +871,44 @@ async function saveRegularDraft(){if(committing||state.dialogClosed)return;const
   const canCommit=()=>{if(!sameEditor()||commitEpoch!==epoch||state.asOfLocalDate!==localDateISO()||q4Numeric.inspect?.().valid===false||numericComposing.size||[...approvedDateBindings.values()].some(binding=>binding.inspect().valid===false))return false;try{return Array.from({length:state.count},(_,i)=>dateIssue(i).valid).every(Boolean)&&JSON.stringify({patches:serializedAllocations(),preferredDates:state.preferredDates})===fingerprint;}catch{return false;}};
   const prepared=monthlyEditor?.confirm({allocations:patches});
   if(!prepared?.ok){showCommitError(prepared||{message:'월 주문 수량을 확인해 주세요.'});return;}
-  const result=await window.OrderRegularQ4Bridge.commit(prepared.allocations,null,canCommit);
+  const result=await bridge.commit(prepared.allocations,null,canCommit);
   if(!sameEditor()||epoch!==commitEpoch||attempt!==commitAttempt)return;
   if(result.ok)disposeProductModal();
   else if(!result.confirmation)showCommitError(result.status==='CANCELLED'&&!canCommit()?{message:'입력값이 변경되었습니다. 다시 저장해 주세요.'}:result);
  }finally{if(attempt===commitAttempt)committing=false;}}
 function monthlyResultData(){
  const usageValid=!!regularContext?.line&&validMonthlyQuantity(regularContext.line),indexes=Array.from({length:state.count},(_,i)=>i).filter(i=>siteMode(i)!=='ONCE');
- const base={usage:usageValid?monthlyQuantityText(regularContext.line):'—',value:'—',comparison:'pending',status:'예상 수량 확인 전',complete:false};
+ const [year,month]=String(state.asOfLocalDate||'').split('-').map(Number),reference={year,month},periodLabel=year&&month?`${year}년 ${month}월 납품 예상`:'월간 납품 예상';
+ const base={usage:usageValid?monthlyQuantityText(regularContext.line):'—',value:'—',periodLabel,comparison:'pending',status:numericComposing.size?'수량 입력 중':'납품 일정 미확정',complete:false};
  if(!indexes.length||numericComposing.size)return base;
- const values=[],entries=[];
+ const entries=[],omissions=[];
  for(const i of indexes){
-  const entry={reference:state.planningReferences[i],value:null};entries.push(entry);
-  if(siteMode(i)==='FLEX')continue;
-  const input=supportInput(i),visits=repeatVisitPlan(input.repeat,input.reference,input.count);if(!visits.resolved)continue;
-  const value=nominalQuantity({...input,visits:visits.visits});
-  if(value){values.push(value);entry.value=value;}
+  const entry={reference,value:null};entries.push(entry);const input={...supportInput(i),reference:{...state.planningReferences?.[i],...reference}};
+  let reason='';
+  if(siteMode(i)==='FLEX')reason='소진 시 주문으로 일정 미정';
+  else if(input.repeat.period==='협의')reason='일정 협의 중';
+  else{const visits=repeatVisitPlan(input.repeat,input.reference,input.count);
+   if(visits.resolved){entry.value=nominalQuantity({...input,visits:visits.visits});if(!entry.value)reason='회당 수량 확인 필요';}
+   else if(visits.reason==='PARTIAL_WEEKDAYS'){const selected=Object.values(input.repeat.weekdays||{}).filter(Boolean).length;reason=`주 ${String(input.repeat.frequency).replace(/^약\s*/,'')} 중 희망 요일 ${selected}개, 나머지 일정 미정`;}
+   else reason=visits.reason==='OPTIONAL_ANCHOR_UNSELECTED'?'시작일 미선택':visits.reason==='WEEKDAYS_UNSELECTED'?'희망 요일 미선택':'납품 일정 미확정';
+  }
+  if(reason)omissions.push(`${names[i]||`사업장 ${i+1}`} ${reason}`);
  }
- if(!values.length)return {...base,status:indexes.every(i=>siteMode(i)==='FLEX')?'':'예상 수량 확인 전'};
- const scope=sumNominalByReference(entries);
- const sum=scope.total,low=exactDisplay(toJSON(sum.low)),high=exactDisplay(toJSON(sum.high));
- const complete=scope.complete,plan=monthlyEditor?.evaluate().normalized?.planSumPacks;let comparison='pending',status=complete?'':`${values.length}/${indexes.length}개 사업장 부분합`;
+ const scope=sumNominalByReference(entries),status=[`반복 주문 ${indexes.length}곳 중 ${scope.resolvedCount}곳 반영`,...omissions].join(' · ');
+ if(!scope.total)return {...base,status};
+ const sum=scope.total,low=exactDisplay(toJSON(sum.low)),high=exactDisplay(toJSON(sum.high)),complete=scope.complete,plan=monthlyEditor?.evaluate().normalized?.planSumPacks;let comparison='pending';
  if(complete&&plan){const p=fromRatio(plan);comparison=compare(sum.low,p)===0&&compare(sum.high,p)===0?'match':compare(sum.high,p)<0?'short':compare(sum.low,p)>0?'over':'range';}
  return {...base,value:low===high?low:`${low} ~ ${high}`,comparison,status,complete};
 }
 function Q4ResultSummary(mode,monthly,once){
- const card=(kind,title,number)=>`<article class="q4-result-card" data-card-kind="${kind}"><div class="q4-result-card-title">${title}</div><div class="q4-result-number-row"><span class="q4-result-number" data-result-value="${kind}" data-pending="${number==='—'}">${escapeHTML(number)}</span>${kind==='once'?`<span class="q4-result-once-unit" aria-hidden="true">${unit()}</span>`:''}</div><div class="q4-result-card-foot">${kind==='once'?`<span data-result-count>${once?.indexes.length||0}개 사업장</span>`:`${kind==='usage'?quantityLabel(regularContext.line):unit()} / 월`}</div></article>`;
+ const card=(kind,title,number)=>`<article class="q4-result-card" data-card-kind="${kind}"><div class="q4-result-card-title" data-result-title="${kind}">${escapeHTML(title)}</div><div class="q4-result-number-row"><span class="q4-result-number" data-result-value="${kind}" data-pending="${number==='—'}">${escapeHTML(number)}</span>${kind==='once'?`<span class="q4-result-once-unit" aria-hidden="true">${unit()}</span>`:''}</div><div class="q4-result-card-foot">${kind==='once'?`<span data-result-count>${once?.indexes.length||0}개 사업장</span>`:`${kind==='usage'?quantityLabel(regularContext.line):unit()} / 월`}</div></article>`;
  const onceValue=once?.complete?once.total.toLocaleString('ko-KR'):'—';
- return `<section class="qa-form-section q4-result-section" data-section="results" data-summary-mode="${mode}" aria-label="납품 예상 요약"><h3 class="qa-result-heading" tabindex="-1">${mode==='both'?'납품 예상 요약':mode==='monthly'?'월간 납품 예상':'1회 주문 예상'}</h3><div class="q4-result-grid">${monthly?card('usage','기존 사용량',monthly.usage)+card('monthly','월간 납품 예상',monthly.value):''}${once?card('once','1회 주문',onceValue):''}${monthly?`<div class="q4-result-comparison" data-result-status data-comparison="${monthly.comparison}">${escapeHTML(monthly.status)}</div>`:''}</div></section>`;
+ return `<section class="qa-form-section q4-result-section" data-section="results" data-summary-mode="${mode}" aria-label="납품 예상 요약"><h3 class="qa-result-heading" tabindex="-1">${mode==='both'?'납품 예상 요약':mode==='monthly'?'월간 납품 예상':'1회 주문 예상'}</h3><div class="q4-result-grid">${monthly?card('usage','기존 사용량',monthly.usage)+card('monthly',monthly.periodLabel||'월간 납품 예상',monthly.value):''}${once?card('once','1회 주문',onceValue):''}${monthly?`<div class="q4-result-comparison" data-result-status data-comparison="${monthly.comparison}">${escapeHTML(monthly.status)}</div>`:''}</div></section>`;
 }
 function refreshResultsOnly(){refreshQuantitySupport();const host=$('q4-regular-fields');if(!host)return;const t=document.createElement('template');t.innerHTML=resultSection();const fresh=t.content.firstElementChild,current=host.querySelector(':scope > [data-section="results"]');
  if(!fresh){current?.remove();return;}if(!current){host.append(fresh);observeResults();return;}
  if(current.dataset.summaryMode!==fresh.dataset.summaryMode){current.dataset.summaryMode=fresh.dataset.summaryMode;current.replaceChildren(...fresh.childNodes);observeResults();return;}
- for(const s of ['[data-result-value="usage"]','[data-result-value="monthly"]','[data-result-value="once"]','[data-result-count]','[data-result-status]']){const a=current.querySelector(s),b=fresh.querySelector(s);if(a&&b){if(a.textContent!==b.textContent)a.textContent=b.textContent;for(const k of ['pending','comparison'])if(b.dataset[k]!==undefined)a.dataset[k]=b.dataset[k];}}
+ for(const s of ['[data-result-title="monthly"]','[data-result-value="usage"]','[data-result-value="monthly"]','[data-result-value="once"]','[data-result-count]','[data-result-status]']){const a=current.querySelector(s),b=fresh.querySelector(s);if(a&&b){if(a.textContent!==b.textContent)a.textContent=b.textContent;for(const k of ['pending','comparison'])if(b.dataset[k]!==undefined)a.dataset[k]=b.dataset[k];}}
  fitAllResultNumbers();
 }
 // Measurement is event/ResizeObserver driven, never a per-frame font polling loop.
@@ -935,7 +942,7 @@ function observeResults(){resultObserver?.disconnect();resultObserver=new Resize
 function invalidateResultFonts(){document.querySelectorAll('#q4-regular-dialog .q4-result-number').forEach(n=>fitCache.delete(n));fitAllResultNumbers();}
 if(document.fonts){document.fonts.ready.then(invalidateResultFonts);document.fonts.addEventListener('loadingdone',invalidateResultFonts);}
 function setRegularGutter(){window.OrderModalShell.sync();}
-function endRegularClose(){monthlyEditor?.cancel();monthlyEditor=null;cancelAnimationFrame(popupBadgeFrame);popupBadgeFrame=0;resultObserver?.disconnect();window.OrderRegularQ4Bridge.closed();regularContext=null;}
+function endRegularClose(){monthlyEditor?.cancel();monthlyEditor=null;cancelAnimationFrame(popupBadgeFrame);popupBadgeFrame=0;resultObserver?.disconnect();bridge.closed();regularContext=null;}
 window.OrderQ4Review=Object.freeze({open:initializeFromRegular,close:closeProductModal,complete:disposeProductModal,validate:validateForSave,commitError:showCommitError,
  get allocation(){return monthlyEditor?clone({evaluation:monthlyEditor.evaluate(),rows:monthlyEditor.rows,revision:monthlyEditor.session?.revision}):null;},get draft(){return regularContext?clone(state):null;},get serialized(){return regularContext?serializedAllocations():null;},get context(){return regularContext?clone(regularContext):null;}});
 // Global/single-site holiday view uses the same group-owned feedback as the preserved per-site view.
@@ -983,5 +990,5 @@ function q4QuantityInvalid(i,key){const v=state.values[i]||{};if(key==='monthly'
 function syncRegularQuantityErrors(i){const root=$(`site-${i}`)||$('single-site');root?.querySelectorAll('[data-qty]').forEach(el=>{const [si,key]=el.dataset.qty.split(':');if(+si!==i)return;const invalid=quantityFeedbackVisible(i,key)&&q4QuantityInvalid(i,key);el.setAttribute('aria-invalid',String(invalid));const group=el.closest('.qa-field');if(group){group.dataset.error=String(invalid);const note=group.querySelector('[data-quantity-error]');if(note){note.hidden=!invalid;note.textContent=invalid?q4QuantityMessage(i,key):'';}}});}
 
 
-})();
-window.__orderReviewBoot();
+return window.OrderQ4Review;
+}

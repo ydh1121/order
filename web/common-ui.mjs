@@ -1,3 +1,5 @@
+import {inspectQ4Allocation,quantityBoundIssue,inspectQ4Groups} from './q4-validation.mjs';
+import {inspectOneTimeDate} from './q4-date.mjs';
 import {OrderHolidaySnapshot} from '../src/engine/reference/kr-holidays.mjs';
 import {validMonthlyQuantity} from './quantity-contract.mjs';
 import {addressStatus} from './address-contract.mjs';
@@ -74,7 +76,7 @@ window.OrderRepeatContract=Object.freeze((()=>{
   return {ok:true,value:{repeatSemantics:'per-week-v1',intervalWeeks:W,frequencyPerWeek:W===0?null:v.perWeek,freq:W===0?1:v.perWeek,cycleCount:W===0?1:v.total,monthDay:W===0?month.value:'',scheduleDetail:W>0&&r.weeklyCheck?'days':'count',weekPlans:plans,days:plans[0]?.weekdays||[]}};
  }
  function resetPeriod(r,value){const approved=r.cadence?.version==='3.0.0'||r.quantityEditVersion==='0540',cadence=(approved?createApprovedCadence:createCadence)(value,r.cadence);if(!cadence)return false;if(r.period===value&&r.cadence)return false;r.period=value;r.cadence=cadence;if(!approved){r.weeklyCheck=false;r.weekdays={};}r.weekOpen=0;r.legacyReviewRequired=false;r.semantics=approved?'cadence-v3':'cadence-v2';if(cadence.kind==='INTERVAL_DAYS')r.frequency='1회';if(value==='매월'){r.date=cadence.dayRule==='last'?'말일':cadence.dayRule?cadence.dayRule+'일':'';r.dateMode='custom';}return true;}
- const snapshot=r=>({period:r.period,frequency:r.frequency,date:r.date??'',dateMode:r.dateMode||'custom',weeklyCheck:!!r.weeklyCheck,weekdays:clone(r.weekdays||{}),weekOpen:r.weekOpen??0,semantics:r.semantics||'per-week-v1',legacyReviewRequired:!!r.legacyReviewRequired,...(r.cadence?{cadence:clone(r.cadence)}:{}),...(r.legacyOriginal?{legacyOriginal:clone(r.legacyOriginal)}:{}),...(r.weekdayOrder?{weekdayOrder:clone(r.weekdayOrder)}:{}),...(r.monthlyMemory!==undefined?{monthlyMemory:clone(r.monthlyMemory)}:{}),...(r.quantityEditVersion?{quantityEditVersion:r.quantityEditVersion}:{})});
+ const snapshot=r=>({period:r.period,frequency:r.frequency,date:r.date??'',dateMode:r.dateMode||'custom',weeklyCheck:!!r.weeklyCheck,weekdays:clone(r.weekdays||{}),weekOpen:r.weekOpen??0,semantics:r.semantics||'per-week-v1',legacyReviewRequired:!!r.legacyReviewRequired,...(r.cadence?{cadence:clone(r.cadence)}:{}),...(r.legacyOriginal?{legacyOriginal:clone(r.legacyOriginal)}:{}),...(r.weekdayOrder?{weekdayOrder:clone(r.weekdayOrder)}:{}),...(r.monthlyMemory!==undefined?{monthlyMemory:clone(r.monthlyMemory)}:{}),...(r.quantityEditVersion?{quantityEditVersion:r.quantityEditVersion}:{}),...(r.cadenceSelection?{cadenceSelection:r.cadenceSelection}:{})});
  return {days,periods,inspect,monthValue,fromAllocation,serialize,resetPeriod,snapshot};
 })());
 /* MSG0485. Input ownership: one phone buffer, one email field and domain-only verifier.
@@ -432,7 +434,7 @@ window.OrderDatePolicy=Object.freeze((()=>{
  const empty=d=>!d||d.day===''||d.day===null||d.day===undefined;
  const days=(year,month)=>new Date(Date.UTC(Number(year),Number(month),0)).getUTCDate();
  const calendarValid=d=>!!d&&['year','month','day'].every(k=>String(d[k]).trim()!==''&&Number.isInteger(Number(d[k])))&&Number(d.year)>=2000&&Number(d.year)<=2100&&Number(d.month)>=1&&Number(d.month)<=12&&Number(d.day)>=1&&Number(d.day)<=days(d.year,d.month);
- const validate=(d,now=new Date())=>empty(d)?{valid:true,empty:true,code:'EMPTY',message:''}:!calendarValid(d)?{valid:false,empty:false,code:'INVALID',message:'해당 월에 존재하는 날짜를 입력해 주세요.'}:key(d)<key(today(now))?{valid:false,empty:false,code:'PAST',message:'오늘 이후의 납품 희망일을 선택해 주세요.'}:{valid:true,empty:false,code:'VALID',message:''};
+ const validate=inspectOneTimeDate;
  const blank=()=>({...today(),day:''});
  return {zone,today,key,empty,days,calendarValid,validate,blank};
 })());
@@ -484,12 +486,15 @@ const CODE1_ORDER_VALIDATION=(()=>{
    for(const a of allocations){const pair=a.lineId+'|'+a.locationId;if(pairs.has(pair))put('q4',a.id+':duplicate','같은 품목과 사업장을 중복 연결할 수 없습니다.','BLOCK_ASSIGNMENT',a.locationId,a.lineId);pairs.add(pair);if(!lines.some(l=>l.id===a.lineId)||!locById[a.locationId])put('q4',a.id+':site','존재하지 않는 품목 또는 사업장 연결입니다.','BLOCK_ASSIGNMENT',a.locationId,a.lineId);}
   // The draft is mapped to exactly one allocation and one SKU. Other SKUs always read saved data.
   const active=allocations.map(a=>target&&a.id===target.id?target:a);
+  const currentLines=new Set(lines.filter(line=>{const linked=active.filter(a=>a.lineId===line.id);return linked.length&&linked.every(a=>a.q4Review?.version==='0460');}).map(line=>line.id));
   // The same-SKU mixed-mode ownership rule is not signed off; reject rather than changing siblings.
-  for(const l of lines){const linked=active.filter(a=>a.lineId===l.id);if(linked.length>=2&&new Set(linked.map(a=>a.mode)).size>1)put('q4',`line:${l.id}:mixed-mode`,'사업장마다 다른 납품 방식은 확인이 필요합니다.','POLICY_OPEN_MIXED_MODE',null,l.id);}
+  for(const l of lines){const linked=active.filter(a=>a.lineId===l.id);if(!currentLines.has(l.id)&&linked.length>=2&&new Set(linked.map(a=>a.mode)).size>1)put('q4',`line:${l.id}:mixed-mode`,'사업장마다 다른 납품 방식은 확인이 필요합니다.','POLICY_OPEN_MIXED_MODE',null,l.id);}
   const modeOk=m=>['FLEX','FIXED','ONCE'].includes(m);
   for(const a of active){
    if(scope==='draft'&&target&&a.lineId!==target.lineId)continue;
    const line=lines.find(l=>l.id===a.lineId),same=active.filter(x=>x.lineId===a.lineId),count=same.length,localDraft=!!target&&target.lineId===a.lineId;
+   if(currentLines.has(a.lineId)){issues.push(...inspectQ4Allocation(a,{all:active,line,repeatContract:OrderRepeatContract}));continue;}
+   const bound=quantityBoundIssue(a,line);if(bound)issues.push(bound);
    if(a.mode==='ONCE'){const d=window.OrderDatePolicy.validate(a.q4Review?.deliveryDate);if(!d.valid)put('q4',a.id+':desired-date',d.message,'BLOCK_REQUIRED',a.locationId,a.lineId);}
    const prefix=a.id;
    if(!modeOk(a.mode)||a.modeExplicit!==true)put('q4',prefix+':mode','납품 방식을 선택해 주세요.','BLOCK_REQUIRED',a.locationId,a.lineId);
@@ -501,13 +506,7 @@ const CODE1_ORDER_VALIDATION=(()=>{
      const entry=localDraft&&onceDraft?onceDraft[a.locationId]?.value:a.oneTimeDeliveryQty;
      if(!int(entry,999999999999))put('q4',`site:${a.locationId}:once`,'사업장별 1회 납품량을 1 이상인 정수로 입력해 주세요.','BLOCK_REQUIRED',a.locationId,a.lineId);
      // Confirm when every same-SKU ONCE site has an explicit quantity; never use Q2 as a hard cap.
-     if(same.every(x=>x.mode==='ONCE')&&a.id===same[0].id&&line&&int(line.qty)){
-      const values=same.map(x=>({siteId:x.locationId,name:locById[x.locationId]?.name||'사업장',quantity:localDraft&&onceDraft?onceDraft[x.locationId]?.value:x.oneTimeDeliveryQty}));
-      if(values.every(x=>int(x.quantity,999999999999))){const total=values.reduce((n,x)=>n+Number(x.quantity),0);
-       const fingerprint=[line.id,line.qty,...values.map(x=>`${x.siteId}:${x.quantity}`)].join('|');
-       if(total>=Number(line.qty)&&fingerprint!==confirmedFingerprint&&!same.every(x=>x.onceConfirmedFingerprint===fingerprint))confirmations.push({stage:'q4',code:'ONCE_AT_LEAST_MONTH',fingerprint,lineId:line.id,monthly:Number(line.qty),total,sites:values.map(x=>({name:x.name,qty:Number(x.quantity)}))});
-      }
-     }
+
     }
    }else {
     if(count===1){
@@ -536,6 +535,8 @@ const CODE1_ORDER_VALIDATION=(()=>{
     if(a.mode==='FIXED'){const contract=OrderRepeatContract.inspect(OrderRepeatContract.fromAllocation(a));if(!contract.valid)put('q4',a.id+':'+contract.issue.kind,contract.issue.message,'BLOCK_REPEAT',a.locationId,a.lineId);}
 
   }
+  const shared=inspectQ4Groups({...S,lines,locations:sites},active,confirmedFingerprint);
+  issues.push(...shared.issues);confirmations.push(...shared.confirmations);
   function checkRange(siteId,lineId,base,low,high,prefix){
    if(!int(low,999999999999))put('q4',`site:${siteId}:min`,'가변 수량 최소값을 입력해 주세요.','BLOCK_REQUIRED',siteId,lineId);
    if(!int(high,999999999999))put('q4',`site:${siteId}:max`,'가변 수량 최대값을 입력해 주세요.','BLOCK_REQUIRED',siteId,lineId);

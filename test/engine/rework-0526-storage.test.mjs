@@ -17,13 +17,13 @@ const interval=(preferredDate='')=>({version:'2.0.0',kind:'INTERVAL_DAYS',interv
 const monthly=(dayRule,preferredDate='')=>({version:'2.0.0',kind:'MONTHLY',dayRule,preferredDate});
 
 test('C26 legacy schemas1–4 preserve2/3/4-week patterns byte-for-byte; explicit commit alone upgrades current schema',async()=>{
- assert.equal(STORAGE_SCHEMA_VERSION,7);
+ assert.equal(STORAGE_SCHEMA_VERSION,8);
  for(const schema of [1,2,3,4])for(const weeks of [2,3,4]){
   const source=legacy(weeks),raw=envelope(schema,source),env=setup(new MemoryStorage({[STORAGE_KEY]:raw})),read=await env.api.load();
   assert.equal(read.status,'LOADED');assert.deepEqual(read.data,source);assert.equal(env.local.writes,0);assert.equal(env.local.getItem(STORAGE_KEY),raw);
   const unrelated=structuredClone(read.data);unrelated.locations[0].name='합성 A 수정';
   const saved=await env.api.commit(unrelated,options(read));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);
-  assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,7);assert.equal(saved.data.allocations[0].cadence,undefined);assert.equal(saved.data.allocations[0].intervalWeeks,weeks);assert.equal(saved.data.allocations[0].cycleCount,weeks*2);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');assert.equal(saved.data.locations[0].postal,'08843');
+  assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,8);assert.equal(saved.data.allocations[0].cadence,undefined);assert.equal(saved.data.allocations[0].intervalWeeks,weeks);assert.equal(saved.data.allocations[0].cycleCount,weeks*2);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');assert.equal(saved.data.locations[0].postal,'08843');
  }
 });
 test('C26 explicit new cadence keeps legacy fields recoverable and commits once, without touching source on failure',async()=>{
@@ -64,10 +64,10 @@ test('C26 optional absent anchor is unresolved projection, never a fabricated fi
  assert.deepEqual(repeatVisitPlan({cadence:interval()},{year:2026,month:11}),{resolved:false,reason:'OPTIONAL_ANCHOR_UNSELECTED',message:''});
  assert.equal(repeatVisitPlan({cadence:interval('2026-11-03')},null).reason,'PROJECTION_MONTH_UNSPECIFIED');
 });
-test('C26 independent site reference months sum valid values and partial counts without equality blocker',()=>{
+test('C55 replaces C26 mixed-month sum with separate monthly totals without a save equality blocker',()=>{
  const rows=[{reference:{year:2026,month:11},value:nominalQuantity({quantity:'10',visits:3})},{reference:{year:2027,month:1},value:nominalQuantity({quantity:'20',visits:2})}];
- const all=sumNominalByReference(rows);assert.equal(all.complete,true);assert.equal(all.sameReference,false);assert.equal(all.total.low.n,70n);assert.equal(all.resolvedCount,2);
- const partial=sumNominalByReference([...rows,{reference:{year:2026,month:12},value:null}]);assert.equal(partial.complete,false);assert.equal(partial.resolvedCount,2);assert.equal(partial.total.low.n,70n);
+ const all=sumNominalByReference(rows);assert.equal(all.complete,false);assert.equal(all.sameReference,false);assert.equal(all.total,null);assert.equal(all.resolvedCount,2);assert.deepEqual(all.groups.map(group=>[group.year,group.month,group.total.low.n]),[[2026,11,30n],[2027,1,40n]]);
+ const partial=sumNominalByReference([...rows,{reference:{year:2026,month:12},value:null}]);assert.equal(partial.complete,false);assert.equal(partial.resolvedCount,2);assert.equal(partial.total,null);assert.equal(partial.groups[2].total,null);
 });
 test('C26 FLEX active holiday comparison/copy excludes dormant FIXED policies while retaining source values',()=>{
  const holiday={days:['월'],none:false,irregular:false,request:'문 앞',conflict:'조정',weekend:'휴무',holiday:'휴무',subholiday:'휴무'},a={mode:'FLEX',advanced:{contactChannels:['phone'],fixedOrderProcess:'auto'},q4Review:{profile:'FLEX',activeHoliday:holiday}},b=structuredClone(a);b.q4Review.activeHoliday.conflict='다른 값';b.q4Review.activeHoliday.weekend='미정';

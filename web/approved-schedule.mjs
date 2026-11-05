@@ -1,6 +1,8 @@
+import {createApprovedCadence,daysInMonth} from './cadence-contract.mjs';
 // MSG0540 approved estimate contract. Exact integers are retained throughout;
 // these estimates never constitute a supplier delivery commitment.
 export const APPROVED_SCHEDULE_VERSION='0540';
+export const CADENCE_CLASSIFICATION_VERSION='0549.1';
 export const APPROVED_PERIODS=Object.freeze(['협의','매주','2주','매월']);
 const number=value=>/^[0-9]{1,12}$/.test(String(value??''))?BigInt(value):null;
 const positive=value=>{const n=number(value);return n!==null&&n>0n?n:null;};
@@ -11,11 +13,12 @@ export function monthlyEstimate(monthly,quantity){
  const count=rounded(M,Q),exact=M%Q===0n;
  return {valid:true,count:String(count),exact,text:`월 ${exact?'':'약 '}${count.toLocaleString('ko-KR')}회`};
 }
-export function classifyCadence(monthly,quantity){
+export function classifyCadence(monthly,quantity,asOfLocalDate){
  const M=positive(monthly),Q=positive(quantity);
  if(M===null||Q===null||Q>M)return '협의';
  if(M===Q)return '매월';
- if(M>=Q*12n&&M<=Q*22n)return '매주';
+ const weekly=weeklyEstimate(monthly,quantity,asOfLocalDate);
+ if(weekly.valid){const n=BigInt(weekly.ratio.numerator),d=BigInt(weekly.ratio.denominator);if(n>=d&&n<=d*7n)return '매주';}
  if(M*2n>=Q*3n&&M*2n<=Q*5n)return '2주';
  return '협의';
 }
@@ -23,12 +26,12 @@ export function weeklyEstimate(monthly,quantity,asOfLocalDate){
  const M=positive(monthly),Q=positive(quantity),parts=/^(\d{4})-(\d{2})-\d{2}$/.exec(asOfLocalDate||'');
  if(M===null||Q===null||Q>M||!parts)return {valid:false,text:'—'};
  const year=Number(parts[1]),month=Number(parts[2]);if(month<1||month>12)return {valid:false,text:'—'};
- const days=new Date(Date.UTC(year,month,0)).getUTCDate(),n=M*7n,d=Q*BigInt(days),raw=rounded(n,d),count=Number(raw<1n?1n:raw>7n?7n:raw),exact=n%d===0n;
+ const days=daysInMonth(year,month);if(!days)return {valid:false,text:'—'};const n=M*7n,d=Q*BigInt(days),raw=rounded(n,d),count=Number(raw<1n?1n:raw>7n?7n:raw),exact=n%d===0n;
  return {valid:true,count,exact,days,text:`${exact?'':'약 '}${count}회`,ratio:{numerator:String(n),denominator:String(d)}};
 }
-export function availableCadences(monthly,quantity,repeat={}){
+export function availableCadences(monthly,quantity,repeat={},asOfLocalDate){
  const candidate=repeat.period==='매월'?repeat.monthlyMemory?.quantity??quantity:quantity;
- return APPROVED_PERIODS.filter(period=>period==='협의'||(period==='매월'?positive(monthly)!==null:classifyCadence(monthly,candidate)===period));
+ return APPROVED_PERIODS.filter(period=>period==='협의'||(period==='매월'?positive(monthly)!==null:classifyCadence(monthly,candidate,asOfLocalDate)===period));
 }
 export function quantityIssue({monthly,quantity,min='',max='',variable=false,unit='판'}){
  const M=number(monthly),Q=number(quantity),a=number(min),b=number(max);
@@ -54,19 +57,14 @@ export function fixedFrequencyPresentation(input){
  if(!issue.valid){const both=String(input.monthly??'')===''&&String(input.quantity??'')==='';return {valid:false,text:both?'수량 입력 필요':issue.field==='monthly'&&issue.code==='MONTHLY_REQUIRED'?'월 수량 입력':issue.code==='QUANTITY_REQUIRED'?'회당 수량 입력':['min','max'].includes(issue.field)?'최소·최대 확인':'수량 확인 필요',issue};}
  return {...monthlyEstimate(input.monthly,input.quantity),issue};
 }
-export function cadenceForPeriod(period,previous={}){
- const date=previous?.preferredDate||'',base={version:'3.0.0',preferredDate:date,nominalAnchor:date};
- if(period==='협의')return {...base,kind:'CONSULT'};
- if(period==='매주')return {...base,kind:'WEEKLY'};
- if(period==='2주')return {...base,kind:'INTERVAL_DAYS',intervalDays:14};
- return {...base,kind:'MONTHLY',dayRule:previous?.kind==='MONTHLY'?previous.dayRule:''};
-}
+export const cadenceForPeriod=createApprovedCadence;
 /** A pure draft transaction. A monthly edit never rewrites the per-order value. */
 export function editQuantityCadence({repeat={},monthly,quantity,field,value,asOfLocalDate,clampDirect=true}){
  const next=structuredClone(repeat),M=String(field==='monthly'?value:monthly??''),rawQ=String(field==='base'?value:quantity??'');
  let Q=rawQ,adjusted=false;
  if(clampDirect&&field==='base'&&positive(M)!==null&&positive(Q)!==null&&BigInt(Q)>BigInt(M)){Q=M;adjusted=true;}
- const period=classifyCadence(M,Q),previousDate=repeat.period==='매월'&&period!=='매월'&&repeat.monthlyMemory?.preferredDate!==undefined?{...next.cadence,preferredDate:repeat.monthlyMemory.preferredDate}:next.cadence;next.period=period;next.cadence=cadenceForPeriod(period,previousDate);next.semantics='cadence-v3';next.quantityEditVersion=APPROVED_SCHEDULE_VERSION;next.legacyReviewRequired=false;
+ const manualConsult=repeat.period==='협의'&&repeat.cadenceSelection==='manual';if(!manualConsult)delete next.cadenceSelection;
+ const period=manualConsult?'협의':classifyCadence(M,Q,asOfLocalDate),previousDate=repeat.period==='매월'&&period!=='매월'&&repeat.monthlyMemory?.preferredDate!==undefined?{...next.cadence,preferredDate:repeat.monthlyMemory.preferredDate}:next.cadence;next.period=period;next.cadence=cadenceForPeriod(period,previousDate);next.semantics='cadence-v3';next.quantityEditVersion=APPROVED_SCHEDULE_VERSION;next.legacyReviewRequired=false;
  if(field==='base')delete next.monthlyMemory;
  if(period==='매주')next.frequency=repeat.period===period&&['협의',''].includes(repeat.frequency)?repeat.frequency:weeklyEstimate(M,Q,asOfLocalDate).text;
  else if(period==='2주')next.frequency='1회';
@@ -74,8 +72,8 @@ export function editQuantityCadence({repeat={},monthly,quantity,field,value,asOf
  return {repeat:next,monthly:M,quantity:Q,adjusted};
 }
 export function selectCadence({repeat={},monthly,quantity,period,asOfLocalDate}){
- if(!availableCadences(monthly,quantity,repeat).includes(period))return {accepted:false,repeat:structuredClone(repeat),quantity:String(quantity??'')};
- const next=structuredClone(repeat);let Q=String(quantity??''),adjusted=false;
+ if(!availableCadences(monthly,quantity,repeat,asOfLocalDate).includes(period))return {accepted:false,repeat:structuredClone(repeat),quantity:String(quantity??'')};
+ const next=structuredClone(repeat);next.cadenceSelection='manual';let Q=String(quantity??''),adjusted=false;
  if(period==='매월'&&repeat.period!=='매월'){
   next.monthlyMemory={quantity:Q,period:APPROVED_PERIODS.includes(repeat.period)&&repeat.period!=='매월'?repeat.period:'협의',frequency:String(repeat.frequency??''),preferredDate:repeat.cadence?.preferredDate||''};Q=String(monthly);adjusted=true;
  }else if(period!=='매월'&&repeat.period==='매월'&&repeat.monthlyMemory){Q=String(repeat.monthlyMemory.quantity);delete next.monthlyMemory;}

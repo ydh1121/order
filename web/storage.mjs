@@ -4,7 +4,7 @@
  */
 import {isVerifiedAddress} from './address-contract.mjs';
 import {inspectCadence} from './cadence-contract.mjs';
-export const STORAGE_SCHEMA_VERSION=7;
+export const STORAGE_SCHEMA_VERSION=8;
 export const STORAGE_KEY='order_q1_q4_v1';
 export const STORAGE_LOCK='order-q1-q4-storage';
 export const LEGACY_KEYS=Object.freeze(['order_v015R2_draft','order_v015R1_draft']);
@@ -37,7 +37,7 @@ const weekdayKey=oneOf(['1:월','1:화','1:수','1:목','1:금','1:토','1:일']
 const weekdayOrder=(v,p)=>{const out=list(weekdayKey,7)(v,p);if(new Set(out).size!==out.length)fail(p,'DUPLICATE_WEEKDAY');return out;};
 const monthlyMemory=object({quantity:approvedQuantity,period:oneOf(['협의','매주','2주']),frequency:short,preferredDate:(v,p)=>civilDate(v,p)},['quantity','period','frequency']);
 const repeat=object({period:short,frequency:short,date:short,dateMode:short,weeklyCheck:boolean,weekdays,weekOpen:integer,semantics:nullable(short),legacyReviewRequired:boolean,
- legacyOriginal:object({cycleCount:integer,freq:integer,intervalWeeks:integer,weekPlans}),cadence:(v,p)=>v===null?null:draftCadence(v,p),weekdayOrder,monthlyMemory:nullable(monthlyMemory),quantityEditVersion:oneOf(['0540'])});
+ legacyOriginal:object({cycleCount:integer,freq:integer,intervalWeeks:integer,weekPlans}),cadence:(v,p)=>v===null?null:draftCadence(v,p),weekdayOrder,monthlyMemory:nullable(monthlyMemory),quantityEditVersion:oneOf(['0540']),cadenceSelection:oneOf(['manual'])});
 const ratio=object({representation:oneOf(['rational']),conversionReviewed:boolean,numerator:short,denominator:short},['representation','numerator','denominator']);
 const monthlyExact=object({raw,unit,representation:oneOf(['rational']),conversionReviewed:boolean,numerator:short,denominator:short,phase:omit,composing:omit},['raw','unit','representation']);
 const packageRaw=(v,p)=>typeof v==='string'&&/^[1-9]\d{0,127}$/.test(v)?v:fail(p,'POSITIVE_INTEGER_PACKAGE');
@@ -86,6 +86,7 @@ export function projectStoredPayload(input){
  return projectPayload(input,STORAGE_SCHEMA_VERSION);
 }
 function projectPayload(input,schemaVersion){
+ if(schemaVersion<8&&Array.isArray(input?.allocations))for(const [i,row]of input.allocations.entries())for(const repeat of [row?.q4Review?.activeRepeat,row?.q4Review?.common?.repeat,row?.q4Review?.draft?.repeat])if(repeat&&Object.hasOwn(repeat,'cadenceSelection'))fail('data.allocations.'+i+'.repeat.cadenceSelection','UNKNOWN_FIELD');
  if(schemaVersion<7){
   if(Array.isArray(input?.locations))for(const [i,row]of input.locations.entries())if(row?.addressProvider==='KAKAO')fail('data.locations.'+i+'.addressProvider','UNKNOWN_FIELD');
   if(Array.isArray(input?.allocations))for(const [i,row]of input.allocations.entries()){
@@ -137,10 +138,10 @@ function migrateLegacy(input,key){
 }
 const receiptShape=object({transactionId:id,fingerprint:text(64),revision:integer,operation:oneOf(['commit','reset'])},['transactionId','fingerprint','revision','operation']);
 const migrationShape=nullable(object({source:oneOf(['session-R2','session-R1']),legacyKey:oneOf(LEGACY_KEYS)},['source','legacyKey']));
-const envelopeShape=object({schemaVersion:oneOf([1,2,3,4,5,6,7]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
+const envelopeShape=object({schemaVersion:oneOf([1,2,3,4,5,6,7,8]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
 function decode(rawValue){
  if(typeof rawValue!=='string'||new TextEncoder().encode(rawValue).length>MAX_BYTES)fail('record','SIZE_LIMIT');
- const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3,4,5,6,7].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
+ const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3,4,5,6,7,8].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
  const envelope=envelopeShape(value,'record');if(envelope.revision<1)fail('record.revision');
  if(envelope.state==='reset'){if(envelope.data!==null)fail('record.data');}else{
   if(envelope.schemaVersion===1&&envelope.data?.lines?.some(row=>Object.hasOwn(row,'qtyDisplayUnit')))fail('record.data.lines','UNKNOWN_FIELD');
