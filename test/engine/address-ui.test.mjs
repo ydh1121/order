@@ -5,10 +5,10 @@ import {createAddressEditor} from '../../web/address-ui.mjs';
 // DOM/shell mock only: exercises the child transaction and call contract. Real
 // focus, modal history, motion, pointer events and provider traffic need Chromium.
 const selected = () => ({road:'합성시 가상로 10',postal:'08843',jibun:'합성시 가상동 1',region:'합성시',providerId:'1'.repeat(25),addressProvider:'JUSO',detail:'2층',dropoff:'문 앞'});
-function harness({address=selected(),result={status:'UNAVAILABLE',items:[]}}={}) {
-  const elements = new Map(), commits = [], requests = [], searches = [];
+function harness({address=selected(),result={status:'UNAVAILABLE',items:[]},resolve}={}) {
+  const elements = new Map(), nodes = [], commits = [], requests = [], searches = [];
   class Element {
-    constructor(id='') {this.id=id;this.value='';this.hidden=false;this.open=false;this.textContent='';this.dataset={};this.children=[];this.attributes=new Map();this.listeners=new Map();this.classList={contains:()=>false};if(id)elements.set(id,this);}
+    constructor(id='') {this.id=id;this.value='';this.hidden=false;this.open=false;this.textContent='';this.dataset={};this.children=[];this.attributes=new Map();this.listeners=new Map();this.classList={contains:()=>false};nodes.push(this);if(id)elements.set(id,this);}
     addEventListener(type,callback){this.listeners.set(type,[...(this.listeners.get(type)||[]),callback]);}
     fire(type,details={}){const event={target:this,preventDefault(){},stopImmediatePropagation(){},...details};for(const callback of this.listeners.get(type)||[])callback(event);}
     setAttribute(key,value){this.attributes.set(key,String(value));}
@@ -24,12 +24,12 @@ function harness({address=selected(),result={status:'UNAVAILABLE',items:[]}}={})
     get innerHTML(){return this.html||'';}
   }
   for(const id of ['address-editor-dialog','address-query','address-results','address-detail','address-dropoff','address-search-field','address-error','address-status','address-retry','address-selected','address-selected-title','address-selected-lines','address-detail-fields','address-clear','address-next-page','address-search-icon','address-close','address-scroll','address-confirm','address-cancel'])new Element(id);
-  const doc={getElementById:id=>elements.get(id),createElement:()=>new Element(),activeElement:null};
+  const doc={getElementById:id=>elements.get(id)||nodes.find(node=>node.id===id),createElement:()=>new Element(),activeElement:null};
   let binding,pending;
   const shell={bind(_dialog,dispose,options){binding={dispose,...options};},open(dialog){dialog.open=true;},close(dialog){dialog.open=false;},resize(_dialog,fn){return fn();},sync(){},requestClose(dialog,reason){requests.push(reason);if(binding.beforeClose?.(reason)===false)return false;if(binding.isDirty()){binding.onExitIntent?.(reason);pending={dialog,reason};return false;}binding.dispose(reason);return true;}};
   const parent={siteId:'site-a',generation:1,site:structuredClone(address)};
   const originalWindow=globalThis.window;globalThis.window={OrderIcons:{svg:name=>`<svg data-icon="${name}"></svg>`}};
-  const editor=createAddressEditor({getParent:()=>parent,onConfirm:payload=>{commits.push(payload);return true;},service:{search:async(...args)=>{searches.push(args);return result;}},shell,document:doc});
+  const editor=createAddressEditor({getParent:()=>parent,onConfirm:payload=>{commits.push(payload);return true;},service:{search:async(...args)=>{searches.push(args);return typeof result==='function'?result(...args):result;},resolve},shell,document:doc});
   const $=id=>elements.get(id),input=(id,value)=>{$(id).value=value;$(id).fire('input');};
   return {editor,parent,commits,requests,searches,$,input,get binding(){return binding;},discard(){if(pending){binding.dispose(pending.reason);pending=null;}},cleanup(){editor.invalidate();globalThis.window=originalWindow;}};
 }
@@ -42,6 +42,44 @@ test('DOM MOCK: new query cannot confirm the prior selected address; original pa
     h.$('address-cancel').fire('click');assert.deepEqual(h.requests,['cancel']);assert.equal(h.editor.isOpen,true,'dirty close waits for common shell decision');
     h.discard();assert.equal(h.editor.isOpen,false);assert.deepEqual(h.parent,original);
   } finally {h.cleanup();}
+});
+
+const settle=()=>new Promise(resolve=>setImmediate(resolve));
+test('C55-03 DOM MOCK: filtered empty page preserves candidates and hasMore; failure retries the same page',async()=>{
+ const pages=[];let retry=false;
+ const h=harness({result:async(_query,{page})=>{pages.push(page);return page===1?{status:'OK',items:[selected()],hasMore:true}:page===2?{status:'EMPTY',reason:'NO_SELECTABLE_ADDRESSES',items:[],hasMore:true}:retry?{status:'EMPTY',items:[],hasMore:false}:{status:'UNAVAILABLE',items:[]};}});
+ try{
+  h.editor.open();h.input('address-query','검사 검색');h.$('address-retry').fire('click');await settle();
+  h.$('address-next-page').fire('click');await settle();assert.equal(h.editor.inspect().status,'RESULTS');assert.equal(h.$('address-results').hidden,false);assert.equal(h.$('address-next-page').hidden,false);assert.doesNotMatch(h.$('address-status').textContent,/검색 결과가 없습니다/);
+  h.$('address-next-page').fire('click');await settle();assert.equal(h.$('address-results').hidden,false);assert.equal(h.editor.inspect().page,2);
+  retry=true;h.$('address-retry').fire('click');await settle();assert.deepEqual(pages,[1,2,3,3]);assert.equal(h.editor.inspect().page,3);assert.equal(h.$('address-next-page').hidden,true);assert.equal(h.editor.inspect().options,1);
+ }finally{h.cleanup();}
+});
+test('C55-02 DOM MOCK: place name/branch leads address; chosen one resolves and late resolution cannot confirm',async()=>{
+ const place={kind:'PLACE',placeId:'101',name:'엽기떡볶이 언주역점',road:'합성시 가상로 10',jibun:'합성시 가상동 1',page:1,addressProvider:'KAKAO'};
+ let release,resolveCalls=0;
+ const h=harness({address:{},result:{status:'OK',items:[place],hasMore:false},resolve:()=>{resolveCalls++;return new Promise(resolve=>{release=resolve;});}});
+ try{
+  h.editor.open();h.input('address-query','엽기떡볶이 언주역');h.$('address-retry').fire('click');await settle();
+  assert.equal(h.editor.inspect().options,1);assert.equal(h.$('address-results').children[0].children[1].children[0].textContent,place.name);
+  h.$('address-query').fire('keydown',{key:'Enter'});h.$('address-query').fire('keydown',{key:'Enter'});assert.equal(resolveCalls,1);assert.equal(h.commits.length,0);
+  h.input('address-query','다른 장소');release({status:'OK',item:selected()});await settle();h.$('address-confirm').fire('click');assert.equal(h.commits.length,0);
+ }finally{h.cleanup();}
+});
+
+test('C55-02 DOM MOCK: selected place resolution retries once; Escape cancellation allows another choice',async()=>{
+ const place={kind:'PLACE',placeId:'101',name:'<img src=x> 언주역점',road:'합성시 가상로 10',jibun:'',page:1,addressProvider:'KAKAO'};
+ let attempts=0,release;
+ const h=harness({address:{},result:{status:'OK',items:[place],hasMore:false},resolve:async()=>{attempts++;return attempts===1?{status:'UNAVAILABLE'}:attempts===2?new Promise(resolve=>{release=resolve;}):{status:'OK',item:selected()};}});
+ try{
+  h.editor.open();h.input('address-query','언주역점');h.$('address-retry').fire('click');await settle();
+  const name=h.$('address-results').children[0].children[1].children[0];assert.equal(name.textContent,place.name);assert.equal(name.innerHTML,'','provider name reaches textContent only');
+  h.$('address-query').fire('keydown',{key:'Enter'});await settle();assert.equal(h.$('address-retry').hidden,false);
+  h.$('address-retry').fire('click');assert.equal(attempts,2);h.$('address-editor-dialog').fire('keydown',{key:'Escape'});release({status:'OK',item:selected()});await settle();
+  h.$('address-query').fire('keydown',{key:'ArrowDown'});h.$('address-query').fire('keydown',{key:'Enter'});await settle();assert.equal(attempts,3);
+  assert.equal(h.commits.length,0);assert.equal(h.$('address-selected-lines').children[0].textContent,place.name);
+  h.$('address-confirm').fire('click');assert.equal(h.commits.length,1);assert.equal(h.commits[0].address.postal,'08843');assert.equal('name' in h.commits[0].address,false);
+ }finally{h.cleanup();}
 });
 
 test('DOM MOCK: child optional edits are parent-only on confirm, one callback despite duplicate confirmation',()=>{

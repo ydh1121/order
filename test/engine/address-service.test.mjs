@@ -9,15 +9,18 @@ const item={road:'서울특별시 관악구 합성검사로 10',postal:'08843',j
 const row={address_type:'ROAD_ADDR',address_name:item.road,road_address:{address_name:item.road,zone_no:item.postal,region_1depth_name:'서울특별시',region_2depth_name:'관악구',region_3depth_name:'합성동',road_name:'합성검사로',main_building_no:'10',sub_building_no:'',underground_yn:'N',x:'126.0',y:'37.0'},address:{address_name:item.jibun}};
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json'}});
 const answer=(items=[item],page=1,total=items.length)=>({version:2,status:items.length?'OK':'EMPTY',reason:items.length?'RESULTS':'NO_RESULTS',items,page,total,pageable:total,hasMore:page<20&&page*10<total});
+const combinedAnswer=()=>({version:3,status:'OK',reason:'RESULTS',items:[{kind:'ADDRESS',...item}],page:1,total:1,hasMore:false,sources:{address:{total:1,pageable:1,hasMore:false},place:{total:0,pageable:0,hasMore:false}}});
 const provider=(rows=[row],page=1,total=rows.length)=>({meta:{total_count:total,pageable_count:total,is_end:page*10>=total},documents:rows});
 const request=(data={query:'합성검사로',page:1},init={})=>new Request(origin+'/api/address/search',{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify(data),...init});
-const invoke=async(fetcher,data,env={KAKAO_REST_API_KEY:'synthetic-test-secret'},options={})=>{const response=await createAddressSearchHandler({fetcher,...options})({request:request(data),env});return {response,value:await response.json()};};
+// These C54 guard cases isolate address responses; keyword behavior has separate
+// C55 fixtures. The production route still performs both fixed calls.
+const invoke=async(fetcher,data,env={KAKAO_REST_API_KEY:'synthetic-test-secret'},options={})=>{const response=await createAddressSearchHandler({fetcher:(url,init)=>new URL(url).pathname.endsWith('/keyword.json')?json(provider([])):fetcher(url,init),...options})({request:request(data),env});return {response,value:await response.json()};};
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 
 test('C54-02 Kakao fixed HTTPS GET uses header-only secret and preserves road/postal provenance',async()=>{
  const calls=[];
  const {response,value}=await invoke(async(url,options)=>{calls.push({url,options});return json(provider());});
- assert.equal(response.status,200);assert.deepEqual(value,answer());assert.equal(value.items[0].postal,'08843');
+ assert.equal(response.status,200);assert.deepEqual(value,combinedAnswer());assert.equal(value.items[0].postal,'08843');
  assert.equal(calls.length,1);const upstream=new URL(calls[0].url);assert.equal(upstream.origin+upstream.pathname,'https://dapi.kakao.com/v2/local/search/address.json');assert.equal(calls[0].options.method,'GET');assert.equal(calls[0].options.redirect,'manual');
  assert.deepEqual(Object.fromEntries(upstream.searchParams),{query:'합성검사로',page:'1',size:'10',analyze_type:'similar'});
  assert.equal(calls[0].options.headers.authorization,'KakaoAK synthetic-test-secret');assert.equal(calls[0].options.body,undefined);
@@ -87,8 +90,8 @@ test('C54-02 provider malformed road, postal, counts and response type remain un
 test('C54-02 valid nonbuilding candidates are not selectable and do not become provider verified',async()=>{
  const region={address_type:'REGION',road_address:null,address:{address_name:'합성시'}};
  const empty=await invoke(async()=>json(provider([region])));assert.equal(empty.value.status,'EMPTY');assert.equal(empty.value.reason,'NO_SELECTABLE_ADDRESSES');assert.equal(empty.value.total,1);assert.deepEqual(empty.value.items,[]);
- const mixed=await invoke(async()=>json(provider([region,row,row])));assert.equal(mixed.value.status,'OK');assert.deepEqual(mixed.value.items,[item]);assert.equal(mixed.value.total,3);
- const partial=await invoke(async()=>json(provider([region,row],1,25)));assert.equal(partial.value.hasMore,true);assert.equal(partial.value.pageable,25);
+ const mixed=await invoke(async()=>json(provider([region,row,row])));assert.equal(mixed.value.status,'OK');assert.deepEqual(mixed.value.items,[{kind:'ADDRESS',...item}]);assert.equal(mixed.value.total,3);
+ const partial=await invoke(async()=>json(provider([region,row],1,25)));assert.equal(partial.value.hasMore,true);assert.equal(partial.value.sources.address.pageable,25);
 });
 test('A09 provider response size is bounded even without content-length',async()=>{
  const {value}=await invoke(async()=>new Response(JSON.stringify({padding:'x'.repeat(65536)}),{headers:{'content-type':'application/json'}}));assert.equal(value.reason,'BAD_RESPONSE');
@@ -144,9 +147,9 @@ test('A10 closing service cancels pending and disallows work without reviving re
  let release;const service=createAddressSearchService({origin,fetcher:()=>new Promise(resolve=>{release=resolve;})});const pending=service.search('검색');service.close();assert.equal((await pending).status,'ABORTED');release(json(answer()));await tick();assert.equal((await service.search('검색')).status,'ABORTED');assert.equal(service.inspect().cached,0);assert.equal(service.inspect().pending,0);
 });
 test('A09/A10 full browser-to-function pipeline uses real modules with synthetic provider response only',async()=>{
- let providerCalls=0;const handle=createAddressSearchHandler({fetcher:async()=>{providerCalls++;return json(provider());}});
+ let providerCalls=0;const handle=createAddressSearchHandler({fetcher:async url=>{providerCalls++;return json(provider(new URL(url).pathname.endsWith('/keyword.json')?[]:[row]));}});
  const service=createAddressSearchService({origin,fetcher:(url,options)=>handle({request:new Request(url,options),env:{KAKAO_REST_API_KEY:'synthetic'}})});
- assert.deepEqual(await service.search('합성검사로'),answer());assert.equal(providerCalls,1);service.close();
+ assert.deepEqual(await service.search('합성검사로'),combinedAnswer());assert.equal(providerCalls,2);service.close();
 });
 
 test('C54-02 upstream body/error details are never echoed, including secret/private query',async()=>{

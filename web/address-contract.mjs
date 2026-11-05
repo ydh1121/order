@@ -6,6 +6,12 @@ export const ADDRESS_FIELDS=Object.freeze(['road','postal','detail','jibun','reg
 export const ADDRESS_LIMITS=Object.freeze({road:4096,postal:5,detail:4096,jibun:4096,region:1024,providerId:73,dropoff:4096,addressProvider:5});
 const clean=value=>typeof value==='string'?value:'';
 const bounded=(value,max)=>typeof value==='string'&&value.length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
+/** A place is a search candidate, never a verified postal address. No search
+ * metadata is copied by addressFields into the parent/storage transaction. */
+export function isPlaceCandidate(value){
+ return !!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(key=>['kind','placeId','name','road','jibun','page','addressProvider'].includes(key))&&value.kind==='PLACE'&&value.addressProvider==='KAKAO'&&typeof value.placeId==='string'&&/^\d{1,32}$/.test(value.placeId)&&bounded(value.name,256)&&!!value.name.trim()&&bounded(value.road,512)&&bounded(value.jibun,512)&&!!(value.road.trim()||value.jibun.trim())&&Number.isInteger(value.page)&&value.page>=1&&value.page<=20;
+}
+export const addressCandidateKey=value=>isPlaceCandidate(value)?'PLACE:'+value.placeId:'ADDRESS:'+value?.addressProvider+':'+value?.providerId;
 /** Copy only address fields. Never copy site IDs, contacts or async email state. */
 export function addressFields(site={}){return Object.fromEntries(ADDRESS_FIELDS.map(key=>[key,clean(site?.[key])]));}
 export const normalizeAddress=addressFields;
