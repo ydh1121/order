@@ -30,6 +30,15 @@ async function readJson(path, nullable = false) {
     'import pathlib,sys; p=pathlib.Path(sys.argv[1]); print(p.read_text() if p.exists() else "null")' +
       (nullable ? '' : '; assert p.exists()'), path]));
 }
+async function readEnvelopeMetadata(path) {
+  // Keep the full source manifest on disk for verify-durable; only these fields drive the bridge.
+  return JSON.parse(await shell(['python', '-c',
+    'import json,pathlib,sys; value=json.loads(pathlib.Path(sys.argv[1]).read_text()); ' +
+    'keys=("schema","status","path","sha256","bytes","source_head","target_folder_id","target_current_id"); ' +
+    'result={key:value.get(key) for key in keys}; receipt=value.get("required_action_receipt") or {}; ' +
+    'result["required_action_receipt"]={key:receipt.get(key) for key in ("action_id","sha256","status","exit_code")}; ' +
+    'print(json.dumps(result))', path]));
+}
 async function writeJson(path, value) {
   await shell(['python', '-c',
     'import os,pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True,exist_ok=True); t=p.with_suffix(p.suffix+".tmp"); t.write_text(sys.argv[2]+"\\n"); os.replace(t,p)',
@@ -60,7 +69,7 @@ const hooks = {
     const result = JSON.parse(await shell(['python',repo+'/tools/order_harness/host.py','--state-dir',state,
       'prepare-durable','--allowlist',allowlist,'--output',exportPath,'--require-action',id,'--receipt-sha256',command.receipt_sha256]));
     await toolReceipt('prepare_export',result);
-    return readJson(envelopePath);
+    return readEnvelopeMetadata(envelopePath);
   },
   verifyTargets: async () => {
     const results = await Promise.allSettled([
