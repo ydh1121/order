@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {classifyCadence,monthlyEstimate,weeklyEstimate,editQuantityCadence,selectCadence,availableCadences,quantityIssue,fixedFrequencyPresentation,weekdayState} from '../../web/approved-schedule.mjs';
 const date='2026-11-05';
-test('MSG0540 exact cadence boundaries and adjacent values',()=>{
- for(const [M,Q,p] of [['120','10','매주'],['119','10','협의'],['220','10','매주'],['221','10','협의'],['30','20','2주'],['29','20','협의'],['50','20','2주'],['51','20','협의'],['40','40','매월'],['40','41','협의'],['600','40','매주'],['600','300','2주'],['600','227','협의'],['999999999999','1','협의']])assert.equal(classifyCadence(M,Q),p,`${M}/${Q}`);
+test('C55 raw weekly frequency domain supersedes former 12–22 monthly example band',()=>{
+ for(const [M,Q,p] of [['120','10','매주'],['119','10','매주'],['220','10','매주'],['221','10','매주'],['30','20','2주'],['29','20','협의'],['50','20','2주'],['51','20','협의'],['40','40','매월'],['40','41','협의'],['600','40','매주'],['600','300','2주'],['600','227','협의'],['999999999999','1','협의']])assert.equal(classifyCadence(M,Q,date),p,`${M}/${Q}`);
 });
 test('monthly and weekly estimates round exact ratio without 4-week assumption',()=>{
  assert.equal(monthlyEstimate('600','40').text,'월 15회');assert.equal(monthlyEstimate('600','227').text,'월 약 3회');
@@ -17,7 +17,7 @@ test('M/Q edits classify immediately and monthly edits preserve per-order quanti
 test('explicit monthly projection remembers/restores Q and validates restored cadence',()=>{
  const before={period:'협의',frequency:'협의',weekdays:{}};
  const monthly=selectCadence({repeat:before,monthly:'1000',quantity:'100',period:'매월',asOfLocalDate:date});assert.equal(monthly.quantity,'1000');assert.deepEqual(monthly.repeat.monthlyMemory,{quantity:'100',period:'협의',frequency:'협의',preferredDate:''});
- assert.deepEqual(availableCadences('1000','1000',monthly.repeat),['협의','매월']);assert.equal(selectCadence({repeat:monthly.repeat,monthly:'1000',quantity:'1000',period:'2주',asOfLocalDate:date}).accepted,false);
+ assert.deepEqual(availableCadences('1000','1000',monthly.repeat,date),['협의','매주','매월']);assert.equal(selectCadence({repeat:monthly.repeat,monthly:'1000',quantity:'1000',period:'2주',asOfLocalDate:date}).accepted,false);
  const restored=selectCadence({repeat:monthly.repeat,monthly:'1000',quantity:'1000',period:'협의',asOfLocalDate:date});assert.equal(restored.quantity,'100');assert.equal(restored.repeat.monthlyMemory,undefined);
  const edited=editQuantityCadence({repeat:monthly.repeat,monthly:'1000',quantity:'1000',field:'base',value:'500',asOfLocalDate:date});assert.equal(edited.quantity,'500');assert.equal(edited.repeat.period,'2주');assert.equal(edited.repeat.monthlyMemory,undefined);
  assert.deepEqual(before,{period:'협의',frequency:'협의',weekdays:{}});

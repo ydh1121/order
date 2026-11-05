@@ -6,6 +6,8 @@ import {parse} from 'acorn';
 import {validMonthlyQuantity,monthlyPlanSnapshot} from '../../web/quantity-contract.mjs';
 import {inspectStoredOrderQuantity} from '../../web/q4-planning.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/allocation-ui.mjs';
+import {q4Issue,quantityBoundIssue,inspectQ4Allocation as sharedInspectQ4Allocation,inspectQ4Groups,monthlyIssues} from '../../web/q4-validation.mjs';
+import {inspectOneTimeDate} from '../../web/q4-date.mjs';
 import {addressStatus} from '../../web/address-contract.mjs';
 
 // Production owners are evaluated with controlled DOM/DNS/storage doubles.
@@ -58,7 +60,7 @@ function draftHarness({missingContact=false,unknownEmail=false,address=null}={})
  if(missingContact)state.locations[0].contactPhone='';
  if(address)Object.assign(state.locations[0],address);
  const nodes=new Map();let writes=0;
- const context=vm.createContext({S:structuredClone(state),validMonthlyQuantity,monthlyPlanSnapshot,inspectStoredOrderQuantity,inspectMonthlyAllocations,inspectOnceAllocations,addressStatus,structuredClone,JSON,
+ const context=vm.createContext({q4Issue,quantityBoundIssue,inspectQ4Allocation:sharedInspectQ4Allocation,inspectQ4Groups,monthlyIssues,S:structuredClone(state),validMonthlyQuantity,monthlyPlanSnapshot,inspectStoredOrderQuantity,inspectMonthlyAllocations,inspectOnceAllocations,addressStatus,structuredClone,JSON,
   window:{OrderDatePolicy:{validate:()=>({valid:true})}},
   OrderPhone:{parse:value=>({valid:/^0\d{9,10}$/.test(value||'')})},OrderEmail:{parse:value=>({valid:/^[^@]+@[^@]+\.[^@]+$/.test(value||'')})},
   OrderEmailDomain:{status:()=>({state:unknownEmail?'UNKNOWN':'VALID'}),isHard:()=>false,isSuccess:proof=>proof.state==='VALID'},
@@ -68,7 +70,7 @@ function draftHarness({missingContact=false,unknownEmail=false,address=null}={})
   storageText:()=>'',itemIdentity:()=>'',unit:()=> '판',showQ1Modal(){},q4OnceConfirmDialog:{open:true,classList:{contains:()=>false}},
   persist:async(candidate,options)=>{if(!options.canCommit())return {ok:false,status:'CANCELLED'};writes++;context.S=structuredClone(candidate);return {ok:true,status:'COMMITTED'};}
  });
- vm.runInContext(`${assignment('OrderSiteContract')}\nconst OrderSiteContract=window.OrderSiteContract;\n${variable(common,'CODE1_ORDER_VALIDATION')}\n${['q4ReviewIssue','quantityBoundIssue','q4ReviewAllocationIssues','monthlyIssues','q4ReviewVerdict'].map(fn).join('\n')}\nconst lineById=id=>S.lines.find(l=>l.id===id);const locationById=id=>S.locations.find(l=>l.id===id);const siteValid=site=>OrderSiteContract.valid(site);\n${variable(app,'allocationValid')}\nconst q4ReviewClone=value=>structuredClone(value);let q4ReviewContext={lineId:'L',ids:['AL'],openingAllocations:structuredClone(S.allocations),signature:JSON.stringify([S.lines[0],S.allocations,S.locations])};let q4ReviewPending=null,q4ReviewCommitCount=0;const save=persist;\n${fn('q4ReviewCommit')}\nglobalThis.subject={commit:q4ReviewCommit,verdict:()=>q4ReviewVerdict(S),isAllocationComplete:()=>allocationValid(S.allocations[0]),patches:()=>structuredClone(S.allocations),changeSite(){S.locations[0].name='changed';},removeSite(){S.locations=[];},source:()=>structuredClone(S)};`,context);
+ vm.runInContext(`${assignment('OrderSiteContract')}\nconst OrderSiteContract=window.OrderSiteContract;\n${variable(common,'CODE1_ORDER_VALIDATION')}\n${['q4ReviewIssue','q4ReviewAllocationIssues','q4ReviewVerdict'].map(fn).join('\n')}\nconst lineById=id=>S.lines.find(l=>l.id===id);const locationById=id=>S.locations.find(l=>l.id===id);const siteValid=site=>OrderSiteContract.valid(site);\n${variable(app,'allocationValid')}\nconst q4ReviewClone=value=>structuredClone(value);let q4ReviewContext={lineId:'L',ids:['AL'],openingAllocations:structuredClone(S.allocations),signature:JSON.stringify([S.lines[0],S.allocations,S.locations])};let q4ReviewPending=null,q4ReviewCommitCount=0;const save=persist;\n${fn('q4ReviewCommit')}\nglobalThis.subject={commit:q4ReviewCommit,verdict:()=>q4ReviewVerdict(S),isAllocationComplete:()=>allocationValid(S.allocations[0]),patches:()=>structuredClone(S.allocations),changeSite(){S.locations[0].name='changed';},removeSite(){S.locations=[];},source:()=>structuredClone(S)};`,context);
  return {subject:context.subject,get writes(){return writes;}};
 }
 

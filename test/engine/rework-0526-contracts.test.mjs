@@ -7,6 +7,8 @@ import {createCadence,inspectCadence,syncMonthlyPreferredDate,inspectStartDate,h
 import {inspectStoredOrderQuantity} from '../../web/q4-planning.mjs';
 import {validMonthlyQuantity,monthlyPlanSnapshot} from '../../web/quantity-contract.mjs';
 import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/allocation-ui.mjs';
+import {q4Issue,quantityBoundIssue,inspectQ4Allocation as sharedInspectQ4Allocation,inspectQ4Groups,monthlyIssues} from '../../web/q4-validation.mjs';
+import {inspectOneTimeDate} from '../../web/q4-date.mjs';
 import {addressStatus} from '../../web/address-contract.mjs';
 
 // Execute production declarations with domain-only DNS doubles. These tests
@@ -25,14 +27,14 @@ function fixture(mode='FLEX'){
  return {lines:[{id:'L',housing:'1',size:'왕란',pack:'30',qty:'67',qtyUnit:'tray',price:'10000'}],locations:[{id:'A',name:'합성 사업장',road:'합성시 가상로 10',postal:'08843',providerId:'1'.repeat(25),addressProvider:'JUSO',detail:'',dropoff:'',contactPhone:'01023456789',email:'test@example.com',storePhone:''}],allocations:[{id:'AL',lineId:'L',locationId:'A',mode,modeExplicit:true,qty:'15',monthlyDemandQty:'67',monthlyDemandUnit:'tray',advanced:{contactChannels:['phone']},q4Review:{version:'0460',activeHoliday:{days:[],none:true,irregular:false,conflict:'',request:''}}}]};
 }
 function rootOwner(source,{asOfLocalDate='2026-11-03'}={}){
- const context=vm.createContext({S:structuredClone(source),validMonthlyQuantity,monthlyPlanSnapshot,inspectStoredOrderQuantity,inspectStartDate,holidayPolicyFromSelection,seoulDate:()=>Object.fromEntries(['year','month','day'].map((key,i)=>[key,Number(asOfLocalDate.split('-')[i])])),inspectMonthlyAllocations,inspectOnceAllocations,addressStatus,structuredClone,JSON,createCadence,inspectCadence,window:{},
+ const context=vm.createContext({q4Issue,quantityBoundIssue,inspectQ4Groups,monthlyIssues,inspectOneTimeDate,inspectQ4Allocation:(allocation,options)=>sharedInspectQ4Allocation(allocation,{...options,now:new Date(asOfLocalDate+'T03:00:00Z')}),S:structuredClone(source),validMonthlyQuantity,monthlyPlanSnapshot,inspectStoredOrderQuantity,inspectStartDate,holidayPolicyFromSelection,seoulDate:()=>Object.fromEntries(['year','month','day'].map((key,i)=>[key,Number(asOfLocalDate.split('-')[i])])),inspectMonthlyAllocations,inspectOnceAllocations,addressStatus,structuredClone,JSON,createCadence,inspectCadence,window:{},
   OrderPhone:{parse:value=>({valid:/^0\d{9,10}$/.test(value||'')})},OrderEmail:{parse:value=>({valid:/^[^@]+@[^@]+\.[^@]+$/.test(value||'')})},
   OrderEmailDomain:{status:()=>({state:'VALID'}),isHard:()=>false,isSuccess:proof=>proof.state==='VALID'},
   q4ValidAmount:value=>/^\d+$/.test(String(value))&&Number(value)>0,valid:value=>Number(value)>0});
  vm.runInContext(`${assignment('OrderRepeatContract')};const OrderRepeatContract=window.OrderRepeatContract;
  ${assignment('OrderDatePolicy')};${assignment('OrderSiteContract')};const OrderSiteContract=window.OrderSiteContract;
  ${variable('common','CODE1_ORDER_VALIDATION')}
- ${['q4ReviewIssue','quantityBoundIssue','q4ReviewAllocationIssues','monthlyIssues','q4ReviewVerdict'].map(fn).join('\n')}
+ ${['q4ReviewIssue','q4ReviewAllocationIssues','q4ReviewVerdict'].map(fn).join('\n')}
  const lineById=id=>S.lines.find(line=>line.id===id),locationById=id=>S.locations.find(site=>site.id===id),siteValid=site=>OrderSiteContract.valid(site);
  ${variable('app','allocationValid')}
  globalThis.subject={verdict:()=>q4ReviewVerdict(S),legacyVerdict:()=>CODE1_ORDER_VALIDATION.validateOrderDraft(S),allocationIssues:()=>q4ReviewAllocationIssues(S.allocations[0]),complete:()=>allocationValid(S.allocations[0]),source:()=>structuredClone(S)};`,context);

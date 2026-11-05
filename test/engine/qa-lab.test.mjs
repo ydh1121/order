@@ -11,6 +11,7 @@ import {buildQaLab,collectQaModules} from '../../scripts/build-qa-lab.mjs';
 import {buildQaComparison} from '../../scripts/build-qa-comparison.mjs';
 import {allocationFixture,syntheticDns,syntheticAddressResult} from '../fixtures/qa-lab.mjs';
 import {createAddressSearchService} from '../../web/address-service.mjs';
+import {isVerifiedAddress,selectAddress} from '../../web/address-contract.mjs';
 import {projectStoredPayload} from '../../web/storage.mjs';
 import {q4ComparisonFixture} from '../fixtures/qa-lab-0526.mjs';
 import {quantityCases0528,dateCases0528,quantityFixture0528,dateFixture0528,contactFixture0528} from '../fixtures/qa-lab-0528.mjs';
@@ -82,7 +83,17 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   element('qa-lab-address').value='synthetic';await element('qa-lab-address').listeners.change();
   const selected=await address.search('합성 주소');assert.equal(selected.status,'OK');assert.equal(selected.items[0].postal,'08843');assert.match(selected.items[0].road,/실제 주소 아님/);
   const cached=await address.search('합성 주소');assert.deepEqual(cached,selected);assert.equal(address.inspect().cacheHits,1,'LAB uses the actual adapter cache');
+  for(const query of ['엽기떡볶이 언주역','서울시청','관악구청']){
+   const found=await address.search(query);assert.equal(found.version,3);assert.equal(found.items.length,2);
+   assert.ok(found.items.every(item=>item.kind==='PLACE'&&!isVerifiedAddress(item)&&item.postal===undefined));
+   assert.match(found.items[0].name,/합성 QA/);assert.match(found.items[0].name,/실제 장소 아님/);assert.equal(found.items[0].road,found.items[1].road);
+   assert.throws(()=>selectAddress({},found.items[0]),/ADDRESS_SELECTION_INVALID/,'place search alone never provides postal provenance');
+   const resolved=await address.resolve(query,found.items[0]);assert.equal(resolved.status,'OK');assert.equal(resolved.placeId,found.items[0].placeId);assert.equal(isVerifiedAddress(resolved.item),true);assert.equal(resolved.item.postal,'08843');assert.equal('items' in resolved,false,'resolution returns only the selected place');
+   const other=await address.resolve(query,found.items[1]);assert.notEqual(other.item.providerId,resolved.item.providerId);assert.equal(selectAddress({...resolved.item,detail:'매장 A'},other.item).detail,'');
+   assert.equal((await address.resolve(query,{...found.items[0],placeId:'999'})).reason,'PLACE_CHANGED');
+  }
   element('qa-lab-address').value='empty';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'EMPTY','mode change clears previous synthetic cache');
+  assert.equal((await address.search('서울시청')).status,'EMPTY','place results also clear when the explicit fixture mode changes');
   element('qa-lab-address').value='unavailable';await element('qa-lab-address').listeners.change();assert.equal((await address.search('합성 주소')).status,'UNAVAILABLE');address.close();
   await element('qa-lab-restart').listeners.click();assert.equal(location.hash,'');assert.equal(reloads,1);
   const seedWindow={name:'frame-before',__orderQaEnvelope:{state:allocationFixture(),caseId:'200',seedGeneration:2}};

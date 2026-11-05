@@ -3,7 +3,7 @@ import {fromRatio, exact, multiply, compare, toJSON} from './exact.mjs';
 import {monthlyDayIntent} from './period.mjs';
 import {monthDays,validMonth,ordinal,weekday,isoDate,parseDate} from './civil-date.mjs';
 
-export const CALENDAR_FORECAST_RULE_VERSION = 'calendar-forecast-1.1.0';
+export const CALENDAR_FORECAST_RULE_VERSION = 'calendar-forecast-1.2.0';
 const DATA_VERSION = 'proleptic-gregorian-calendar-1';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keysOnly = (value, keys) => Object.keys(value).every(key => keys.includes(key));
@@ -12,7 +12,7 @@ const validWeekdays = days => Array.isArray(days) && days.length <= 7 && days.ev
 /**
  * Exact nominal recurrence, independent of DOM, clock, timezone and holiday data.
  * quantity / range.min / range.max: exact decimal strings, safe integers, or JSON ratios.
- * schedule: WEEKLY {weekdays:[ISO day]}, CYCLE {weekPlans:[[ISO day]],anchorDate},
+ * schedule: WEEKLY {weekdays:[ISO day],anchorDate?}, CYCLE {weekPlans:[[ISO day]],anchorDate},
  * INTERVAL_DAYS {intervalDays:14|21,anchorDate}, or MONTHLY {day:1..31|'last',
  * shortMonthPolicy?:'CLAMP',anchorDate?}. CLAMP is an explicit policy; omitted
  * short-month policy remains unresolved. CYCLE anchor is the Monday starting week 1 and
@@ -80,9 +80,11 @@ export function calendarForecast(input) {
     } else if (schedule.kind === 'WEEKLY' || schedule.kind === 'CYCLE') {
       let plans, anchor = null;
       if (schedule.kind === 'WEEKLY') {
-        if (!keysOnly(schedule, ['kind', 'weekdays'])) return unresolved('SCHEDULE_POLICY_CONFLICT', 'schedule');
+        if (!keysOnly(schedule, ['kind', 'weekdays', 'anchorDate'])) return unresolved('SCHEDULE_POLICY_CONFLICT', 'schedule');
         if (schedule.weekdays === undefined || Array.isArray(schedule.weekdays) && schedule.weekdays.length === 0) return unresolved('WEEKDAYS_REQUIRED', 'schedule.weekdays');
         if (!validWeekdays(schedule.weekdays)) return finish('INVALID', ['WEEKDAYS_INVALID']);
+        anchor = schedule.anchorDate ? parseDate(schedule.anchorDate) : null;
+        if (schedule.anchorDate !== undefined && schedule.anchorDate !== '' && !anchor) return finish('INVALID', ['WEEKLY_ANCHOR_INVALID']);
         plans = [schedule.weekdays];
       } else {
         if (!keysOnly(schedule, ['kind', 'weekPlans', 'anchorDate'])) return unresolved('SCHEDULE_POLICY_CONFLICT', 'schedule');

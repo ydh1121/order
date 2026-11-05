@@ -82,7 +82,7 @@ test('versioned replay and source/result snapshots are independent, without cloc
   const input = {...base, quantity: ratio('1', '3'), schedule: {kind: 'WEEKLY', weekdays: [5]}};
   const result = calendarForecast(input);
   assert.deepEqual(result.normalized.low, ratio('5', '3'));
-  assert.equal(result.versions.rules, 'calendar-forecast-1.1.0');
+  assert.equal(result.versions.rules, 'calendar-forecast-1.2.0');
   assert.equal(result.versions.data, 'proleptic-gregorian-calendar-1');
   assert.deepEqual(calendarForecast(JSON.parse(JSON.stringify(result.raw))), result);
   input.schedule.weekdays.push(1);
