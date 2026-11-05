@@ -13,3 +13,13 @@ export function oneTimeDateValue(parts){
 export function inspectOneTimeDate(parts,now=new Date()){
  const {required,policyOptions}=dateModeOptions('ONCE');return inspectDateParts(parts,now,{required,...policyOptions});
 }
+
+/** The shared field edits strings; legacy ONCE persistence owns integer parts.
+ * Adapt accepted digits at the write boundary without coercing invalid text or
+ * touching a restored date during a read. Empty parts remain empty. */
+export function oneTimeDateParts(parts){
+ return Object.fromEntries(['year','month','day'].map(key=>{
+  const raw=parts?.[key],value=typeof raw==='string'&&/^\d+$/.test(raw)&&Number.isSafeInteger(Number(raw))?Number(raw):raw;
+  return [key,value];
+ }));
+}

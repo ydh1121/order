@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {dateBounds,evaluateDate,normalizeDateDraft,inspectDateParts,validateApprovedStart} from '../../web/order-date.mjs';
-import {dateModeOptions,inspectOneTimeDate,oneTimeDateValue} from '../../web/q4-date.mjs';
+import {dateModeOptions,inspectOneTimeDate,oneTimeDateValue,oneTimeDateParts} from '../../web/q4-date.mjs';
 import {dateFieldMarkup} from '../../web/date-field.mjs';
 const now='2026-11-05T10:00:00+09:00';
 const parts=value=>Object.fromEntries(['year','month','day'].map((key,i)=>[key,value.split('-')[i]]));
@@ -98,4 +98,28 @@ test('C55-15 durable completion/final allocation gate uses identical ONCE verdic
   if(!expected.valid)assert.equal(issues.find(issue=>issue.fieldKey==='desired-date').message,expected.message);
   assert.equal(JSON.stringify(allocation),before);
  }
+});
+
+
+test('C55-13 shared selected/typed ONCE date adapts to strict integer storage and reloads without losing advice',async()=>{
+ const {approvedFixture}=await import('../fixtures/qa-lab-0540.mjs');
+ const {projectStoredPayload,createBrowserStorage}=await import('../../web/storage.mjs');
+ const {webcrypto}=await import('node:crypto');
+ const entries=new Map(),local={getItem:key=>entries.get(key)??null,setItem:(key,value)=>entries.set(key,value),removeItem:key=>entries.delete(key)};
+ const storage=createBrowserStorage({localStorage:local,sessionStorage:local,locks:{request:async(name,options,callback)=>callback({name})},crypto:webcrypto,now:()=>1000});
+ for(const [index,raw]of [{year:'2026',month:'11',day:'8'},{year:'2100',month:'12',day:'31'},{year:'2026',month:'11',day:''}].entries()){
+  const input=frozen(raw),before=JSON.stringify(input),data=approvedFixture({mode:'ONCE'});
+  data.allocations[0].q4Review.deliveryDate=oneTimeDateParts(input);
+  const expected={year:Number(raw.year),month:Number(raw.month),day:raw.day===''?'':Number(raw.day)};
+  assert.deepEqual(projectStoredPayload(data).allocations[0].q4Review.deliveryDate,expected);
+  const loaded=await storage.load(),saved=await storage.commit(data,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'c55-date-integer-'+index});
+  assert.equal(saved.ok,true,JSON.stringify(saved));const restored=await storage.load();assert.deepEqual(restored.data.allocations[0].q4Review.deliveryDate,expected);
+  const inspected=inspectOneTimeDate(restored.data.allocations[0].q4Review.deliveryDate,now);assert.equal(inspected.valid,true);
+  if(index===0)assert.ok(inspected.evaluation.codes.includes('SUNDAY'));assert.equal(JSON.stringify(input),before);
+ }
+});
+
+test('C55-13 write adaptation does not interpret malformed date text as a valid stored integer',()=>{
+ for(const raw of ['1e3','-1','3.3',' 33','9007199254740993'])assert.equal(oneTimeDateParts({year:'2026',month:'11',day:raw}).day,raw);
+ assert.deepEqual(oneTimeDateParts(frozen({year:2027,month:1,day:10})),{year:2027,month:1,day:10});
 });
