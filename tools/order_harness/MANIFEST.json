@@ -1,0 +1,58 @@
+{
+  "schema": "order.harness-kit.manifest/v1",
+  "version": "1.0.0",
+  "files": [
+    {
+      "path": "order_harness.py",
+      "bytes": 62263,
+      "sha256": "98aacd1e120b9e35c63cd3d9cdb5a3884c3cad02e386d757278cb1cd3ba27eee"
+    },
+    {
+      "path": "README.md",
+      "bytes": 11271,
+      "sha256": "657f00a4f0d7a06a7f746f97cde92ba551fde42fb28b04f7ca33aa6f1a7c60c9"
+    },
+    {
+      "path": "AGENTS.integration.md",
+      "bytes": 2182,
+      "sha256": "f6cf7a082bbccd0cb48fcd8d9bc0a4a093bd7a0e465c2695d6fcca521a0fb3fa"
+    },
+    {
+      "path": "INTEGRATION_CHECKLIST.md",
+      "bytes": 2831,
+      "sha256": "078b6848cc09e20722c561749d4eb9f4b9e7f04ba68a6e0e3ef054763244c03c"
+    },
+    {
+      "path": "data/skill_routing.json",
+      "bytes": 310991,
+      "sha256": "9e3404401d567e7f22a3af85bce423678f1e851b2be59cef813d8f510c13123d"
+    },
+    {
+      "path": "data/DATA_PROVENANCE.json",
+      "bytes": 532,
+      "sha256": "3a29b482416956f3d87eddc44e2768adc3901d724153b1c142087e86e73641d6"
+    },
+    {
+      "path": "tests/test_acceptance.py",
+      "bytes": 19502,
+      "sha256": "18e52a561ebe024d7b0209b9eadc87403ade297eb997f0da4b7fd0879aa90881"
+    },
+    {
+      "path": "verification/ACCEPTANCE_REPORT.json",
+      "bytes": 2344,
+      "sha256": "fb43ac742a6f2929fd30b5e50bf3d2206243873d044a575922834541766cd987"
+    },
+    {
+      "path": "verification/acceptance.stderr.txt",
+      "bytes": 1613,
+      "sha256": "02b2c19633b980bf3bca9165693bf6bf1b9cc536a54ec001267629e74e0d6188"
+    }
+  ],
+  "excluded": [
+    "__pycache__/",
+    "tests/__pycache__/",
+    "test-output/ scratch fixtures",
+    "local runtime state and databases"
+  ],
+  "product_integration": "NOT_PERFORMED"
+}

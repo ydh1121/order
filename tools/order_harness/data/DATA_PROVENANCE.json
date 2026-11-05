@@ -1,0 +1,12 @@
+{
+  "schema": "order.harness.data-provenance/v1",
+  "created_at_utc": "2026-11-05T06:50:28.532691+00:00",
+  "routing_source": "source_review_20261105/skill_routing.json",
+  "routing_sha256": "9e3404401d567e7f22a3af85bce423678f1e851b2be59cef813d8f510c13123d",
+  "tasks": 28,
+  "repository_bindings": 126,
+  "source_content_bundled": false,
+  "scope": "Original source bytes remain in the pinned source archives; this is task routing metadata only.",
+  "design_fitting": "DEFERRED",
+  "no_installation_or_product_application": true
+}
