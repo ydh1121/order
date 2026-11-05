@@ -23,8 +23,10 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci
-      - run: npm test
-      - run: npm run test:engine
+      - run: npm test -- --coverage
+      - run: node scripts/engine/check-structure-0549.mjs
+      - run: python -m unittest discover -s tools/order_harness/tests -v
+      - run: node --test tools/order_harness/tests/codex-bridge.test.mjs
       - run: npm run example:engine
       - run: npm run build:engine
       - run: npm run build
@@ -195,6 +197,16 @@ jobs:
           dpkg-query -W fonts-noto-cjk
           fc-match ':lang=ko'
       - run: npm run build
+      - name: C55 exact CSS cleanup with matched computed styles and geometry
+        run: node test/browser/structure-0549.smoke.mjs
+      - name: C55 address requests and parent transactions on product source
+        run: node test/browser/c55-address.smoke.mjs
+      - name: C55 shared date input and restored ONCE compatibility
+        if: always()
+        run: node test/browser/c55-date.smoke.mjs
+      - name: C55 cadence, bulk memory and monthly summary
+        if: always()
+        run: node test/browser/c55-q4.smoke.mjs
       - name: MSG0540 approved nine groups on actual product source
         run: node test/browser/msg0540.smoke.mjs
       - name: MSG0528 actual Q1–Q4, checkpoint, quantities and calendar boundaries
@@ -206,6 +218,12 @@ jobs:
           ORDER_QA_CONTRACT: MSG0540
           ORDER_0526_FUNCTIONAL_ONLY: '1'
         run: node test/browser/canonical-q4-0526.smoke.mjs
+      - name: C55 single offline comparison from exact baseline and current source
+        if: always()
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/order-before-0549" c3800a2dacec92f9a6a8b99345e34eee151ddd84
+          node scripts/build-qa-comparison.mjs --message MSG0549 --baseline "$RUNNER_TEMP/order-before-0549" --out browser-evidence/c55-qa-lab/order-before-after.html
+          node test/browser/qa-comparison.smoke.mjs browser-evidence/c55-qa-lab/order-before-after.html
       - name: Single offline comparison HTML from both fixed Git graphs
         if: always()
         run: |
@@ -221,4 +239,9 @@ jobs:
             browser-evidence/q1-q4-0528/
             browser-evidence/q4-0526/
             browser-evidence/msg0540/
+            browser-evidence/c55-address/
+            browser-evidence/c55-date/
+            browser-evidence/c55-q4/
+            browser-evidence/c55-qa-lab/
+            browser-evidence/structure-0549/
           retention-days: 14

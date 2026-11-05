@@ -537,3 +537,12 @@ test('C54-06 reset can inspect the old Q2 controls after the durable model clear
  lines.clear();assert.doesNotThrow(()=>options(input));assert.equal(options(input).step,1);assert.equal(options(input).maxDigits,12);
  assert.equal(options({dataset:{linePrice:'L'}}).step,1);
 });
+
+test('C55 shared linewide monthly failure does not blame only the first site or mutate frozen saved input',()=>{
+ const state=restored('FLEX');state.lines[0].qty='300';
+ const before=structuredClone(state),freeze=value=>{if(value&&typeof value==='object'){Object.freeze(value);Object.values(value).forEach(freeze);}return value;};freeze(state);
+ const group=inspectQ4Groups(state),monthly=group.issues.filter(issue=>issue.fieldKey==='monthly');
+ assert.ok(monthly.length>0);assert.ok(monthly.every(issue=>issue.lineId==='L'&&issue.siteId===null));
+ const verdict=gate(state);for(const site of state.locations)assert.ok(verdict.fieldErrors.some(issue=>issue.stage==='q4'&&issue.lineId==='L'&&(!issue.siteId||issue.siteId===site.id)));
+ assert.deepEqual(state,before);assert.deepEqual(gate(state),verdict,'Repeated verdict read is stable');
+});

@@ -65,6 +65,8 @@ python tools/order_harness/order_harness.py --state-dir /new/empty/state resume
 
 `tools/order_harness/codex-bridge.js`의 `runAndCheckpoint({actionId, hooks})`는 호스트가 이미 제공한 도구 callback을 주입받는다. 자격증명·환경 변수·네트워크 클라이언트를 포함하지 않는다. 호출 한 번이 명령 영수증 → allowlist export → 승인된 폴더/CURRENT metadata 확인 → 업로드 → raw 재다운로드 → SHA/크기/부모 검증을 순서대로 수행한다.
 
+실제로 연결한 callback은 `codex-drive-hooks.js`의 `runCodexDriveCheckpoint({tools, config, emit})`에 보존한다. `config`는 `base`, `actionId`, 초기화한 `state`, 검토한 `allowlist`를 필수로 받으며 `repo`, `area`, `scope`, `command`(argv 배열), `next`를 선택적으로 받는다. 현재 호스트의 `tools` 객체를 주입하고 credential을 넣지 않는다. 호스트는 승인한 로컬 소스를 읽어 export 키워드를 제거한 함수로 평가할 수 있다. 순수 bridge와 실제 binding 모두 내부 import나 직접 filesystem API 대신 주입된 도구를 사용한다. callback의 의미는 실제002와 같고 경로·action·명령만 구성으로 분리했다.
+
 | callback | 필수 계약 |
 |---|---|
 | loadIntent / saveIntent | 동일 action ID의 의도·진행을 전용 로컬 JSON에 atomic 보존 |

@@ -77,7 +77,7 @@ export async function qaFetch(url,{signal,method,body:requestBody}={}){
  if(target.origin==='https://qa-lab.invalid'&&target.pathname==='/assets/iana-reference.json')body=reference;
  else if(['https://cloudflare-dns.com/dns-query','https://dns.google/resolve'].includes(target.origin+target.pathname)&&dnsControl.value==='example-route')body=syntheticDns(target.searchParams.get('name'),target.searchParams.get('type'));
  else if(target.origin==='https://qa-lab.invalid'&&target.pathname==='/api/address/search'&&method==='POST'){
-  const request=JSON.parse(requestBody);body=syntheticAddressResult(request.query,request.page,addressControl.value);if(body.status==='UNAVAILABLE')responseStatus=503;
+  const request=JSON.parse(requestBody);body=syntheticAddressResult(request.query,request.page,addressControl.value,request);if(body.status==='UNAVAILABLE')responseStatus=503;
  }
  else throw TypeError('QA_OFFLINE_NO_EXTERNAL_NETWORK');
  return new Response(JSON.stringify(body),{status:responseStatus,headers:{'content-type':'application/json','cache-control':'no-store'}});
