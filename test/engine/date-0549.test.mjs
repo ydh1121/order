@@ -123,3 +123,18 @@ test('C55-13 write adaptation does not interpret malformed date text as a valid 
  for(const raw of ['1e3','-1','3.3',' 33','9007199254740993'])assert.equal(oneTimeDateParts({year:'2026',month:'11',day:raw}).day,raw);
  assert.deepEqual(oneTimeDateParts(frozen({year:2027,month:1,day:10})),{year:2027,month:1,day:10});
 });
+
+
+test('C54/C55 leading zero preserves only a selectable padded completion in the current range',()=>{
+ const november='2026-11-05T10:00:00+09:00',april='2027-04-01T10:00:00+09:00';
+ for(const options of [{},once]){
+  assert.equal(normalizeDateDraft({year:'2026',month:'0',day:'21'},november,{...options,editingPart:'month'}).parts.month,'11');
+  assert.equal(normalizeDateDraft({year:'2026',month:'00',day:'21'},november,{...options,editingPart:'month'}).parts.month,'11');
+  assert.equal(normalizeDateDraft({year:'2027',month:'0',day:''},april,{...options,editingPart:'month'}).parts.month,'0');
+  assert.equal(normalizeDateDraft({year:'2027',month:'04',day:''},april,{...options,editingPart:'month'}).parts.month,'4');
+  assert.equal(normalizeDateDraft({year:'2026',month:'12',day:'0'},november,{...options,editingPart:'day'}).parts.day,'0');
+  assert.equal(normalizeDateDraft({year:'2026',month:'12',day:'04'},november,{...options,editingPart:'day'}).parts.day,'4');
+  assert.equal(normalizeDateDraft({year:'3',month:'11',day:''},november,{...options,editingPart:'year'}).parts.year,'3');
+  assert.equal(normalizeDateDraft({year:'2026',month:'2',day:''},november,{...options,editingPart:'month'}).parts.month,'2');
+ }
+});

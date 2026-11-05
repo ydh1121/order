@@ -42,8 +42,8 @@ export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
   return {status:'valid',date:result,changed:code!=='UNCHANGED',code,bounds};
  }
  // Date drafts are normalized on every input, independently of DOM events.
- // Short fields remain editable; completed fields clamp against the selected
- // mode range. For example, month "2" remains editable, while "22" corrects.
+ // Positive short fields remain editable; a leading zero only remains when
+ // it can complete a selectable padded value. Completed fields clamp.
  function normalizeDateDraft(parts,now,{final=false,editingPart=null,...options}={}){
   const bounds=dateBounds(now,options),keys=['year','month','day'],raw=Object.fromEntries(keys.map(key=>[key,String(parts?.[key]??'')]));
   if(!bounds)return {status:'invalid',date:null,parts:raw,changed:false,code:'INVALID_NOW'};
@@ -63,9 +63,9 @@ export function createDatePolicy(rows,coverage=KR_HOLIDAY_SNAPSHOT.coverage){
    const n=Number(text),exact=text.length<=width&&Number.isSafeInteger(n)&&values.includes(n);
    const prefix=values.filter(value=>[String(value),String(value).padStart(width,'0')].some(valueText=>valueText.startsWith(text)));
    if(exact){normalized[part]=String(n);states[part]='valid';candidates=candidates.filter(item=>has(item,part,n));continue;}
-   if(!final&&(!editingPart||editingPart===part)&&text.length<width){states[part]='prefix';if(prefix.length)candidates=candidates.filter(item=>prefix.some(value=>has(item,part,value)));continue;}
-   // Only a completed field (or explicit completion) clamps. A first digit
-   // remains editable even when it cannot prefix a selectable date.
+   if(!final&&(!editingPart||editingPart===part)&&text.length<width&&(prefix.length||n>0)){states[part]='prefix';if(prefix.length)candidates=candidates.filter(item=>prefix.some(value=>has(item,part,value)));continue;}
+   // A zero without a selectable padded completion is already impossible.
+   // Positive first digits remain editable until completion.
    const comparable=part==='year'&&text.length<width?Number(text.padEnd(width,'0')):n;
    const corrected=comparable<=values[0]?values[0]:comparable>=values.at(-1)?values.at(-1):values.reduce((best,value)=>Math.abs(value-comparable)<Math.abs(best-comparable)?value:best,values[0]);
    normalized[part]=String(corrected);states[part]='valid';corrections.push({part,from:text,to:String(corrected),code:comparable<values[0]?'MINIMUM':'MAXIMUM'});candidates=candidates.filter(item=>has(item,part,corrected));
