@@ -1734,3 +1734,10 @@ button,input,select,textarea{font-family:inherit}
 /* Approved schedule's narrow-column treatment; cadence/frequency stay adjacent. */
 @media(max-width:390px){.q4-regular-dialog .qa-repeat-pair .qa-label{font-size:var(--type-meta)}}
 @media(max-width:360px){.q4-regular-dialog [data-section="repeat"] .qa-repeat-pair{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);column-gap:12px}.q4-regular-dialog .qa-repeat-pair .qa-label{white-space:nowrap}.q4-regular-dialog .qa-repeat-pair .qa-combo-trigger{padding-inline:8px;grid-template-columns:12px minmax(0,1fr) 12px;gap:3px}.q4-regular-dialog .qa-repeat-pair .qa-combo-trigger:not(.qa-combo-editable)::before{width:12px}.q4-regular-dialog .qa-repeat-pair .qa-combo-trigger>.t-acc-chevron{width:12px}}
+
+/* MSG0581 candidate layout only; fields, buttons and modal motion retain shared owners. */
+.simple-quote-fields{display:grid;gap:var(--ui-field-nested-gap);min-width:0}
+.simple-quote-fields>.text-input{max-width:100%;min-width:0}
+#simple-site-count{width:8ch}
+#simple-order-kinds,#simple-flex-basis{display:flex;flex-wrap:wrap;gap:var(--ui-action-gap)}
+#simple-consultation-row{margin-block:var(--ui-field-nested-gap)}

@@ -44,7 +44,7 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   assert.equal(result.identity.commitSha,git(['rev-parse','HEAD']).trim());
   assert.equal(result.identity.sourceState,'EXACT_GIT_COMMIT');assert.deepEqual(result.identity.dirtySourceFiles,[]);
   assert.match(result.html,/connect-src 'none'/);assert.doesNotMatch(result.html,/<script[^>]+src=|<link[^>]+href=/i);
-  assert.match(result.html,/id="qa-lab-commit"/);assert.match(result.html,/ISOLATED_MEMORY_ONLY/);
+  assert.match(result.html,/id="qa-lab-commit"/);assert.match(result.html,/id="qa-lab-mode"/);assert.match(result.html,/ISOLATED_MEMORY_ONLY/);
   const css=await readFile(resolve(directory,'web/styles.css'),'utf8');assert.ok(result.html.includes(css));
   for(const file of result.identity.sourceFiles)assert.equal(file.sha256,sha(await readFile(resolve(directory,file.path))));
   const mapped=new Map(result.identity.substitutions.map(s=>[s.path,s.shim]));
@@ -59,7 +59,7 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   const {createBrowserStorage}=await import('../../web/storage.mjs');
   const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{value:'offline',textContent:'',listeners:{},addEventListener(type,fn){this.listeners[type]=fn;}});return elements.get(id);};
   const document={getElementById:element,documentElement:{dataset:{}}};let reloads=0;
-  const location={hash:'',reload(){reloads++;}};
+  const location={href:'file:///tmp/order-qa-lab.html',hash:'',reload(){reloads++;}};
   let source=decode(imports['order-qa/virtual/runtime.mjs']);const ast=parse(source,{ecmaVersion:2024,sourceType:'module'});
   const edits=ast.body.filter(node=>node.type==='ImportDeclaration'||node.type==='ExportNamedDeclaration').map(node=>({start:node.start,end:node.type==='ImportDeclaration'?node.end:node.declaration.start}));
   for(const edit of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,edit.start)+source.slice(edit.end);
@@ -99,6 +99,32 @@ test('S05 local LAB reuses a fixed Git product graph and isolates every controll
   const seedWindow={name:'frame-before',__orderQaEnvelope:{state:allocationFixture(),caseId:'200',seedGeneration:2}};
   const seeded=await new AsyncFunction('createBrowserStorage','createAddressSearchService','allocationFixture','syntheticDns','syntheticAddressResult','document','location','crypto','window',source+'\nreturn {createQaStorage};')(createBrowserStorage,createAddressSearchService,allocationFixture,syntheticDns,syntheticAddressResult,document,location,webcrypto,seedWindow);
   assert.deepEqual((await seeded.createQaStorage().load()).data,projectStoredPayload(seedWindow.__orderQaEnvelope.state),'explicit iframe envelope seeds the real storage even when Chrome retains a different window.name');
+ });
+
+ await t.test('candidate selector delegates to URL mode and isolates explicit storage keys from detailed seeds',async()=>{
+  const {createBrowserStorage,emptyStoredPayload}=await import('../../web/storage.mjs');
+  const {blankSimpleQuote}=await import('../../web/simple-quote-contract.mjs');
+  const elements=new Map(),element=id=>{if(!elements.has(id))elements.set(id,{value:'offline',textContent:'',listeners:{},addEventListener(type,fn){this.listeners[type]=fn;}});return elements.get(id);};
+  const document={getElementById:element,documentElement:{dataset:{}}};let reloads=0;
+  const location={href:'file:///tmp/order-qa-lab.html?case=kept&mode=simple#qa-allocation-200',hash:'#qa-allocation-200',reload(){reloads++;}};
+  let source=decode(imports['order-qa/virtual/runtime.mjs']);const ast=parse(source,{ecmaVersion:2024,sourceType:'module'});
+  const edits=ast.body.filter(node=>node.type==='ImportDeclaration'||node.type==='ExportNamedDeclaration').map(node=>({start:node.start,end:node.type==='ImportDeclaration'?node.end:node.declaration.start}));
+  for(const edit of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,edit.start)+source.slice(edit.end);
+  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+  const runtime=await new AsyncFunction('createBrowserStorage','createAddressSearchService','allocationFixture','syntheticDns','syntheticAddressResult','document','location','crypto','window',source+'\nreturn {createQaStorage};')(createBrowserStorage,createAddressSearchService,allocationFixture,syntheticDns,syntheticAddressResult,document,location,webcrypto,{__orderQaEnvelope:{state:allocationFixture()}});
+  assert.equal(document.documentElement.dataset.qaLabMode,'simple');assert.equal(document.documentElement.dataset.qaLabFixture,'none');assert.equal(element('qa-lab-fixture').disabled,true);
+  await element('qa-lab-fixture').listeners.click();assert.equal(reloads,0,'detailed fixture cannot seed the simple draft');
+  const detailed=runtime.createQaStorage(),old=await detailed.load();assert.equal(old.status,'EMPTY','detailed envelope/hash is ignored in simple mode');
+  const detailedSaved=await detailed.commit(allocationFixture(),{expectedRevision:old.revision,expectedToken:old.versionToken,transactionId:'qa-detailed-only'});assert.equal(detailedSaved.ok,true);
+  const simple=runtime.createQaStorage({key:'order_simple_prework_0581',migrateLegacy:false}),initial=await simple.load();assert.equal(initial.status,'EMPTY');assert.deepEqual(initial.data.lines,[]);
+  const input={...emptyStoredPayload(),simpleQuote:blankSimpleQuote()};input.simpleQuote.consultationInterest=true;
+  const simpleSaved=await simple.commit(input,{expectedRevision:initial.revision,expectedToken:initial.versionToken,transactionId:'qa-simple-only'});assert.equal(simpleSaved.ok,true);
+  assert.deepEqual((await detailed.load()).data,detailedSaved.data,'simple candidate write cannot replace detailed data');
+  const sameSimple=runtime.createQaStorage({key:'order_simple_prework_0581',migrateLegacy:false});assert.deepEqual((await sameSimple.load()).data,simpleSaved.data,'the same explicit key restores only its own candidate');
+  await element('qa-lab-conflict').listeners.click();assert.equal((await detailed.load()).revision,detailedSaved.revision);assert.equal((await simple.load()).revision,simpleSaved.revision+1,'conflict tool uses the product-bound namespace');
+  element('qa-lab-mode').value='detailed';element('qa-lab-mode').listeners.change();assert.equal(location.href,'file:///tmp/order-qa-lab.html?case=kept');
+  element('qa-lab-mode').value='simple';element('qa-lab-mode').listeners.change();assert.equal(location.href,'file:///tmp/order-qa-lab.html?case=kept&mode=simple');
+  assert.throws(()=>runtime.createQaStorage({key:''}),/STORAGE_CONFIG/);
  });
 
  await t.test('comparison keeps two exact graphs, explicit identical fixtures and isolated memory',async()=>{

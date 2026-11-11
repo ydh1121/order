@@ -4,7 +4,8 @@
  */
 import {isVerifiedAddress} from './address-contract.mjs';
 import {inspectCadence} from './cadence-contract.mjs';
-export const STORAGE_SCHEMA_VERSION=8;
+import {projectSimpleQuote} from './simple-quote-contract.mjs';
+export const STORAGE_SCHEMA_VERSION=9;
 export const STORAGE_KEY='order_q1_q4_v1';
 export const STORAGE_LOCK='order-q1-q4-storage';
 export const LEGACY_KEYS=Object.freeze(['order_v015R2_draft','order_v015R1_draft']);
@@ -76,7 +77,7 @@ const legacyAllocation=object(allocationSpec,['id','lineId','locationId']);
 const currentAllocationShape=object({...allocationSpec,monthlyPlanQty:optionalPackageRaw,monthlyPlanUnit:packageUnit,monthlyPlanSource:oneOf(['manual','derived']),monthlyDemandBasis:oneOf(['known','residual','single-total','package-plan','unknown']),cadence:nullable(cadence),planningReference,nominalVisitCount:nominalVisits,deliveryPlan},['id','lineId','locationId']);
 const allocation=(v,p)=>{const out=currentAllocationShape(v,p);if(out.cadence?.version==='3.0.0'){for(const key of ['qty','qtyMin','qtyMax','monthlyPlanQty'])if(Object.hasOwn(out,key))approvedQuantity(out[key],p+'.'+key);}const planFields=['monthlyPlanQty','monthlyPlanUnit','monthlyPlanSource','monthlyDemandBasis'];if(planFields.some(key=>Object.hasOwn(out,key))){if(planFields.some(key=>!Object.hasOwn(out,key))||out.monthlyAllocationContract!=='2.0.0')fail(p,'PACKAGE_CONTRACT_INCOMPLETE');const known=['known','residual','single-total'].includes(out.monthlyDemandBasis);if(known&&(!out.monthlyDemandQty||out.monthlyDemandUnit!=='each'||!out.monthlyDemandSource))fail(p,'DEMAND_REQUIRED');if(!known&&out.monthlyDemandQty!=='')fail(p,'UNKNOWN_DEMAND_MUST_STAY_EMPTY');if(known){const value=out.monthlyDemandQty;if(!/^[1-9]\d*$/.test(value)&&!(out.monthlyDemandExact?.conversionReviewed===true&&out.monthlyDemandExact.raw===value&&out.monthlyDemandExact.unit==='each'&&/^\d+\/[1-9]\d*$/.test(value)))fail(p,'DEMAND_SYNTAX');}if(['residual','single-total'].includes(out.monthlyDemandBasis)&&out.monthlyDemandSource!=='derived')fail(p,'RESIDUAL_PROVENANCE');if(out.qtySource!==undefined&&!['user','auto'].includes(out.qtySource))fail(p,'QUANTITY_SOURCE');}return out;};
 const bodyCheckpoint=object({version:oneOf(['1.0.0']),q1Selection:object({id,housing:oneOf(['','1','2','3','4']),size:oneOf(['','왕란','특란','대란','중란','소란']),pack:oneOf(['','10','20','30'])},['id','housing','size','pack'])},['version','q1Selection']);
-const payloadShape=(schemaVersion=STORAGE_SCHEMA_VERSION)=>object({bodyCheckpoint,lines:list(line),current:nullable(id),locations:list(schemaVersion<3?legacyLocation:location),allocations:list(schemaVersion<4?legacyAllocation:allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
+const payloadShape=(schemaVersion=STORAGE_SCHEMA_VERSION)=>object({bodyCheckpoint,...(schemaVersion>=9?{simpleQuote:projectSimpleQuote}:{}),lines:list(line),current:nullable(id),locations:list(schemaVersion<3?legacyLocation:location),allocations:list(schemaVersion<4?legacyAllocation:allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
  stage:omit,errorExposure:omit,validation:omit,dnsCache:omit,pendingRequests:omit},['lines','locations','allocations']);
 export const emptyStoredPayload=()=>({lines:[],current:null,locations:[],allocations:[],open:'q1',allocationRevision:0});
 function canonical(value){return Array.isArray(value)?'['+value.map(canonical).join(',')+']':plain(value)?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);}
@@ -106,6 +107,7 @@ function projectPayload(input,schemaVersion){
   if(Object.hasOwn(row,'cadence')||[row.q4Review?.activeRepeat,row.q4Review?.common?.repeat,row.q4Review?.draft?.repeat].some(repeat=>repeat&&Object.hasOwn(repeat,'cadence')))fail('data.allocations.'+i+'.cadence','UNKNOWN_FIELD');
  }
  const result=payloadShape(schemaVersion)(input,'data');
+ if(result.simpleQuote&&result.lines.length>1)fail('data.lines','SINGLE_SKU_REQUIRED');
  if(result.bodyCheckpoint&&result.lines.length)fail('data.bodyCheckpoint','BODY_CHECKPOINT_NOT_INITIAL');
  const unique=(rows,field)=>{const set=new Set(rows.map(row=>row.id));if(set.size!==rows.length)fail('data.'+field,'DUPLICATE_ID');return set;};
  const lines=unique(result.lines,'lines'),sites=unique(result.locations,'locations');unique(result.allocations,'allocations');
@@ -138,10 +140,10 @@ function migrateLegacy(input,key){
 }
 const receiptShape=object({transactionId:id,fingerprint:text(64),revision:integer,operation:oneOf(['commit','reset'])},['transactionId','fingerprint','revision','operation']);
 const migrationShape=nullable(object({source:oneOf(['session-R2','session-R1']),legacyKey:oneOf(LEGACY_KEYS)},['source','legacyKey']));
-const envelopeShape=object({schemaVersion:oneOf([1,2,3,4,5,6,7,8]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
+const envelopeShape=object({schemaVersion:oneOf([1,2,3,4,5,6,7,8,9]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
 function decode(rawValue){
  if(typeof rawValue!=='string'||new TextEncoder().encode(rawValue).length>MAX_BYTES)fail('record','SIZE_LIMIT');
- const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3,4,5,6,7,8].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
+ const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3,4,5,6,7,8,9].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
  const envelope=envelopeShape(value,'record');if(envelope.revision<1)fail('record.revision');
  if(envelope.state==='reset'){if(envelope.data!==null)fail('record.data');}else{
   if(envelope.schemaVersion===1&&envelope.data?.lines?.some(row=>Object.hasOwn(row,'qtyDisplayUnit')))fail('record.data.lines','UNKNOWN_FIELD');
@@ -154,8 +156,8 @@ function resolveDefault(options,key,getter){if(Object.hasOwn(options,key))return
 /** Injected Storage and LockManager allow isolated tests without any product QA hook. */
 export function createBrowserStorage(options={}){
  const local=resolveDefault(options,'localStorage',()=>globalThis.localStorage),session=resolveDefault(options,'sessionStorage',()=>globalThis.sessionStorage),locks=resolveDefault(options,'locks',()=>globalThis.navigator?.locks),crypto=resolveDefault(options,'crypto',()=>globalThis.crypto);
- const key=options.key??STORAGE_KEY,lockName=options.lockName??STORAGE_LOCK,now=options.now??Date.now;
- if(typeof key!=='string'||!key||typeof lockName!=='string'||!lockName||typeof now!=='function')throw TypeError('STORAGE_CONFIG');
+ const key=options.key??STORAGE_KEY,lockName=options.lockName??STORAGE_LOCK,now=options.now??Date.now,migrateSession=options.migrateLegacy??true;
+ if(typeof key!=='string'||!key||typeof lockName!=='string'||!lockName||typeof now!=='function'||typeof migrateSession!=='boolean')throw TypeError('STORAGE_CONFIG');
  let last=null;const tokens=new WeakMap();
  const output=(ok,status,envelope=null,extra={})=>({ok,status,revision:envelope?.revision??0,versionToken:envelope?tokens.get(envelope):undefined,generation:envelope?.generation??null,data:envelope?envelope.state==='data'?clone(envelope.data):emptyStoredPayload():null,changed:false,...extra});
  async function digest(value){const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('');}
@@ -177,7 +179,7 @@ export function createBrowserStorage(options={}){
   try{if(local.getItem(key)!==serialized)return output(false,'WRITE_FAILED',previous,{reason:'WRITE_NOT_VERIFIED',uncertain:true,attemptedRevision:envelope.revision});}catch{return output(false,'WRITE_FAILED',previous,{reason:'WRITE_NOT_VERIFIED',uncertain:true,attemptedRevision:envelope.revision});}
   tokens.set(envelope,versionToken);last=envelope;return output(true,envelope.state==='reset'?'RESET':'COMMITTED',envelope,{changed:true});
  }
- function legacy(){try{if(!session||typeof session.getItem!=='function')return {error:output(false,'UNAVAILABLE',null,{reason:'SESSION_STORAGE_UNAVAILABLE'})};for(const legacyKey of LEGACY_KEYS){const raw=session.getItem(legacyKey);if(raw!==null){if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_BYTES)fail('legacy','SIZE_LIMIT');return {key:legacyKey,data:migrateLegacy(JSON.parse(raw),legacyKey)};}}return {};}catch(error){return {error:output(false,error.reason==='UNSUPPORTED_VERSION'?'UNSUPPORTED':error instanceof SyntaxError||error.reason?'CORRUPT':'UNAVAILABLE',null,{reason:error.reason||'LEGACY_READ_FAILED',path:error.path})};}}
+ function legacy(){if(!migrateSession)return {};try{if(!session||typeof session.getItem!=='function')return {error:output(false,'UNAVAILABLE',null,{reason:'SESSION_STORAGE_UNAVAILABLE'})};for(const legacyKey of LEGACY_KEYS){const raw=session.getItem(legacyKey);if(raw!==null){if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_BYTES)fail('legacy','SIZE_LIMIT');return {key:legacyKey,data:migrateLegacy(JSON.parse(raw),legacyKey)};}}return {};}catch(error){return {error:output(false,error.reason==='UNSUPPORTED_VERSION'?'UNSUPPORTED':error instanceof SyntaxError||error.reason?'CORRUPT':'UNAVAILABLE',null,{reason:error.reason||'LEGACY_READ_FAILED',path:error.path})};}}
  async function load(){return exclusive(async()=>{
   const current=await read();if(current.error)return current.error;if(current.envelope)return output(true,current.envelope.state==='reset'?'RESET':'LOADED',current.envelope);
   const old=legacy();if(old.error)return {...old.error,versionToken:'ABSENT'};if(!old.key)return output(true,'EMPTY',null,{data:emptyStoredPayload(),versionToken:'ABSENT'});

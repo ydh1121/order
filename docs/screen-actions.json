@@ -464,6 +464,62 @@
       ],
       "resultPermissions": "Only a complete validated single quote may display its declared total. Comparison requires ELIGIBLE equal basis and supplied current amount. Unknown period is not monthly; no global minimum, order, stock or delivery grant. Partial, empty, failure and expiry are distinct.",
       "visualIntegration": "Existing layout retained; rejected R3.1 screens/motion/company tokens not integrated."
+    },
+    {
+      "id": "SIMPLE_QUOTE_0581",
+      "route": "?mode=simple#/form",
+      "status": "PROVISIONAL_PREWORK_NOT_DEPLOYED",
+      "actions": [
+        {
+          "id": "simple-spec-unknown",
+          "type": "explicit-unknown-spec",
+          "owner": "app Q1 and simple-quote-contract"
+        },
+        {
+          "id": "simple-consultation-interest",
+          "type": "optional-interest-not-consent",
+          "default": false
+        },
+        {
+          "id": "add-line",
+          "type": "single-sku-auth-handoff",
+          "owner": "simple-quote-ui",
+          "provider": "UNAVAILABLE"
+        },
+        {
+          "id": "q2-next",
+          "type": "monthly-quantity-validation",
+          "owner": "app renderQ2 and numeric-input",
+          "scope": "UNCONFIRMED"
+        },
+        {
+          "id": "simple-site-count / simple-region / simple-regions-differ / data-simple-site-region",
+          "type": "raw-region-autosave",
+          "owner": "simple-quote-ui / storage"
+        },
+        {
+          "id": "simple-order-edit / data-simple-kind / data-simple-basis",
+          "type": "private-order-intent-draft",
+          "owner": "simple-quote-ui"
+        },
+        {
+          "id": "simple-preferred-date / simple-date-clear",
+          "type": "optional-existing-common-calendar",
+          "owner": "date-field and q4-date",
+          "oncePeriod": "ONCE_LEGACY"
+        },
+        {
+          "id": "data-simple-order-confirm / data-simple-order-cancel",
+          "type": "confirmed-one-or-cancel-zero",
+          "owner": "OrderModalShell / storage"
+        },
+        {
+          "id": "save-checkpoint / reset-input / to-result",
+          "type": "shared-owner-isolated-storage",
+          "owner": "app",
+          "proof": "BLOCKED_UNCONFIRMED_SCOPE"
+        }
+      ]
     }
   ]
 }

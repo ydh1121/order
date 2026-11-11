@@ -11,10 +11,10 @@ const current=()=>{const data=legacy();data.allocations.forEach(a=>Object.assign
 const envelope=(version,data)=>JSON.stringify({schemaVersion:version,generation:'historic-generation',revision:7,state:'data',data,receipts:[],migration:null,updatedAt:0});
 const reference={year:2026,month:11,anchorDate:'2026-11-02',nominal:true};
 test('R23 schema1/2/3 source bytes and demand meaning survive read; explicit package commit alone upgrades current schema',async()=>{
- assert.equal(STORAGE_SCHEMA_VERSION,8);
+ assert.equal(STORAGE_SCHEMA_VERSION,9);
  for(const version of [1,2,3]){const source=legacy(),raw=envelope(version,source),env=setup({local:new MemoryStorage({[STORAGE_KEY]:raw})}),loaded=await env.api.load();assert.equal(loaded.status,'LOADED');assert.deepEqual(loaded.data,source);assert.equal(env.local.writes,0);assert.equal(env.local.getItem(STORAGE_KEY),raw);
   const next=current();env.local.fail=true;assert.equal((await env.api.commit(next,opts(loaded))).status,'WRITE_FAILED');assert.equal(env.local.getItem(STORAGE_KEY),raw);env.local.fail=false;
-  const saved=await env.api.commit(next,opts(loaded));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,8);assert.equal(saved.data.allocations[0].monthlyDemandQty,'2500');assert.equal(saved.data.allocations[0].monthlyPlanQty,'84');assert.equal(saved.data.lines[0].qty,'5000');assert.deepEqual((await setup(env).api.load()).data,next);
+  const saved=await env.api.commit(next,opts(loaded));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,9);assert.equal(saved.data.allocations[0].monthlyDemandQty,'2500');assert.equal(saved.data.allocations[0].monthlyPlanQty,'84');assert.equal(saved.data.lines[0].qty,'5000');assert.deepEqual((await setup(env).api.load()).data,next);
  }
 });
 test('R23 schema4 export/import projection keeps known D, residual D and unknown plan as distinct records',()=>{

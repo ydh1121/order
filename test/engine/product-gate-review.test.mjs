@@ -320,6 +320,7 @@ async function coordinatorHarness(seed = restored('FLEX')) {
     skuDraftActive: () => false, siteFocusDirty: () => false, siteEditingDirty: () => false, q4DraftActive: () => false
   });
   vm.runInContext(`
+    const simpleMode = false, simpleUI = null;
     let S = structuredClone(initial.data), lastCommitted = structuredClone(S);
     let storageRevision = initial.revision, storageToken = initial.versionToken;
     let storageReady = true, storagePending = 0, storageFailure = null, storageEpoch = 0;
