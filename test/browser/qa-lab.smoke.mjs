@@ -87,7 +87,10 @@ try{
   assert.equal(await page.evaluate(()=>document.documentElement.dataset.quoteMode),'simple');assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabMode),'simple');
   assert.equal(await page.locator('#qa-lab-fixture').isDisabled(),true);await page.locator('#qa-lab-fixture').evaluate(button=>button.click());
   assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabFixture),'none');assert.equal((await committed()).lines.length,0,'detailed fixture cannot enter a simple draft');
-  await form();await page.locator('#simple-spec-unknown').check();await settled();
+  // Initial Q1 selection commits then resets the editor checkbox. Observe the
+  // persisted transaction instead of requiring that transient control to stay checked.
+  await form();await page.locator('#simple-spec-unknown').click();
+  await page.waitForFunction(()=>document.documentElement.dataset.storagePending!=='true'&&OrderRegularQ4Bridge.committed.simpleQuote?.specUnknown===true&&OrderRegularQ4Bridge.committed.lines.length===1);
   const state=await committed(),inspection=await page.evaluate(()=>OrderSimpleQuoteReview.inspect());assert.equal(state.simpleQuote.specUnknown,true);assert.equal(state.lines.length,1);
   for(const key of ['housing','size','pack','price'])assert.equal(state.lines[0][key],'','unknown specification stays unknown');
   assert.deepEqual(state.locations,[]);assert.deepEqual(state.allocations,[]);assert.equal(inspection.input.monthly.scope,'UNCONFIRMED');
