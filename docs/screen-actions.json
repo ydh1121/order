@@ -440,6 +440,30 @@
           "durableWrites": "child 0; parent confirmed 1"
         }
       ]
+    },
+    {
+      "id": "MSG0579_QUOTE_RESULT",
+      "route": "/#result",
+      "owner": "web/app.mjs",
+      "requestOwner": "src/engine/adapters/quote-request.mjs",
+      "responseContract": "quote-response-1",
+      "providerStatus": "APPROVED_SOURCE_NOT_CONNECTED",
+      "actions": [
+        {
+          "id": "to-result",
+          "type": "validated-input-snapshot-request",
+          "requires": "Existing final input/email gate; current request ID and input revision; no private popup drafts; missing provider stays unavailable",
+          "durableWrites": 0
+        },
+        {
+          "id": "result-edit",
+          "type": "detach-result-and-return-to-input",
+          "requires": "Pending observation detaches; backend cancellation is not claimed; subsequent input revision invalidates late responses",
+          "durableWrites": 0
+        }
+      ],
+      "resultPermissions": "Only a complete validated single quote may display its declared total. Comparison requires ELIGIBLE equal basis and supplied current amount. Unknown period is not monthly; no global minimum, order, stock or delivery grant. Partial, empty, failure and expiry are distinct.",
+      "visualIntegration": "Existing layout retained; rejected R3.1 screens/motion/company tokens not integrated."
     }
   ]
 }

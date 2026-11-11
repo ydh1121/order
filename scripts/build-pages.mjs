@@ -48,6 +48,9 @@ export async function browserClosure(root,entry){
   const files=new Map(),pending=[entry];
   while(pending.length){
     const path=pending.pop();if(files.has(path))continue;
+    // This owner accepts private approved source loaders and authorization
+    // callbacks. Even a pure-JS implementation is never a public browser asset.
+    if(path==='src/engine/adapters/quote-server.mjs')throw Error('BUILD_SERVER_OWNER_FORBIDDEN:'+path);
     if(!/^src\/(?:browser|engine)\/[a-zA-Z0-9_./-]+\.mjs$/.test(path)||!safeRelative(path))throw Error('BUILD_MODULE_PATH_FORBIDDEN:'+path);
     const bytes=await readInside(root,path),source=bytes.toString('utf8');
     const ast=parse(source,{ecmaVersion:2024,sourceType:'module'}),specifiers=[];

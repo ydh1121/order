@@ -5,6 +5,8 @@ export {createBrowserEmailService} from '../engine/adapters/email-browser.mjs';
 export {createBrowserIanaProvider, verifyBrowserIana, browserIanaFreshness} from '../engine/adapters/iana-browser.mjs';
 export {evaluateAllocation, beginAllocationEdit, editAllocation, confirmAllocation, cancelAllocation, evaluateOnceAllocation, changeAllocationTopology} from '../engine/calculation/allocation.mjs';
 export {calculateQuote} from '../engine/calculation/quote.mjs';
+export {createQuoteRequestService} from '../engine/adapters/quote-request.mjs';
+export {customerQuoteResponse,readCustomerQuoteResponse,quoteProofGate} from '../engine/contracts/quote-response.mjs';
 export {calendarForecast} from '../engine/calculation/calendar-forecast.mjs';
 export {demandFrequency,fixedQuantityPlan} from '../engine/calculation/period.mjs';
 export {startDateRange,inspectStartDate,recurringDeliveryDates,holidaySnapshotState,holidayPolicyFromSelection,START_DATE_POLICY_VERSION} from '../engine/calculation/start-date.mjs';

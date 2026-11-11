@@ -63,6 +63,8 @@ jobs:
           cat browser-evidence/phone.json
       - name: Built product transactions with synthetic DNS and contact fixtures
         run: node test/browser/product.smoke.mjs
+      - name: MSG0579 actual result consumer with synthetic approved quotes
+        run: node test/browser/quote-result-0579.smoke.mjs
       - name: Feedback regression and matched baseline screenshots
         if: always()
         run: node test/browser/feedback.smoke.mjs
