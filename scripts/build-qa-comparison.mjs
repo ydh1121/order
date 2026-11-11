@@ -1,3 +1,4 @@
+import {archivedReferenceClock} from '../test/fixtures/archived-baseline-build.mjs';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve,dirname,sep} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
@@ -16,10 +17,11 @@ export async function buildQaComparison({root=repo,baselineRoot,outputPath=resol
  if(!['MSG0526','MSG0528','MSG0549'].includes(message))throw Error('QA_COMPARISON_MESSAGE_INVALID');
  const c55=message==='MSG0549',currentContract=message==='MSG0528',output=resolve(outputPath);
  if(output===resolve(root,'dist')||output.startsWith(resolve(root,'dist')+sep))throw Error('QA_OUTPUT_MUST_NOT_BE_DIST');
- const before=await buildQaLab({root:baselineRoot,write:false,now});
+ const baselineBuildClock=await archivedReferenceClock(baselineRoot);
+ const before=await buildQaLab({root:baselineRoot,write:false,now:baselineBuildClock.now});
  const after=await buildQaLab({root,write:false,allowDirty,now,...(currentContract?{qaEntry:'test/fixtures/qa-run-0528.mjs'}:{})});
  const fixtureFile=c55?'../test/fixtures/qa-lab-0549.mjs':currentContract?'../test/fixtures/qa-lab-0528.mjs':'../test/fixtures/qa-lab-0526.mjs';
- const identity={schemaVersion:2,message,scope:'LOCAL_BEFORE_AFTER_COMPARISON',baseline:before.identity,current:after.identity,storage:'TWO_ISOLATED_MEMORY_STORES',network:'NO_EXTERNAL_NETWORK',fixtureSourceSha256:hash(await readFile(new URL(fixtureFile,import.meta.url))),builderSha256:hash(await readFile(fileURLToPath(import.meta.url))),caseScope:currentContract?'SAME_PRODUCT_PURE_CONTRACT_RESULTS_PLUS_EXPLICIT_UI_SEEDS_NOT_DURABLE_OR_ONLINE':'EXPLICIT_UI_SEEDS'};
+ const identity={schemaVersion:2,message,scope:'LOCAL_BEFORE_AFTER_COMPARISON',baseline:before.identity,current:after.identity,baselineBuildClock,currentBuildAsOf:new Date(now).toISOString(),storage:'TWO_ISOLATED_MEMORY_STORES',network:'NO_EXTERNAL_NETWORK',fixtureSourceSha256:hash(await readFile(new URL(fixtureFile,import.meta.url))),builderSha256:hash(await readFile(fileURLToPath(import.meta.url))),caseScope:currentContract?'SAME_PRODUCT_PURE_CONTRACT_RESULTS_PLUS_EXPLICIT_UI_SEEDS_NOT_DURABLE_OR_ONLINE':'EXPLICIT_UI_SEEDS'};
  const pages=[before.html,after.html].map(x=>Buffer.from(x).toString('base64'));
  const fixtures=Object.fromEntries(['200','5000','known','legacy'].map(k=>[k,{state:q4ComparisonFixture(k)}]));
  if(c55)for(const c of c55Cases)fixtures[c.id]={state:c55Fixture(c.id),asOf:'2026-11-05'};

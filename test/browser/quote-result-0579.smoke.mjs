@@ -20,7 +20,7 @@ const evidence=resolve(process.env.ORDER_QUOTE0579_EVIDENCE_DIR||join(root,'brow
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const report={schemaVersion:1,status:'NOT_RUN',classification:'ACTUAL_BUILT_APP_FACTORY_LOCAL_CHROMIUM_SYNTHETIC_QUOTE_PROVIDER',checks:[],pageErrors:[],externalBlocked:[],dnsFixtureCalls:[],captures:[],
   notCovered:['REAL_QUOTE_BACKEND','REAL_PRICE_OR_SUPPLIER','APPROVED_PRODUCT_TO_OFFER_MAPPING','SERVER_AUTHORIZATION','BACKEND_CANCEL','CANONICAL_HTTPS','USER_OS','USER_VISUAL_APPROVAL','APPROVED_OCT30_QA_SHELL_BINDING','REAL_NETWORK_LATENCY']};
-let browser,context,page,server,base,configuration;
+let browser,context,page,server,base,configuration,scenarioSequence=0;
 const jsonResponse=results=>customerQuoteResponse({requestId:'research-config',inputRevision:1,results});
 const mime={'.html':'text/html; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.woff2':'font/woff2'};
 const ids=['receipt','quote-outcome-value','quote-outcome-label','quote-current-value','quote-supply-value','quote-result-status'];
@@ -31,7 +31,9 @@ async function state(){return page.evaluate(()=>window.__quote0579.current());}
 async function calls(){return page.evaluate(()=>window.__quote0579.calls());}
 async function waitStatus(status){await page.waitForFunction(expected=>document.getElementById('receipt')?.dataset.quoteStatus===expected,status);assert.equal((await state()).status,status);}
 async function open({provider='controlled',invalid=false}={}){
-  await page.goto(`${base}/?provider=${provider}${invalid?'&seed=invalid':''}#/form`);await ready();
+  // Same URL with only a changed hash is same-document navigation: it must not
+  // retain another scenario's provider promises and call list.
+  await page.goto(`${base}/?provider=${provider}&scenario=${++scenarioSequence}${invalid?'&seed=invalid':''}#/form`);await ready();
   await page.waitForFunction(()=>window.OrderEmailDomain?.isSuccess(OrderEmailDomain.status('qa@example.com')));
   await page.locator('#page-form.active').waitFor({state:'visible'});
 }
