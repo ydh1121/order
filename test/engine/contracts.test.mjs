@@ -23,5 +23,5 @@ test('returned snapshot is independent of subsequent input mutation', () => {
   const raw={line:{quantity:'3'}}; const evidence={input:raw};
   const value=engineResult({status:'VALID',raw,evidence}); raw.line.quantity='999';
   assert.equal(value.raw.line.quantity,'3'); assert.equal(value.evidence.input.line.quantity,'3');
-  assert.deepEqual(value.versions,{engine:'0.2.0',contract:'1.1.0',rules:'unspecified',data:null});
+  assert.deepEqual(value.versions,{engine:'0.3.0',contract:'1.2.0',rules:'unspecified',data:null});
 });

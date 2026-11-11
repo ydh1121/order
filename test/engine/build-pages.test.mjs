@@ -153,6 +153,14 @@ test('actual browser entry compiles a closed graph with no Node-only reference/D
  assert.equal(files.has('src/engine/adapters/phone-browser.mjs'),true);
  assert.equal(files.has('src/engine/adapters/email-browser.mjs'),true);
  assert.equal([...files.keys()].some(p=>/dns-node|reference\/iana\.mjs/.test(p)),false);
+ assert.equal(files.has('src/engine/adapters/quote-server.mjs'),false);
+ assert.equal(files.has('src/engine/adapters/quote-request.mjs'),true);
  const linked=await import(pathToFileURL(join(root,'src/browser/engine.mjs')).href);
- for(const name of ['createOrderPhoneAdapter','createBrowserEmailService','evaluateAllocation','calculateQuote'])assert.equal(typeof linked[name],'function',name+' must link successfully');
+ for(const name of ['createOrderPhoneAdapter','createBrowserEmailService','evaluateAllocation','calculateQuote','createQuoteRequestService','readCustomerQuoteResponse','quoteProofGate'])assert.equal(typeof linked[name],'function',name+' must link successfully');
+});
+
+test('server quote owner is excluded even when it contains browser-compatible JavaScript',async t=>{
+ const f=await fixture(t,{entry:"export {createQuoteServerProvider} from '../engine/adapters/quote-server.mjs';"});
+ await f.put('src/engine/adapters/quote-server.mjs','export function createQuoteServerProvider() { return {}; }');
+ await assert.rejects(browserClosure(f.root,'src/browser/engine.mjs'),/BUILD_SERVER_OWNER_FORBIDDEN/);
 });

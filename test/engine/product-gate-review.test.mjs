@@ -9,6 +9,7 @@ import {inspectMonthlyAllocations,inspectOnceAllocations} from '../../web/alloca
 import {inspectStoredOrderQuantity} from '../../web/q4-planning.mjs';
 import {q4Issue,quantityBoundIssue,inspectQ4Allocation,inspectQ4Groups,monthlyIssues} from '../../web/q4-validation.mjs';
 import {createBrowserStorage,emptyStoredPayload,projectStoredPayload} from '../../web/storage.mjs';
+import {projectQuoteInput} from '../../web/quote-result.mjs';
 
 // Execute the production gate functions, extracted by AST, without booting a DOM.
 // Contact/address/date checks are deliberately out of scope and supplied as valid.
@@ -283,7 +284,7 @@ test('R05 current transaction email proof reaches site and final gates without p
 });
 
 async function coordinatorHarness(seed = restored('FLEX')) {
-  const records = new Map(), nodes = new Map();
+  const records = new Map(), nodes = new Map(), quoteRevisions=[];
   const local = {writes: 0, failWrite: false, loseReadback: false, throwRead: false,
     getItem(key) {if (this.throwRead) {this.throwRead = false; throw Error('readback unavailable');} return records.get(key) ?? null;},
     setItem(key, value) {
@@ -309,6 +310,7 @@ async function coordinatorHarness(seed = restored('FLEX')) {
     // sees the same realm it receives from the actual browser coordinator.
     setTimeout:(callback)=>{const id=++feedbackSequence;feedbackTimers.set(id,callback);return id;},clearTimeout:id=>feedbackTimers.delete(id),
     initial: loaded, storage: {commit: (data, options) => storage.commit(structuredClone(data), options)}, projectStoredPayload: value => projectStoredPayload(structuredClone(value)), structuredClone, JSON, Promise,
+    projectQuoteInput,quoteService:{reconcileRevision:revision=>quoteRevisions.push(revision)},
     document: {documentElement: {dataset: {}}, querySelector: () => null}, $, ident: () => 'review-save-' + (++nextId),
     refreshCompletionBadges: () => {},
     window: {OrderEmailLifecycle: {reconcile() {}}},
@@ -322,12 +324,13 @@ async function coordinatorHarness(seed = restored('FLEX')) {
     let storageRevision = initial.revision, storageToken = initial.versionToken;
     let storageReady = true, storagePending = 0, storageFailure = null, storageEpoch = 0;
     let uncertainWrite = null, storageTail = Promise.resolve(), inlineDraft = false, storageMessage = '';
+    let quoteInputRevision = 0, quoteInputSignature = null;
     let checkpointAttempt = null, checkpointReceipt = null, checkpointFeedbackTimer = null;
     let siteEditing = null, deliveryDraft = null, q4AssignmentDraft = null;
     let editorMode = S.lines.length ? null : 'initial';
     let editing = {id: 'initial-choice', housing: '', size: '', pack: ''};
     ${productionVariable(app, appAst, 'storageText')}
-    ${['storagePaint','storageFeedback','bodyCheckpoint','checkpointSignature','paintCheckpointButton','clearCheckpointStatus','showCheckpointReceipt'].map(name => productionFunction(app, appAst, name)).join('\n')}
+    ${['reconcileQuoteInput','storagePaint','storageFeedback','bodyCheckpoint','checkpointSignature','paintCheckpointButton','clearCheckpointStatus','showCheckpointReceipt'].map(name => productionFunction(app, appAst, name)).join('\n')}
     ${productionFunction(app, appAst, 'save')}
     ${productionFunction(app, appAst, 'complete')}
     ${productionHandler(app, appAst, 'save-checkpoint')}
@@ -348,7 +351,7 @@ async function coordinatorHarness(seed = restored('FLEX')) {
       complete
     };
   `, context);
-  return {subject: context.subject, local, storage, locks, expireFeedback(){for(const [id,callback]of [...feedbackTimers]){feedbackTimers.delete(id);callback();}}};
+  return {subject: context.subject, local, storage, locks,quoteRevisions, expireFeedback(){for(const [id,callback]of [...feedbackTimers]){feedbackTimers.delete(id);callback();}}};
 }
 
 test('production coordinator serializes rapid Q2 input without self-conflicts or stale visible raw', async () => {
@@ -361,6 +364,7 @@ test('production coordinator serializes rapid Q2 input without self-conflicts or
   assert.equal(h.subject.inline, false);
   assert.equal(h.subject.failure, null);
   assert.equal(h.local.writes, 4, 'Seed plus three accepted input snapshots');
+  assert.deepEqual(h.quoteRevisions,[1,2,3],'Each changed Q2 condition invalidates the prior quote through the production reconciler');
 });
 
 test('production coordinator preserves Q2 working raw on failure and succeeds only after explicit retry', async () => {
@@ -461,9 +465,11 @@ test('C28 production checkpoint keeps initial body selection, suppresses pending
   assert.equal(h.subject.revision, saved.revision);
   assert.equal(h.subject.checkpointStatus.transaction, receipt.transactionId);
   h.subject.popup({name: 'private unsaved popup'});
+  const quoteRevisions=[...h.quoteRevisions];
   await h.subject.checkpoint();
   assert.equal(h.local.writes, 2, 'Private popup cannot enter the body checkpoint');
   assert.equal((await h.storage.load()).data.locations.length, 0);
+  assert.deepEqual(h.quoteRevisions,quoteRevisions,'Private popup input cannot change the product quote projection');
 });
 
 test('C28 production checkpoint replay observes another tab reset/write and never reuses a stale success', async () => {

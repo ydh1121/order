@@ -2,6 +2,8 @@ import {q4Issue,inspectQ4Allocation,monthlyIssues} from './q4-validation.mjs';
 import {createBrowserStorage,projectStoredPayload} from './storage.mjs';
 import {bindNumericInputs} from './numeric-input.mjs';
 import {bindQuantityMenu} from './quantity-menu.mjs';
+import {createQuoteRequestService} from '../src/engine/adapters/quote-request.mjs';
+import {projectQuoteInput,quoteResultView,patchQuoteResult} from './quote-result.mjs';
 
 
 
@@ -12,7 +14,7 @@ import {quantityUnit,quantityDisplayUnit,quantityInputText,quantityDisplayNote,n
 import {CODE1_UI,CODE1_ORDER_VALIDATION,CODE1_ORDER_ERRORS} from './common-ui.mjs';
 import {addressFields,addressStatus,addressLines} from './address-contract.mjs';
 import {createAddressEditor} from './address-ui.mjs';
-export function createOrderApp(){
+export function createOrderApp({quoteProvider=null}={}){
 let q4ReviewUI=null;
 const $=id=>document.getElementById(id),w=n=>moneyDisplay(n)+'원';const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const valid=n=>/^[1-9]\d*$/.test(String(n))&&Number.isSafeInteger(+n); const sum=(a,b)=>{let n=Number(a)*Number(b);return Number.isSafeInteger(n)&&n>=0?n:null};const DAYS=['월','화','수','목','금','토','일'];const H=['1','2','3','4'],SZ=['왕란','특란','대란','중란','소란'],PK=['10','20','30'];const unit=x=>String(x)==='30'?'판':'팩';const selected=l=>l?.housing&&l?.size&&l?.pack;const sku=l=>selected(l)?`${l.housing}번 · ${l.size} · ${l.pack}구`:'';
@@ -73,7 +75,7 @@ function storageFeedback(result,id='form-error'){
  const node=$(id)||$('form-error');storageMessage=storageText(result);node.textContent=storageMessage;node.hidden=false;node.classList.remove('ui-feedback-sr');node.setAttribute('role','alert');
  $('retry-input-save').hidden=!inlineDraft||result.status==='CONFLICT';
 }
-function storagePaint(){document.documentElement.dataset.storagePending=String(storagePending>0);$('save-checkpoint').disabled=!storageReady||!!checkpointAttempt?.pending;if(storageReady)refreshCompletionBadges();}
+function storagePaint(){reconcileQuoteInput();document.documentElement.dataset.storagePending=String(storagePending>0);$('save-checkpoint').disabled=!storageReady||!!checkpointAttempt?.pending;if(storageReady)refreshCompletionBadges();}
 function save(candidate=S,{publish=true,canCommit=()=>true,errorId='form-error',transactionId=ident('save'),receiptReplay=false}={}){
  if(transactionId!==checkpointAttempt?.transactionId)clearCheckpointStatus();
  const snapshot=structuredClone(candidate),epoch=storageEpoch,allowed=()=>epoch===storageEpoch&&canCommit();storagePending++;storagePaint();
@@ -152,6 +154,15 @@ resetDialog.querySelector('[data-reset-confirm]').onclick=async()=>{
  const result=storageTail.then(run,run);storageTail=result.catch(()=>{});await result;attempt.pending=false;storagePending--;storagePaint();
 };
 let current='home';
+let quoteInputRevision=0,quoteInputSignature=null,quoteSnapshot=null;
+const quoteService=createQuoteRequestService({provider:quoteProvider,onChange:snapshot=>{quoteSnapshot=snapshot;if(current==='result')paintQuoteResult();}});
+function reconcileQuoteInput(){
+ const input=projectQuoteInput(S),signature=JSON.stringify(input);
+ if(signature!==quoteInputSignature){quoteInputSignature=signature;quoteInputRevision++;quoteService.reconcileRevision(quoteInputRevision);}
+ return input;
+}
+function paintQuoteResult(){patchQuoteResult(document,quoteResultView(quoteSnapshot,{currentPurchaseTotal:buyerTotal()}));}
+window.addEventListener('pagehide',()=>quoteService.detach());
 // Field-owned error state, never animate or paint the entire accordion/dialog.
 function legacyErrorState(id,message){
  const candidates=id==='err-q1'?[...document.querySelectorAll('#sku-editor .picks')]:id==='err-q2'?[...document.querySelectorAll('#q2-lines input')]:id==='err-q3'?[...document.querySelectorAll('#site-editor input:not([type=hidden]),#q3-address-slot')]:[];
@@ -184,13 +195,19 @@ function show(page,record=true,{emailProofs=null}={}){
  if(page!==current&&!guardPendingEdits('page'))return false;
  if(page==='result'&&!complete(emailProofs)){page='form';err('form-error','구매조건을 먼저 모두 입력해 주세요.');}
  const prior=current,previous=$('page-'+prior),dest=$('page-'+page);
+ if(prior==='result'&&page!=='result')quoteService.detach();
  const seq=++pageSeq,ready=prior!==page&&page!=='qa'&&prior!=='qa';
  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  routeAnimation?.cancel();routeAnimation=null;
  const cleanup=node=>{node.classList.remove('active','leaving','entering');node.inert=true;node.setAttribute('aria-hidden','true');node.style.opacity='';};
  for(const p of ['home','form','result']){const n=$('page-'+p);if(n!==previous&&n!==dest)cleanup(n);}
  current=page;$('app').hidden=page==='qa';if($('qa-route'))$('qa-route').hidden=page!=='qa';
- if(page==='result'){if(prior!==page)$('result-details').open=false;renderResult();}
+ if(page==='result'){
+  const input=reconcileQuoteInput();
+  if(prior!==page||!$('quote-outcome-value')){if(prior!==page)$('result-details').open=false;renderResult();}
+  if(prior!==page||quoteSnapshot?.inputRevision!==quoteInputRevision||['IDLE','STALE','DETACHED'].includes(quoteSnapshot?.status))quoteService.start({input,inputRevision:quoteInputRevision});
+  else paintQuoteResult();
+ }
  if(page==='form')render();
  const showDestination=()=>{if(seq!==pageSeq)return;
   if(previous&&previous!==dest)cleanup(previous);
@@ -440,7 +457,7 @@ function cancelSkuEditor(){
  if(snapshot)S.open=snapshot.open;
  err('err-q1','');closeSkuDialog(()=>{render();if(snapshot?.error)err('err-q1',snapshot.error);});
 }
-function render(){if(editorMode==='initial'&&S.lines.length)editorMode=null;
+function render(){reconcileQuoteInput();if(editorMode==='initial'&&S.lines.length)editorMode=null;
  pickGroup('picks-housing','housing',H);pickGroup('picks-size','size',SZ);pickGroup('picks-pack','pack',PK);
  for(const q of ['q1','q2','q3','q4']){
   const exp=S.open===q,btn=document.querySelector(`.accordion-trigger[data-open="${q}"]`);
@@ -589,29 +606,22 @@ function invoiceDetails(stats){
  const groups=S.locations.map(site=>({site,allocations:S.allocations.filter(a=>a.locationId===site.id)})).filter(x=>x.allocations.length);
  const bySite=groups.map(({site,allocations})=>`<div class="result-site-group invoice-site"><strong>${esc(siteName(site))}</strong><div class="site-delivery-address ui-location-lines">${addressMarkup(site)}</div>${allocations.map(a=>{const l=lineById(a.lineId);return l?`<div class="invoice-row invoice-assignment"><span>${esc(itemIdentity(l))}</span><strong>1회 ${valid(a.mode==='ONCE'&&S.allocations.filter(x=>x.lineId===a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty)?esc(Number(a.mode==='ONCE'&&S.allocations.filter(x=>x.lineId===a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty).toLocaleString('ko-KR')):'입력 필요'}${unit(l.pack)}</strong></div>`:''}).join('')}</div>`).join('');
  const terms=shippingRows().map(({line,allocation:a,site})=>`<div class="invoice-term"><span>${esc(siteName(site))} · ${esc(itemIdentity(line))}</span><strong>${esc(deliveryLabel(a))}</strong><span>1회 ${valid(a.mode==='ONCE'&&q4SitesForLine(a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty)?esc(Number(a.mode==='ONCE'&&q4SitesForLine(a.lineId).length>=2?a.oneTimeDeliveryQty:a.qty).toLocaleString('ko-KR')):'입력 필요'}${unit(line.pack)}</span></div>`).join('');
- const comparable=stats.comparable&&stats.supply!==null&&stats.buyer!==null;
- const comparison=`<div class="invoice-row invoice-compare"><span>현재 월 구매비용</span><strong>${stats.buyer===null?'입력 필요':w(stats.buyer)}</strong></div><div class="invoice-row invoice-compare"><span>예시 월 납품 상품대금</span><strong>${comparable?w(stats.supply):'비교 조건 확인 필요'}</strong></div>${comparable?`<div class="invoice-row invoice-compare"><span>예시 월 차액</span><strong>${w(Math.abs(stats.buyer-stats.supply))} ${stats.buyer>=stats.supply?'절감':'증가'}</strong></div>`:'<p class="invoice-pending">월간 납품 수량·기간·예시 단가 조건을 확인한 후 비교할 수 있습니다.</p>'}`;
+ const comparison='<div class="invoice-row invoice-compare"><span id="quote-detail-current-label">입력한 월 구매비용</span><strong id="quote-detail-current-value">비교 조건 확인 필요</strong></div><div class="invoice-row invoice-compare"><span>납품비용</span><strong id="quote-detail-supply-value">비교 조건 확인 필요</strong></div><div class="invoice-row invoice-compare"><span>비용 차이</span><strong id="quote-detail-difference-value">비교 조건 확인 필요</strong></div><p class="invoice-pending" id="quote-detail-status">실제 공급가와 비용 조건 확인이 필요합니다.</p>';
  return `<section class="invoice-block r1-buyer-lines"><h2>구매 내역</h2><div role="table" aria-label="계란별 구매 내역">${buyRows}</div><div class="invoice-total"><span>월 구매비용 합계</span><strong>${stats.buyer===null?'입력 필요':w(stats.buyer)}</strong></div></section><section class="invoice-block delivery-detail-card"><h2>납품지별 배정</h2>${bySite||'<p class="invoice-pending">등록된 납품지가 없습니다.</p>'}</section><section class="invoice-block invoice-terms"><h2>납품 조건</h2>${terms||'<p class="invoice-pending">설정된 납품 조건이 없습니다.</p>'}</section><section class="invoice-block invoice-comparison"><h2>비용 비교</h2>${comparison}</section>`;
 }
 
 
-function calcExample(){const buyer=buyerTotal();return {items:S.lines.map(l=>({id:l.id,buyer:lineSubtotal(l),unitOffer:null,supply:null,saving:null})),buyer,supply:null,saving:null,comparable:false,basis:null,reason:'실제 공급가와 비용 조건 확인이 필요합니다.'};}
-const moneyOr=x=>x===null?'대조 불가':w(x);
-function resultSkuLines(stats){return S.lines.map((l,i)=>`<div class="r1-item" role="group" aria-label="${esc(itemIdentity(l))}"><span>${esc(itemIdentity(l))}</span><span>월 ${monthlyQuantityText(l)}${quantityLabel(l)} · ${w(l.price)}/${unit(l.pack)}</span><strong>${w(stats.items[i].buyer)}</strong></div>`).join('');}
 function renderResult(){
- const stats=calcExample(),buyer=stats.buyer,usable=false;
- // The reference's monetary figures are calculated, never screenshot constants.
-
- const value=stats.saving,rate=usable?Math.abs(value)/buyer*100:null;
- const outcome=usable?`<div class="r2-outcome ${value<0?'is-loss':''}"><div class="r2-outcome-value"><strong>${w(Math.abs(value))}</strong><b>${rate.toFixed(1)}% ${value<0?'증가':value===0?'동일':'절감'}</b></div></div>`:`<div class="r2-outcome is-unavailable" role="status"><div class="r2-outcome-value"><strong>산출 전</strong><b>조건 확인 필요</b></div></div>`;
- const comparison=`<div class="r2-finance-compare"><div class="r2-finance-pair"><div class="r2-finance-card"><span>현재 월 구매비용</span><strong>${buyer===null?'입력 필요':w(buyer)}</strong></div><div class="r2-finance-arrow" aria-label="비교">→</div><div class="r2-finance-card is-supply"><span>월 납품비용</span><strong class="${usable?'':'comparison-unavailable'}">${usable?w(stats.supply):'비교 조건 확인 필요'}</strong></div></div></div>`;
+ const stats={buyer:buyerTotal()};
+ const outcome='<div class="r2-outcome is-unavailable" id="quote-outcome" role="status"><div class="r2-outcome-value"><strong id="quote-outcome-value">산출 전</strong><b id="quote-outcome-label">조건 확인 필요</b></div></div>';
+ const comparison='<div class="r2-finance-compare"><div class="r2-finance-pair"><div class="r2-finance-card"><span id="quote-current-label">입력한 월 구매비용</span><strong id="quote-current-value">입력 필요</strong></div><div class="r2-finance-arrow" aria-label="비교">→</div><div class="r2-finance-card is-supply"><span id="quote-supply-label">납품비용</span><strong id="quote-supply-value" class="comparison-unavailable">비교 조건 확인 필요</strong></div></div></div>';
  const locationCount=new Set(S.allocations.map(a=>a.locationId).filter(id=>S.locations.some(loc=>loc.id===id))).size;
  const brief=`<p class="result-quicksummary" aria-label="입력 조건 요약">${S.lines.length}개 계란 품목 · ${locationCount}개 사업장 · ${S.allocations.length}개 납품 배정</p>`;
  // Unavailable information stays accessible but does not displace the user's sparse result layout.
- const unavailableNote=usable?'':`<span class="visually-hidden" role="status">${esc(stats.reason)}</span>`;
+ const unavailableNote='<span class="visually-hidden" role="status" id="quote-result-status">실제 공급가와 비용 조건 확인이 필요합니다.</span>';
  $('receipt').innerHTML=outcome+comparison+brief+unavailableNote;
  $('result-detail-content').innerHTML=invoiceDetails(stats);
- $('result-title').textContent=usable&&value<0?'예상되는 월 비용 증가액':'예상되는 월 절감액';
+ paintQuoteResult();
  $('email-notice').hidden=true;
 }
 
@@ -1081,5 +1091,5 @@ window.OrderEmailLifecycle=Object.freeze((()=>{
 })());
 
 window.OrderValidationState=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify(orderValidationProjection())),line:id=>JSON.parse(JSON.stringify(lineById(id)||null))});window.__orderReviewBoot=async()=>{const restored=await storageHydration;storageRevision=restored.revision;storageToken=restored.versionToken;document.documentElement.dataset.storageStatus=restored.status;if(restored.ok&&restored.data){S=ensureMigration(restored.data);lastCommitted=structuredClone(S);editorMode=S.lines.length?null:'initial';if(editorMode==='initial'&&S.bodyCheckpoint)editing={...empty(),...S.bodyCheckpoint.q1Selection};}else if(!restored.ok)storageFailure=restored;storageReady=true;$('app').inert=false;render();fromHash();if(storageFailure)storageFeedback(storageFailure);OrderEmailLifecycle.boot();document.documentElement.dataset.storageReady='true';storagePaint();};
-return Object.freeze({regularBridge:window.OrderRegularQ4Bridge,connectQ4(controller){if(q4ReviewUI)throw Error('Q4_ALREADY_CONNECTED');q4ReviewUI=controller;},boot:window.__orderReviewBoot});
+return Object.freeze({regularBridge:window.OrderRegularQ4Bridge,quoteService,connectQ4(controller){if(q4ReviewUI)throw Error('Q4_ALREADY_CONNECTED');q4ReviewUI=controller;},boot:window.__orderReviewBoot});
 }
