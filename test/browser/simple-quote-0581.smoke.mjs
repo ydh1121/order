@@ -92,7 +92,7 @@ try{
  });
 
  await check('SQ04_UNKNOWN_SPEC_AND_UNCHECKED_INTEREST_CAN_CONTINUE_WITHOUT_CONSENT',async({p})=>{
-  await start(p);await p.locator('#simple-spec-unknown').check();await ready(p);assert.equal(await p.locator('#simple-consultation-interest').isChecked(),false);
+  await start(p);await p.locator('#simple-spec-unknown').click();await p.waitForFunction(()=>document.documentElement.dataset.storagePending!=='true'&&window.OrderSimpleQuoteReview.inspect().state.specUnknown===true);assert.equal(await p.locator('#simple-consultation-interest').isChecked(),false);
   const unknown=(await envelope(p)).data;assert.equal(unknown.simpleQuote.specUnknown,true);assert.equal(unknown.simpleQuote.consultationInterest,false);assert.equal(unknown.lines.length,1);
   for(const key of ['housing','size','pack','price'])assert.equal(unknown.lines[0][key],'',key+' must remain unknown');
   await p.locator('[data-line-qty]').fill('23');await ready(p);await p.locator('#q2-next').click();await p.locator('#simple-site-count').waitFor({state:'visible'});
