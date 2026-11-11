@@ -85,7 +85,7 @@ try{
 
  await check('SQ03_SIMPLE_NAMESPACE_DOES_NOT_IMPORT_OR_MODIFY_DETAILED_DRAFT',async({p,context})=>{
   const seed={lines:[{id:'detail-existing',housing:'4',size:'대란',pack:'20',qty:'31',qtyUnit:'each',price:'7000'}],current:'detail-existing',locations:[],allocations:[],open:'q1',allocationRevision:0};
-  const result=await p.evaluate(async({seed,legacyKey})=>{const {createBrowserStorage}=await import('/storage.mjs'),store=createBrowserStorage(),loaded=await store.load();sessionStorage.setItem(legacyKey,JSON.stringify(seed));return store.commit(seed,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'simple0581-detailed-isolation'});},{seed,legacyKey:LEGACY_KEY});assert.equal(result.ok,true);
+  const result=await p.evaluate(async({seed,legacyKey})=>{const {createBrowserStorage}=await import('/storage.mjs'),store=createBrowserStorage(),loaded=await store.load();const committed=await store.commit(seed,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'simple0581-detailed-isolation'});if(committed.ok)sessionStorage.setItem(legacyKey,JSON.stringify(seed));return committed;},{seed,legacyKey:LEGACY_KEY});assert.equal(result.ok,true);
   const detailedRaw=await raw(p,DETAIL_KEY),legacyRaw=await p.evaluate(key=>sessionStorage.getItem(key),LEGACY_KEY);await p.reload();await ready(p);assert.equal(await raw(p),null);
   await known(p);assert.equal(await raw(p,DETAIL_KEY),detailedRaw);assert.equal(await p.evaluate(key=>sessionStorage.getItem(key),LEGACY_KEY),legacyRaw);
   const tab=await context.newPage();await tab.goto(base+'/#/form');await ready(tab);assert.equal((await envelope(tab,DETAIL_KEY)).data.lines[0].id,'detail-existing');assert.equal(await raw(tab,DETAIL_KEY),detailedRaw);assert.notEqual(await tab.locator('html').getAttribute('data-quote-mode'),'simple');await tab.close();
@@ -175,6 +175,17 @@ try{
   assert.equal(await p.locator('#simple-order-dialog').evaluate(dialog=>dialog.open),true);await p.locator('#simple-order-error').waitFor({state:'visible'});assert.match(await p.locator('#simple-order-error').innerText(),/날짜/);assert.deepEqual(await envelope(p),before);assert.equal(await writes(p),beforeWrites);
   await cancelOrder(p);assert.deepEqual(await envelope(p),before);assert.equal(await writes(p),beforeWrites);await openOrder(p);await (await dateField(p)).locator('[data-order-date-part="month"]').fill('');
   await p.locator('#simple-date-clear').click();await saveOrder(p);assert.equal((await envelope(p)).data.simpleQuote.preferredDate,'');
+ });
+ await check('SQ15_COUNT_DRAFT_PRESERVES_REGIONS_UNTIL_EXPLICIT_SHRINK',async({p})=>{
+  await known(p);await region(p,{count:'2'});await p.locator('#simple-regions-differ').check();const regions=p.locator('[data-simple-site-region]');
+  await regions.nth(0).fill('서울특별시 강남구 역삼동');await regions.nth(1).fill('서울특별시 송파구 잠실동');await ready(p);
+  const original=(await envelope(p)).data.simpleQuote.sites,count=p.locator('#simple-site-count');assert.equal(original.length,2);
+  // These are intermediate input events in the same focused field, not an
+  // explicit request to delete the other site's existing region information.
+  for(const value of ['','0','1','12']){await count.fill(value);await ready(p);const current=(await envelope(p)).data.simpleQuote;assert.equal(current.siteCount,value);assert.deepEqual(current.sites.slice(0,2),original);}
+  assert.equal((await envelope(p)).data.simpleQuote.sites.length,12);await count.fill('1');await ready(p);assert.equal((await envelope(p)).data.simpleQuote.sites.length,12);
+  await count.press('Tab');await p.waitForFunction(key=>{const value=JSON.parse(localStorage.getItem(key)||'null');return document.documentElement.dataset.storagePending!=='true'&&value?.data.simpleQuote.siteCount==='1'&&value.data.simpleQuote.sites.length===1;},SIMPLE_KEY);
+  const saved=await envelope(p);assert.deepEqual(saved.data.simpleQuote.sites,[original[0]]);await p.reload();await ready(p);assert.deepEqual(await envelope(p),saved);
  });
  report.status=report.checks.every(row=>row.status==='PASS')&&!report.pageErrors.length&&!report.unexpectedNetwork.length?'PASS_SCOPED_BUILT_SIMPLE_CANDIDATE':'FAIL';if(report.status==='FAIL')process.exitCode=1;
 }catch(error){report.status='FAIL';report.error=String(error.stack||error);process.exitCode=1;}

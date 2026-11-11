@@ -81,6 +81,23 @@ try{
   assert.match(await page.locator('#q3-address-slot').textContent(),/08843/);await page.locator('#cancel-site').click();await closedAfterExplicitDiscard(page,'site-editor-dialog');assert.deepEqual(await committed(),before,'parent cancel discards synthetic address');
   assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);assert.equal(await page.evaluate(()=>window.__qaLabReadNative('local','order_q1_q4_v1')),'TEST_PRODUCT_SENTINEL_NOT_LAB_DATA');
  });
+ await check('L09_LOCAL_FILE_SIMPLE_MODE_USES_PRODUCT_OWNER_AND_SEPARATE_MEMORY',async()=>{
+  await page.goto(pathToFileURL(labPath).href);await ready();
+  await Promise.all([page.waitForURL(url=>url.protocol==='file:'&&url.searchParams.get('mode')==='simple'),page.locator('#qa-lab-mode').selectOption('simple')]);await ready();
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.quoteMode),'simple');assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabMode),'simple');
+  assert.equal(await page.locator('#qa-lab-fixture').isDisabled(),true);await page.locator('#qa-lab-fixture').evaluate(button=>button.click());
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabFixture),'none');assert.equal((await committed()).lines.length,0,'detailed fixture cannot enter a simple draft');
+  await form();await page.locator('#simple-spec-unknown').check();await settled();
+  const state=await committed(),inspection=await page.evaluate(()=>OrderSimpleQuoteReview.inspect());assert.equal(state.simpleQuote.specUnknown,true);assert.equal(state.lines.length,1);
+  for(const key of ['housing','size','pack','price'])assert.equal(state.lines[0][key],'','unknown specification stays unknown');
+  assert.deepEqual(state.locations,[]);assert.deepEqual(state.allocations,[]);assert.equal(inspection.input.monthly.scope,'UNCONFIRMED');
+  const comparison=inspection.document.groups.find(group=>group.id==='comparison');assert.equal(comparison.quoteCost,null);assert.equal(comparison.proof.amountAllowed,false);
+  const stored=await page.evaluate(async()=>{const {createBrowserStorage}=await import('order-qa/virtual/storage.mjs');const simple=await createBrowserStorage({key:'order_simple_prework_0581',migrateLegacy:false}).load(),detailed=await createBrowserStorage().load();return {simple,detailed};});
+  assert.equal(stored.simple.ok,true);assert.equal(stored.simple.data.simpleQuote.specUnknown,true);assert.equal(stored.detailed.status,'EMPTY');assert.deepEqual(stored.detailed.data.lines,[]);
+  assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);
+  const capture='simple-candidate-local-file.png';await page.screenshot({path:join(evidence,capture),fullPage:true});
+  report.simpleCandidate={entry:'FILE_URL_MODE_SIMPLE_FROM_QA_TOOLBAR',commitSha:report.source.commitSha,storage:'ISOLATED_MEMORY_EXPLICIT_KEY',q1:'UNKNOWN_PRESERVED',quoteProof:false,capture};
+ });
  await check('L08_NO_EXTERNAL_NETWORK_OR_UNCAUGHT_PRODUCT_ERRORS',async()=>{assert.deepEqual(network,[]);assert.deepEqual(pageErrors,[]);});report.status='PASS';
 }catch(error){report.status=/Operation not permitted|socket\(\) failed|Executable doesn't exist/.test(String(error))?'BLOCKED_BROWSER_ENVIRONMENT':'FAIL';report.error=String(error.stack||error);process.exitCode=1;await page?.screenshot({path:join(evidence,'failure.png'),fullPage:true}).catch(()=>{});}
 finally{await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));await mkdir(evidence,{recursive:true});await writeFile(join(evidence,'qa-lab.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));}

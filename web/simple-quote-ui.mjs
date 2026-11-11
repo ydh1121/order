@@ -8,7 +8,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const kinds={FLEX:'소진 시 주문',FIXED:'정기 주문',ONCE:'1회 주문'};
 export function createSimpleQuoteUI({bridge,onAuthRequest=null}){
  const $=id=>document.getElementById(id),shell=window.OrderModalShell;
- let mounted=false,renderedRegions='',numeric=null,draft=null,baseline=null,baselineDateParts=null,dateClearRequested=false,openingInput=null,date=null,generation=0,pending=false,lastHandoff=null,authStatus='UNKNOWN',authGeneration=0,authRequest=null;
+ let mounted=false,renderedRegions='',numeric=null,draft=null,baseline=null,baselineDateParts=null,dateClearRequested=false,openingInput=null,date=null,generation=0,pending=false,lastHandoff=null,authStatus='UNKNOWN',authGeneration=0,authRequest=null,latestCountCommit=Promise.resolve({ok:true}),q3ProceedPending=false;
  const get=()=>bridge.getState().simpleQuote;
  const id=()=>`simple-site-${crypto.randomUUID()}`;
  function mount(){
@@ -16,13 +16,23 @@ export function createSimpleQuoteUI({bridge,onAuthRequest=null}){
   $('add-site').closest('.add-row').hidden=true;$('q3-empty').hidden=true;
   $('q3-sites').innerHTML='<div class="simple-quote-fields"><label class="ui-field-title" for="simple-site-count">사업장 수</label><input class="text-input" id="simple-site-count" type="text" inputmode="numeric" autocomplete="off"><label class="ui-field-title" for="simple-region">지역</label><input class="text-input" id="simple-region" maxlength="1024" placeholder="시·구·동" autocomplete="address-level2"><label class="q4-check-row"><input id="simple-regions-differ" type="checkbox"><span class="q4-check-icon" aria-hidden="true">✓</span><span class="q4-check-copy">사업장별 지역이 달라요</span></label><div id="simple-site-regions" class="simple-quote-fields"></div></div>';
   numeric=bindNumericInputs($('q3-sites'),{selector:'#simple-site-count',options:()=>({grouped:false,allowEmpty:true,allowZero:true,maxDigits:3,min:0,max:500,step:1})});
-  $('simple-site-count').addEventListener('input',event=>{if(event.isComposing||event.orderNumeric?.accepted!==true)return;const value=event.orderNumeric.value;if(value&&Number(value)>500){$('simple-site-count').setAttribute('aria-invalid','true');bridge.error('err-q3','사업장 수를 확인해 주세요.');return;}$('simple-site-count').setAttribute('aria-invalid','false');bridge.error('err-q3','');const next=structuredClone(get());next.siteCount=value;const count=Number(value)||0;next.sites=next.sites.slice(0,count);while(next.sites.length<count)next.sites.push({id:id(),region:''});bridge.write(next);renderRegions(next);});
-  $('simple-region').addEventListener('input',event=>{if(event.isComposing)return;bridge.write({...get(),sharedRegion:event.target.value});});
-  $('simple-region').addEventListener('compositionend',event=>bridge.write({...get(),sharedRegion:event.target.value}));
-  $('simple-regions-differ').onchange=event=>{const next={...get(),regionsDiffer:event.target.checked};bridge.write(next);renderRegions(next);};
+  $('simple-site-count').addEventListener('input',event=>{if(event.isComposing||event.orderNumeric?.accepted!==true)return;applySiteCount(event.orderNumeric.value,{shrink:['step-key','step-wheel'].includes(event.orderNumeric.phase)});});
+  $('simple-site-count').addEventListener('blur',()=>finishSiteCount());
+  $('simple-site-count').addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing||event.keyCode===229)return;event.preventDefault();event.stopPropagation();finishSiteCount();});
+  $('simple-region').addEventListener('input',event=>{if(event.isComposing)return;writeQ3({...get(),sharedRegion:event.target.value});});
+  $('simple-region').addEventListener('compositionend',event=>writeQ3({...get(),sharedRegion:event.target.value}));
+  $('simple-regions-differ').onchange=event=>{const next={...get(),regionsDiffer:event.target.checked};writeQ3(next);renderRegions(next);};
   $('simple-site-regions').addEventListener('input',event=>{const input=event.target.closest('[data-simple-site-region]');if(!input||event.isComposing)return;writeRegion(input);});
   $('simple-site-regions').addEventListener('compositionend',event=>{const input=event.target.closest('[data-simple-site-region]');if(input)writeRegion(input);});
-  $('q3-next').onclick=()=>{if(!bridge.guard('simple-q3-next'))return;const stage=inspectSimpleQuote(bridge.getState()).stages.q3;if(!q3InputValid()||!stage.ready){bridge.error('err-q3','사업장 수와 지역을 확인해 주세요.');return;}bridge.error('err-q3','');bridge.openStage('q4');};
+  $('q3-next').onclick=async()=>{
+   if(q3ProceedPending)return;q3ProceedPending=true;const openingStage=bridge.getState().open;
+   try{
+    if(!(await finishSiteCount())?.ok)return;
+    let settled,result;do{settled=latestCountCommit;result=await settled;}while(settled!==latestCountCommit);
+    if(!result?.ok||bridge.getState().open!==openingStage||!bridge.guard('simple-q3-next'))return;
+    const stage=inspectSimpleQuote(bridge.getState()).stages.q3;if(!q3InputValid()||!stage.ready){bridge.error('err-q3','사업장 수와 지역을 확인해 주세요.');return;}bridge.error('err-q3','');bridge.openStage('q4');
+   }finally{q3ProceedPending=false;}
+  };
   $('allocations-delivery').innerHTML='<div id="simple-order-summary" class="muted"></div><button class="ui-copy-action" id="simple-order-edit" type="button">주문 방식 선택</button>';
   $('simple-order-edit').onclick=()=>openOrder($('simple-order-edit'));
   $('q4-next').onclick=()=>{if(!bridge.guard('simple-q4-next'))return;if(!inspectSimpleQuote(bridge.getState()).stages.q4.ready){openOrder($('q4-next'));return;}bridge.openStage('');};
@@ -43,7 +53,24 @@ export function createSimpleQuoteUI({bridge,onAuthRequest=null}){
    if(onAuthRequest){try{await onAuthRequest(lastHandoff);if(authCurrent(request)&&authStatus==='PENDING'){authStatus='REQUESTED';$('simple-auth-status').textContent='입력 내용이 유지됩니다.';}}catch{if(authCurrent(request)){authStatus='UNAVAILABLE';$('simple-auth-status').textContent='다시 시도해 주세요.';}}}
   };
  }
- function writeRegion(input){const next=structuredClone(get()),row=next.sites.find(s=>s.id===input.dataset.simpleSiteRegion);if(row){row.region=input.value;bridge.write(next);}}
+ // This only awaits the existing storage owner. It neither owns a second
+ // persistence queue nor invents a successful write when that owner fails.
+ function writeQ3(next){
+  const unchanged=JSON.stringify(next)===JSON.stringify(get());
+  const previous=latestCountCommit;let requested;try{requested=bridge.write(next);}catch{requested={ok:false,status:'WRITE_FAILED'};}
+  latestCountCommit=Promise.all([previous,Promise.resolve(requested).catch(()=>({ok:false,status:'WRITE_FAILED'}))]).then(([,result])=>result??(unchanged?{ok:true,status:'UNCHANGED'}:{ok:false,status:'WRITE_RESULT_REQUIRED'}));return latestCountCommit;
+ }
+ function applySiteCount(value,{shrink=false}={}){
+  if(!/^\d{0,3}$/.test(value)||Number(value)>500){$('simple-site-count').setAttribute('aria-invalid','true');bridge.error('err-q3','사업장 수를 확인해 주세요.');return Promise.resolve({ok:false,status:'INVALID_COUNT'});}
+  $('simple-site-count').setAttribute('aria-invalid','false');bridge.error('err-q3','');
+  const next=structuredClone(get()),count=Number(value)||0;next.siteCount=value;
+  // Empty/zero and positive typing prefixes are not deletion instructions.
+  // Keep stable IDs and region text until an explicit positive completion.
+  if(count>0){if(shrink)next.sites=next.sites.slice(0,count);while(next.sites.length<count)next.sites.push({id:id(),region:''});}
+  const commit=writeQ3(next);renderRegions(next);return commit;
+ }
+ function finishSiteCount(){if(!numeric?.inspect().valid){bridge.error('err-q3','사업장 수를 확인해 주세요.');return Promise.resolve({ok:false,status:'INVALID_COUNT'});}const parsed=numeric.read($('simple-site-count'));return parsed.valid?applySiteCount(parsed.value,{shrink:true}):Promise.resolve({ok:false,status:'INVALID_COUNT'});}
+ function writeRegion(input){const next=structuredClone(get()),row=next.sites.find(s=>s.id===input.dataset.simpleSiteRegion);if(row){row.region=input.value;writeQ3(next);}}
  // Editing safety is separate from required-stage completion: an untouched
  // empty count must not prevent entering the form or saving incomplete input.
  function q3InputValid(){if(!mounted)return true;if(!numeric?.inspect().valid)return false;const parsed=numeric.read($('simple-site-count'));return parsed.valid&&/^\d{0,3}$/.test(parsed.value)&&Number(parsed.value)<=500&&parsed.value===get().siteCount;}

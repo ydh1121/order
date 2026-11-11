@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "e81d57330d0420d2c2f5878b0159f6721f187ce2293dedc2bf7709488e2f5ffc"
+      "sha256": "4f3814363a9874e3b358d417e0f01d9d2d53db4279ec616ec242756ce5e62259"
     },
     {
       "source": "web/common-ui.mjs",
@@ -147,7 +147,7 @@
     {
       "source": "web/simple-quote-ui.mjs",
       "output": "simple-quote-ui.mjs",
-      "sha256": "c5cfbbe1cf08485e990bdfdf4dc378774c8e98227533a8d6b67ec32ffd163cdc"
+      "sha256": "a009db5905eed8c7a0cf53019938733caccabfa8d45f7a37ef8895d1811c19c8"
     },
     {
       "source": "web/quote-document.mjs",
