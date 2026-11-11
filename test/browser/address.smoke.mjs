@@ -1,4 +1,4 @@
-import {buildArchivedBaseline} from '../fixtures/archived-baseline-build.mjs';
+import {buildArchivedBaseline,installArchivedBrowserClock} from '../fixtures/archived-baseline-build.mjs';
 import {approved0540,chooseQuantityUnit,superseded0540} from './approved-contract-helpers.mjs';
 /** MSG0519: actual Chromium DOM/native storage against the built product.
  * All address responses and DNS answers in this file are explicit synthetic
@@ -33,6 +33,7 @@ function fixture({count=1,legacy=false,allocations=false}={}){const f=allocation
 function response(items,page=1,total=items.length){return {version:1,status:items.length?'OK':'EMPTY',reason:null,items,page,total,hasMore:total>page*10};}
 async function contextFor(base,{width=390,height=900,motion='reduce',phase='after'}={}){
  const c=await browser.newContext({viewport:{width,height},reducedMotion:motion});
+ if(phase==='before')report.baselineRuntimeClock=await installArchivedBrowserClock(c,report.baselineBuildClock);
  await c.addInitScript(key=>{const original=Storage.prototype.setItem;window.__addressTestWrites=[];Storage.prototype.setItem=function(k,value){const out=original.call(this,k,value);if(this===localStorage&&k===key)window.__addressTestWrites.push({at:performance.now(),revision:JSON.parse(value)?.revision,state:JSON.parse(value)?.state});return out;};},KEY);
  const control={mode:'normal',held:[],phase,requests:[],failures:0};
  await c.route('**/*',async route=>{const req=route.request(),u=new URL(req.url());try{

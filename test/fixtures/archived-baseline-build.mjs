@@ -24,3 +24,22 @@ export async function buildArchivedBaseline({root,commitSha}) {
   const stdout=execFileSync(process.execPath,['--input-type=module','-e',program,String(clock.now),commitSha],{cwd:root,env:{...process.env,CF_PAGES_COMMIT_SHA:commitSha},encoding:'utf8'});
   return {...clock,commitSha,builderSha256:hash(builder),build:JSON.parse(stdout)};
 }
+
+// Install only in an archived product's browser context. The old reference and
+// old source run at their recorded build time; timeout/TTL behavior still ages.
+export async function installArchivedBrowserClock(context,clock) {
+  if(clock?.classification!=='HISTORICAL_BUILD_CLOCK_NOT_CURRENT_FRESHNESS'||!Number.isSafeInteger(clock.now))throw new Error('ARCHIVED_BROWSER_CLOCK_REQUIRED');
+  await context.addInitScript(({asOf})=>{
+    const NativeDate=globalThis.Date,started=NativeDate.now();
+    const now=()=>asOf+(NativeDate.now()-started);
+    function ArchivedDate(...args) {
+      if(new.target)return Reflect.construct(NativeDate,args.length?args:[now()],new.target);
+      return new NativeDate(now()).toString();
+    }
+    Object.setPrototypeOf(ArchivedDate,NativeDate);
+    ArchivedDate.prototype=NativeDate.prototype;
+    ArchivedDate.now=now;
+    globalThis.Date=ArchivedDate;
+  },{asOf:clock.now});
+  return {...clock,classification:'HISTORICAL_BROWSER_RUNTIME_CLOCK_NOT_CURRENT_FRESHNESS',behavior:'ARCHIVED_BUILD_TIME_PLUS_REAL_ELAPSED',appliesTo:'ARCHIVED_CONTEXT_ONLY'};
+}
