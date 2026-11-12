@@ -26,3 +26,8 @@ Fixed source entry: https://drive.google.com/file/d/19162YmgCYeyIP4Wgt_fYwORtQPq
 - Apply the 2026-11-11 SINGLE_RECIPIENT_HANDOFF_GATE and DRIVE_DELIVERABLE_DURABILITY_GATE via `docs/engine/harness-0579.md`. One executable handoff block has one TARGET_TRACK; ACK only this track's actually read messages.
 - Required delivery order: finalize files/manifest → approved role folder upload or verified identical existing ID → metadata/access/parent readback → raw byte count and SHA-256 match → history/own CURRENT/own Bus readback → final report. Use PARTIAL_DELIVERY or DELIVERY_BLOCKED_DRIVE if incomplete. Never promote local/CI success to delivery, visual selection or commercial acceptance.
 - Resume the recovered existing state before fresh action IDs. Preserve unavailable historical logs as unavailable; never reconstruct them as recovered originals. New exports must carry the actual terminal receipts and referenced logs, with their hashes, so subsequent resume can verify them. Keep the 4000 output budget and large manifests on disk.
+
+## MSG0583 two-lane boundary
+- Common accordion direction and Q2 cost visibility/selected Spinning counter may be merged and published to the existing canonical development Pages project after checks.
+- Keep simple Q1–Q4 in existing Draft PR17. Do not merge that PR as a common-change publication vehicle. After common publication, merge main normally into the candidate branch and preserve history.
+- Common scope uses existing schema8 and exact price policy; no candidate schema9/10, new price source, alternate deployment or unselected motion is authorized by this common change.

@@ -1,6 +1,10 @@
 /** Shared historical-regression adapters. These invoke the real current control,
  * and retain native-select baseline interaction only for frozen older builds. */
 export const approved0540=process.env.ORDER_QA_CONTRACT==='MSG0540';
+// MSG0583 adds decorative aria-hidden digit cells. Read the single semantic
+// amount when present; frozen historical builds retain their original text.
+export const moneyText=locator=>locator.evaluate(el=>el.querySelector('.order-counter-value')?.textContent??el.innerText);
+export const moneyTexts=locator=>locator.evaluateAll(elements=>elements.map(el=>el.querySelector('.order-counter-value')?.textContent??el.textContent));
 export async function chooseQuantityUnit(select,value){
  if(await select.isVisible())return select.selectOption(value);
  const page=select.page(),id=await select.getAttribute('data-line-qty-unit');
