@@ -31,16 +31,16 @@ const won=s=>s.replace(/\B(?=(\d{3})+(?!\d))/g,',')+'원';
 async function check(id,fn){const item={id,status:'RUNNING'};report.checks.push(item);try{await fn(item);item.status='PASS';}catch(error){item.status='FAIL';item.error=String(error.stack||error);throw error;}}
 async function ready(tab=page){await tab.waitForFunction(()=>document.documentElement.dataset.storageReady==='true'&&document.documentElement.dataset.storagePending!=='true');}
 async function stored(){return page.evaluate(key=>JSON.parse(localStorage.getItem(key)||'null'),KEY);}
-async function open(data=fixture(),{reducedMotion='reduce'}={}){
+async function open(data=fixture(),{reducedMotion='reduce',route='form'}={}){
   if(await page.evaluate(()=>document.documentElement.dataset.storageReady==='true'))await ready();
   await page.goto(base+'/__common0583-fixture');await page.emulateMedia({reducedMotion});
   const result=await harness.evaluate(async({data,key})=>{localStorage.clear();sessionStorage.clear();const {createBrowserStorage}=await import('/storage.mjs'),storage=createBrowserStorage();const loaded=await storage.load();if(!loaded.ok)return loaded;return storage.commit(data,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'common-fixture-'+crypto.randomUUID()});},{data,key:KEY});
   assert.equal(result.ok,true,JSON.stringify(result));
-  await page.goto(`${base}/?common0583=${++sequence}#/form`);
+  await page.goto(`${base}/?common0583=${++sequence}#/${route}`);
   // The separate native-storage fixture tab must not leave the real product in
   // the background: Chromium can throttle its rAF to about one frame per second,
   // skipping the selected effect's entire anticipation/spring interval.
-  await page.bringToFront();await ready();await page.locator('#page-form.active').waitFor({state:'visible'});
+  await page.bringToFront();await ready();await page.locator(`#page-${route}.active`).waitFor({state:'visible'});
   assert.equal(await page.locator('[data-open="q2"]').getAttribute('aria-expanded'),data.open==='q2'?'true':'false');
 }
 async function amount(id,expected){
@@ -183,6 +183,22 @@ try{
     for(const width of [390,1440]){await page.setViewportSize({width,height:900});await open(fixture([row(A),row(B)]),{reducedMotion:'no-preference'});await price(A).fill('5000');await qty(A).fill('31');await amount(A,'10000');assert.equal(await output(A).getAttribute('data-counter-state'),'rolling');await settle(A);await price(B).fill('2100');await qty(B).fill('3');await amount('total','16300');await settle('total');await ready();
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'full-width page has no horizontal overflow');await capture(`common-cost-full-${width}.png`);
     }
+  });
+  await check('CC15_RESTORED_OFFSCREEN_AMOUNT_ROLLS_ON_FIRST_VISIBLE_PRESENTATION_ONLY',async item=>{
+    await page.setViewportSize({width:390,height:900});const seed=complete();seed.open='q1';await open(seed,{reducedMotion:'no-preference',route:'home'});
+    // Read the already-created product instances through their idempotent
+    // factory. No set/settle method or replacement counter is called by QA.
+    const inspect=()=>page.evaluate(async ids=>{const {createSpinningCounter}=await import('/spinning-counter.mjs');return ids.map(id=>{const el=document.querySelector(id==='total'?'#q2-total':`[data-line-subtotal="${id}"]`);if(!el?.classList.contains('order-spinning-counter')||!el.dataset.counterState)throw Error('PRODUCT_COUNTER_NOT_MOUNTED');return {id,...createSpinningCounter(el).inspect()};});},[A,B,'total']);
+    for(const [id,expected]of [[A,'10000'],[B,'6300'],['total','16300']]){assert.equal(await output(id).locator('.order-counter-value').textContent(),won(expected));assert.equal(await output(id).getAttribute('data-counter-state'),'settled');}
+    const first=await inspect();assert.ok(first.every(c=>c.active===false&&c.presented===false));item.homeInitial=first;
+    // More than the maximum initial roll for these five-digit amounts under
+    // the selected130ms steps/90ms stagger/100+740ms landing tokens.
+    await framePause(2700);const afterHome=await inspect();assert.deepEqual(afterHome,first,'waiting on home never consumes the first visible roll');item.homeAfter2700ms=afterHome;
+    await page.locator('#start').click();await page.locator('#page-form.active').waitFor({state:'visible'});await ready();assert.equal(await page.locator('#section-q2>.accordion-trigger').getAttribute('aria-expanded'),'false');assert.ok((await inspect()).every(c=>c.active===false&&c.presented===false),'closed Q2 has no visual rAF work');await remember();
+    await page.locator('#section-q2>.accordion-trigger').click();await amount(A,'10000');await amount('total','16300');assert.equal(await output(A).getAttribute('data-counter-state'),'rolling');
+    const observation=frames(A);await framePause(200);await capture('common-cost-restored-first-visible-390.png');const samples=await observation;report.motion.push({id:item.id,samples});assert.ok(samples.some(s=>s.state==='rolling'&&s.columns.some(c=>c.cells.some(d=>d.transform!=='none'&&d.opacity>0))),'first visible presentation has actual transformed reel frames');await settle('total');await amount(A,'10000');await amount('total','16300');await stable();
+    const presented=await inspect();assert.ok(presented.every(c=>c.presented===true&&c.active===false));item.afterFirstPresentation=presented;
+    const trigger=page.locator('#section-q2>.accordion-trigger');await trigger.click();await framePause(280);await trigger.click();await framePause(280);const reopened=await inspect();assert.deepEqual(reopened,presented,'same settled values do not replay when closed and reopened');await amount(A,'10000');await amount('total','16300');await stable();assert.deepEqual((await stored()).data.lines,seed.lines);item.afterReopen=reopened;
   });
   assert.deepEqual(report.pageErrors,[]);assert.deepEqual(report.externalBlocked,[]);report.status='PASS_SCOPED_COMMON_BUILT_UI_AND_MOTION';
 }catch(error){report.status='FAIL';report.error=String(error.stack||error);process.exitCode=1;try{if(page)await capture('common-cost-failure.png');}catch{}}

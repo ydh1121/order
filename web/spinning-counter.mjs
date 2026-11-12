@@ -76,7 +76,10 @@ function validAmount(value) {
 }
 
 /** Attach to an existing <output>; caller owns cost-row visibility and validity.
- * set() changes only this output. hide() clears/cancels, settle() cancels to the
+ * set(value,{visible}) keeps the semantic value current while a route/accordion
+ * is hidden; its first visible presentation owns the initial roll. The caller
+ * supplies visibility from its existing page/accordion state, not scroll entry.
+ * hide() clears/cancels, settle() cancels to the
  * current exact target (e.g. route exit), destroy() releases the owner/listener.
  * A test-only view injection supplies the same DOM/rAF/media APIs, no calculator. */
 export function createSpinningCounter(output,{view=output?.ownerDocument?.defaultView||globalThis}={}) {
@@ -86,19 +89,22 @@ export function createSpinningCounter(output,{view=output?.ownerDocument?.defaul
   semantic.className='order-counter-value';reel.className='t-reel';reel.setAttribute('aria-hidden','true');
   output.classList.add('order-spinning-counter');output.replaceChildren(semantic,reel);
   output.removeAttribute('aria-label');output.hidden=true;
-  let value=null,columns=[],generation=0,raf=0,destroyed=false,state='hidden';
+  let value=null,columns=[],generation=0,raf=0,destroyed=false,state='hidden',presented=false;
   const media=view.matchMedia?.('(prefers-reduced-motion: reduce)');
   const publishState=next=>{state=next;output.dataset.counterState=next;output.dataset.counterGeneration=String(generation);};
   const cancel=()=>{generation++;if(raf)view.cancelAnimationFrame(raf);raf=0;};
   function settle(){if(destroyed)return;cancel();columns.forEach(rest);publishState(value===null?'hidden':'settled');}
-  function hide(){if(destroyed)return;cancel();value=null;semantic.textContent='';reel.replaceChildren();columns=[];output.hidden=true;delete output.dataset.counterTarget;publishState('hidden');}
+  function hide(){if(destroyed)return;cancel();value=null;presented=false;semantic.textContent='';reel.replaceChildren();columns=[];output.hidden=true;delete output.dataset.counterTarget;publishState('hidden');}
   function destroy(){if(destroyed)return;settle();destroyed=true;media?.removeEventListener?.('change',onMotion);view.removeEventListener?.('pagehide',settle);instances.delete(output);publishState('destroyed');}
   function onMotion(){if(media.matches)settle();}
-  function set(next){
+  function set(next,{visible=true}={}){
     if(destroyed)return false;
     if(!validAmount(next)){hide();return false;}
-    if(next===value)return true;
-    const previous=value;cancel();value=next;semantic.textContent=next;output.dataset.counterTarget=next;output.hidden=false;
+    if(next===value){
+      if(!visible){if(raf)settle();return true;}
+      if(presented)return true;
+    }
+    const previous=presented?value:null;cancel();value=next;semantic.textContent=next;output.dataset.counterTarget=next;output.hidden=false;
     const digits=next.replace(/\D/g,''),fromDigits=(previous?.replace(/\D/g,'')||'').padStart(digits.length,'0').slice(-digits.length);
     const old=new Map(columns.map(col=>[col.place,col])), pieces=[];columns=[];let index=0;
     for(const ch of next){
@@ -115,7 +121,8 @@ export function createSpinningCounter(output,{view=output?.ownerDocument?.defaul
       col.el.dataset.counterMoving=String(!col.done);columns.push(col);pieces.push(col.el);index++;
     }
     reel.replaceChildren(...pieces);
-    if(media?.matches || !view.requestAnimationFrame || columns.every(col=>col.done)){settle();return true;}
+    if(visible)presented=true;
+    if(!visible || media?.matches || !view.requestAnimationFrame || columns.every(col=>col.done)){settle();return true;}
     const o=readTokens(reel,view), token=generation, started=view.performance.now();publishState('rolling');
     const tick=()=>{
       if(destroyed||token!==generation)return;
@@ -142,6 +149,6 @@ export function createSpinningCounter(output,{view=output?.ownerDocument?.defaul
     tick();return true;
   }
   media?.addEventListener?.('change',onMotion);view.addEventListener?.('pagehide',settle);publishState('hidden');
-  const api=Object.freeze({set,hide,settle,destroy,inspect:()=>Object.freeze({value,state,generation,active:!!raf,destroyed})});
+  const api=Object.freeze({set,hide,settle,destroy,inspect:()=>Object.freeze({value,state,generation,active:!!raf,destroyed,presented})});
   instances.set(output,api);return api;
 }

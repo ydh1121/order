@@ -215,6 +215,7 @@ function show(page,record=true,{emailProofs=null}={}){
  const showDestination=()=>{if(seq!==pageSeq)return;
   if(previous&&previous!==dest)cleanup(previous);
   dest.classList.add('active');dest.classList.remove('leaving');dest.inert=false;dest.removeAttribute('aria-hidden');dest.style.opacity='';
+  if(page==='form')paintQ2Costs();
   if(!ready||reduce){dest.classList.remove('entering');return;}
   dest.classList.add('entering');routeAnimation=dest.animate([{opacity:0},{opacity:1}],{duration:135,easing:'ease-out'});
   const mine=routeAnimation;mine.finished.then(()=>{if(seq===pageSeq&&routeAnimation===mine){dest.classList.remove('entering');routeAnimation=null;}},()=>{});
@@ -511,7 +512,7 @@ function paintQ2Costs(){
   if(!output||!area)return;
   let counter=q2CostCounters.get(output);if(!counter){counter=createSpinningCounter(output);q2CostCounters.set(output,counter);}
   if(cost===null){counter.hide();area.hidden=true;area.dataset.costVisible='false';return;}
-  area.hidden=false;area.dataset.costVisible='true';counter.set(w(cost));
+  area.hidden=false;area.dataset.costVisible='true';counter.set(w(cost),{visible:current==='form'&&$('page-form').classList.contains('active')&&S.open==='q2'});
  };
  for(const row of view.rows){const output=list.querySelector(`[data-line-subtotal="${CSS.escape(String(row.id))}"]`);paint(output,output?.closest('.line-subtotal'),row.cost);}
  paint($('q2-total'),total,view.total);

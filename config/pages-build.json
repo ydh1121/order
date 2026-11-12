@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "06dd93d9e91aa55dd031ea0786c6a359171a3f0278ea929027cc7f7ad1a7420e"
+      "sha256": "5555adb6ac21283a353d5d989603ceebe3d4ddb9cbf7c1d59476ebbc6a87cc58"
     },
     {
       "source": "web/common-ui.mjs",
@@ -147,7 +147,7 @@
     {
       "source": "web/spinning-counter.mjs",
       "output": "spinning-counter.mjs",
-      "sha256": "d1c4ff188c59d3c55114beee13b5b5bcba313f6ac4e5f0f6e7082e04414c82a7"
+      "sha256": "a34c4b808bfcedcd2141af5f355a106e787f65d0c96aef018802cf79bbab3285"
     },
     {
       "source": "web/spinning-counter.css",

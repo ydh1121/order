@@ -91,3 +91,31 @@ test('C58-counter removed output cannot be painted by a pending frame',()=>{
   const h=harness();h.counter.set('1,000원');h.output.isConnected=false;const before=JSON.stringify(cols(h).map(c=>c.children.map(x=>x.style)));
   h.frame(100);assert.equal(h.pending.size,0);assert.equal(JSON.stringify(cols(h).map(c=>c.children.map(x=>x.style))),before);h.counter.destroy();
 });
+test('C58-counter restored hidden values keep exact semantics and reserve one latest first-visible roll',()=>{
+  const h=harness();h.counter.set('1,234원',{visible:false});
+  assert.equal(h.semantic().textContent,'1,234원');assert.equal(visibleDigits(h),'1234');assert.equal(h.counter.inspect().presented,false);assert.equal(h.counter.inspect().state,'settled');assert.equal(h.pending.size,0);
+  const nodes=[...h.reel().children],generation=h.counter.inspect().generation;h.counter.set('1,234원',{visible:false});
+  assert.deepEqual(h.reel().children,nodes);assert.equal(h.counter.inspect().generation,generation);
+  h.frame(15000);h.counter.set('5,678원',{visible:false});assert.equal(h.semantic().textContent,'5,678원');assert.equal(visibleDigits(h),'5678');assert.equal(h.pending.size,0);
+  h.counter.set('5,678원',{visible:true});assert.equal(h.counter.inspect().presented,true);assert.equal(h.counter.inspect().state,'rolling');assert.equal(h.pending.size,1);
+  assert.deepEqual(cols(h).map(c=>c.dataset.counterFrom),['0','0','0','0']);h.flush();assert.equal(visibleDigits(h),'5678');
+  const settledGeneration=h.counter.inspect().generation;h.counter.set('5,678원',{visible:false});h.counter.set('5,678원',{visible:true});
+  assert.equal(h.counter.inspect().generation,settledGeneration);assert.equal(h.pending.size,0,'same target does not replay on reopen');
+});
+test('C58-counter logical hide cancels active frames but preserves presented value and later hidden updates',()=>{
+  const h=harness();h.counter.set('4,321원');h.frame(160);const stale=h.oldFrames[0];
+  h.counter.set('4,321원',{visible:false});assert.equal(h.pending.size,0);assert.equal(visibleDigits(h),'4321');assert.equal(h.counter.inspect().presented,true);
+  stale();assert.equal(visibleDigits(h),'4321');h.counter.set('4,321원',{visible:true});assert.equal(h.pending.size,0);
+  h.counter.set('9,876원',{visible:false});assert.equal(h.semantic().textContent,'9,876원');assert.equal(visibleDigits(h),'9876');assert.equal(h.pending.size,0);
+  h.counter.set('9,876원',{visible:true});assert.equal(h.pending.size,0,'an already presented owner does not replay a hidden settled update');
+});
+test('C58-counter reduced motion consumes first visible presentation without replay on preference change',()=>{
+  const h=harness({reduced:true});h.counter.set('6,050원',{visible:false});assert.equal(h.counter.inspect().presented,false);
+  h.counter.set('6,050원',{visible:true});assert.equal(h.counter.inspect().presented,true);assert.equal(visibleDigits(h),'6050');assert.equal(h.pending.size,0);
+  h.reduce(false);h.counter.set('6,050원',{visible:true});assert.equal(h.pending.size,0);
+});
+test('C58-counter invalidation resets first presentation while hidden edits remain unconsumed',()=>{
+  const h=harness();h.counter.set('1,234원');h.flush();h.counter.hide();assert.equal(h.counter.inspect().presented,false);
+  h.counter.set('1,234원',{visible:false});assert.equal(h.pending.size,0);assert.equal(h.counter.inspect().presented,false);
+  h.counter.set('1,234원',{visible:true});assert.equal(h.counter.inspect().state,'rolling');assert.equal(h.pending.size,1);h.flush();assert.equal(visibleDigits(h),'1234');
+});

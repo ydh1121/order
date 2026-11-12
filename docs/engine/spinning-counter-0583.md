@@ -10,7 +10,16 @@ target. Autosave pending is a separate state and cannot repeatedly hide costs.
 The output receives one accessible final string immediately. The reel is
 `aria-hidden`; commas/currency do not roll. Right-aligned unchanged digit
 columns are retained. Initial exposure rolls once, equal values do not restart,
-and `hide()` clears the display without treating absence as zero. Call
+and `hide()` clears the display without treating absence as zero. A route or
+closed accordion calls `set(value,{visible:false})`: the semantic and decorative
+final values remain exact, but no rAF starts and initial presentation is not
+consumed. The first `visible:true` call rolls the latest target once; subsequent
+same-value reopenings do not replay it. The caller repaints after activating the
+form page and on the existing accordion state change. This uses logical page
+and accordion visibility, not a new scroll/intersection observer. Hiding an
+already presented value settles it; invalidation through `hide()` resets its
+presentation. Reduced motion consumes the visible presentation immediately.
+Call
 `destroy()` before removing a row, and `settle()` on route exit. Rebinding one
 output returns its existing controller. Generations reject even a cancelled
 callback delivered late; runtime reduced-motion changes settle the latest value.
