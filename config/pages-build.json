@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "4cea4265b17389e6ba4d612dfc05324e5297625fb9a61b25b32383c1ef00fc2b"
+      "sha256": "96b812d405851c47b35b4ddde55c38974c63c8debd51957c144a4c2f9c60cca3"
     },
     {
       "source": "web/common-ui.mjs",

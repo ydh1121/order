@@ -539,7 +539,10 @@ const q2DisplayUnit=line=>simpleUnknown()?S.simpleQuote.unknownMonthly.unit:quan
 const q2UnitLabel=line=>simpleUnknown()?(({each:'개',tray:'판',pack:'팩'})[q2DisplayUnit(line)]||'단위 선택'):q2DisplayUnit(line)==='each'?'개':unit(line.pack);
 function syncQ2Tracks(){
  const list=$('q2-lines');if(!list?.clientWidth)return;
- const measure=input=>{const canvas=syncQ2Tracks.canvas||(syncQ2Tracks.canvas=document.createElement('canvas')),context=canvas.getContext('2d');context.font=getComputedStyle(input).font;return context.measureText(input.value||'0').width;};
+ const measure=input=>{const canvas=syncQ2Tracks.canvas||(syncQ2Tracks.canvas=document.createElement('canvas')),context=canvas.getContext('2d'),style=getComputedStyle(input);
+  // The font shorthand can serialize empty with tabular numerals. Use its
+  // actual longhands so canvas cannot silently keep the default 10px font.
+  context.font=[style.fontStyle,style.fontWeight,style.fontSize,style.fontFamily].filter(Boolean).join(' ');return context.measureText(input.value||'0').width;};
  const quantities=[...list.querySelectorAll('[data-line-qty]')],prices=[...list.querySelectorAll('[data-line-price],[data-simple-budget]')];
  const qtyWidth=Math.max(140,...quantities.map(input=>measure(input)+44+24));
  const priceWidth=Math.max(0,...prices.map(input=>measure(input)+(input.nextElementSibling?.getBoundingClientRect().width||30)+18));
