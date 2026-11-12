@@ -1,5 +1,5 @@
 import {projectQuoteInput} from './quote-result.mjs';
-import {projectSimpleInput,inspectSimpleQuote} from './simple-quote-contract.mjs';
+import {projectSimpleInput,inspectSimpleQuote,SIMPLE_QUOTE_SNAPSHOT} from './simple-quote-contract.mjs';
 import {readCustomerQuoteResponse,quoteProofGate,validQuoteRevision} from '../src/engine/contracts/quote-response.mjs';
 
 // UX-02/04: a read-only data adapter, not a selected invoice/receipt design.
@@ -47,11 +47,11 @@ export function buildQuoteDocumentModel({state={},snapshot=null,inputRevision=nu
   const assignmentRows=input.allocations.map(a=>({...fields(a,['id','lineId','locationId','qty','oneTimeDeliveryQty','deliveryQtyUnit','monthlyDemandQty','monthlyDemandUnit','monthlyDemandSource','monthlyDemandExact','monthlyPlanQty','monthlyPlanUnit','monthlyPlanSource','monthlyDemandBasis']),source:'CUSTOMER_INPUT'}));
   const termRows=input.allocations.map(a=>({...fields(a,['id','lineId','locationId','mode','modeExplicit','freq','intervalWeeks','cycleCount','variableQty','qtyMin','qtyMax','qualityTest','repeatSemantics','frequencyPerWeek','monthDay','cycleAnchorDate','scheduleDetail','days','weekPlans','cadence','deliveryDate','activeRepeat','deliveryTerms','storeOffDays','activeHoliday']),source:'CUSTOMER_INPUT'}));
   return {
-    version:QUOTE_DOCUMENT_VERSION,sourceSnapshot:'ORDER-PARTIAL-20261112-063305-R1',provisional:true,designSelected:false,
+    version:QUOTE_DOCUMENT_VERSION,sourceSnapshot:simpleMode?SIMPLE_QUOTE_SNAPSHOT:'ORDER-PARTIAL-20261112-063305-R1',provisional:true,designSelected:false,
     inputScope:{mode:simpleMode?'SIMPLE':'DETAILED',assessment:simpleAssessment,authentication:simpleInput?.authentication??null,businessVerification:simpleInput?.businessVerification??null,consultationInterest:simpleInput?.consultationInterest??null},
     request:{requestId:snapshot?.requestId??null,inputRevision:validQuoteRevision(inputRevision)?inputRevision:null,responseRevision:snapshot?.inputRevision??null,revisionMatches,status,requestedAt,observedAt:observationTime,providerCalculatedAt:null},
     groups:[
-      {id:'purchase',title:'구매 내역',rows:purchaseRows,currentPurchaseTotal:input.currentPurchaseTotal,quantityPeriod:'MONTH',totalScope:simpleInput?.monthly.scope??null,specUnknown:simpleInput?.product.specUnknown??null,source:'CUSTOMER_INPUT'},
+      {id:'purchase',title:'구매 내역',rows:purchaseRows,currentPurchaseTotal:input.currentPurchaseTotal,quantityPeriod:'MONTH',totalScope:simpleInput?.monthly.scope??null,specUnknown:simpleInput?.product.specUnknown??null,monthlyBudget:simpleInput?.monthly.budget??null,unitConversion:simpleInput?.monthly.unitConversion??null,source:'CUSTOMER_INPUT'},
       {id:'assignment',title:'납품지별 배정',sites:input.sites,rows:assignmentRows,regionIntent:simpleInput?.regions??null,regionCode:null,source:'CUSTOMER_INPUT'},
       {id:'terms',title:'납품 조건',rows:termRows,orderIntent:simpleInput?.order??null,source:'CUSTOMER_INPUT'},
       {id:'comparison',title:'비용 비교',source:'PUBLIC_QUOTE_RESPONSE',currency:singleQuote?.currency??null,currentCost:comparable?singleQuote.comparison.current:null,quoteCost:singleQuote?.total??null,difference:comparable?singleQuote.comparison.difference:null,comparisonEligibility:singleQuote?.comparisonEligibility??null,basis:singleQuote?.basis??null,validUntil:singleQuote?.validUntil??null,coverage:response?.coverage??null,reasonCodes:response?.reasonCodes??[],proof}

@@ -37,3 +37,10 @@ Fixed source entry: https://drive.google.com/file/d/19162YmgCYeyIP4Wgt_fYwORtQPq
 - Common accordion direction and Q2 cost visibility/selected Spinning counter may be merged and published to the existing canonical development Pages project after checks.
 - Keep simple Q1–Q4 in existing Draft PR17. Do not merge that PR as a common-change publication vehicle. After common publication, merge main normally into the candidate branch and preserve history.
 - Common scope uses existing schema8 and exact price policy; no candidate schema9/10, new price source, alternate deployment or unselected motion is authorized by this common change.
+
+## MSG0583 candidate continuation
+- The scoped common change is published at main `720ad6e3f83b11b331754eadd114b9ce7c1b62ca` through PR18. This branch inherited that main normally; PR17 remains a draft candidate and must not be merged or deployed under that publication approval.
+- Reuse Q1/Q2, numeric, calendar, modal and storage owners. Candidate contract v2/schema10 separates unknown monthly raw quantity/unit/budget from dormant known quantity/price. Budget is optional as an explicit working assumption, never a current cost or savings basis.
+- Schema9/v1 reads remain strict and perform no writes. Upgrade only through a successful explicit transaction; retain invalid legacy count and raw region text without silently declaring them confirmed.
+- Region options use the pinned official code reference with source/version/hash provenance. Catalog membership does not verify an address, delivery coverage or a business. Query/IME/partial root selection are not stored selections.
+- Q4 is inline. Calendar open/navigation/cancel write zero; a changed explicit day selection writes once. Typed partial date stays local; completed Enter/blur uses the shared date owner. Duplicate/stale/failure safeguards remain active.

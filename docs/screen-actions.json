@@ -471,47 +471,64 @@
       "status": "PROVISIONAL_PREWORK_NOT_DEPLOYED",
       "actions": [
         {
-          "id": "simple-spec-unknown",
-          "type": "explicit-unknown-spec",
-          "owner": "app Q1 and simple-quote-contract"
+          "id": "simple-spec-unknown / simple-known-edit",
+          "type": "explicit-unknown-spec-local-editor-confirmation",
+          "owner": "app Q1 and simple-quote-contract",
+          "navigation": "Selection alone stays Q1; private popup changes commit only on confirmation"
         },
         {
           "id": "simple-consultation-interest",
           "type": "optional-interest-not-consent",
-          "default": false
+          "default": false,
+          "navigation": "Only a current explicit checked intent after successful save may open Q2; restore, unchecked, failed or stale intent cannot"
         },
         {
-          "id": "add-line",
-          "type": "single-sku-auth-handoff",
-          "owner": "simple-quote-ui",
-          "provider": "UNAVAILABLE"
+          "id": "data-line-qty / data-line-qty-unit / data-line-price / data-simple-budget",
+          "type": "shared-numeric-owner-mode-specific-model",
+          "owner": "app / numeric-input / quantity-menu",
+          "unknown": "Raw qty/unit and optional budget separate from dormant known price; no cost or implicit package conversion"
         },
         {
           "id": "q2-next",
-          "type": "monthly-quantity-validation",
+          "type": "current-raw-quantity-validation",
           "owner": "app renderQ2 and numeric-input",
-          "scope": "UNCONFIRMED"
+          "scope": "UNCONFIRMED",
+          "unknown": "Separate unknownMonthly quantity/unit/budget; no assumed package conversion or cost"
         },
         {
-          "id": "simple-site-count / simple-region / simple-regions-differ / data-simple-site-region",
-          "type": "raw-region-autosave",
-          "owner": "simple-quote-ui / storage"
+          "id": "simple-site-count",
+          "type": "confirmed-positive-count",
+          "owner": "simple-quote-ui / numeric-input / storage",
+          "range": "1..500; transient blank writes0; explicit completion may shrink stable-ID rows"
         },
         {
-          "id": "simple-order-edit / data-simple-kind / data-simple-basis",
-          "type": "private-order-intent-draft",
-          "owner": "simple-quote-ui"
+          "id": "simple-regions-differ / data-region-query / data-region-toggle / data-region-option",
+          "type": "pinned-two-level-explicit-region-selection",
+          "owner": "simple-region-ui / region-reference / simple-quote-ui",
+          "writes": "Query, IME, partial root and highlight0; changed complete selection1; no address or coverage verification"
         },
         {
-          "id": "simple-preferred-date / simple-date-clear",
+          "id": "q3-next",
+          "type": "current-count-and-selected-region-gate",
+          "owner": "simple-quote-ui / simple-quote-contract"
+        },
+        {
+          "id": "data-simple-kind / data-simple-basis",
+          "type": "inline-order-intent",
+          "owner": "simple-quote-ui / storage",
+          "writes": "Changed explicit value1; no parent order popup"
+        },
+        {
+          "id": "simple-preferred-date / simple-date-clear / data-order-calendar-open",
           "type": "optional-existing-common-calendar",
-          "owner": "date-field and q4-date",
-          "oncePeriod": "ONCE_LEGACY"
+          "owner": "date-field / q4-date / simple-quote-ui",
+          "oncePeriod": "ONCE_LEGACY",
+          "writes": "Open/navigation/cancel0; partial typing0; completed Enter/blur or changed calendar selection1; duplicate0"
         },
         {
-          "id": "data-simple-order-confirm / data-simple-order-cancel",
-          "type": "confirmed-one-or-cancel-zero",
-          "owner": "OrderModalShell / storage"
+          "id": "q4-next",
+          "type": "current-inline-date-and-order-gate",
+          "owner": "simple-quote-ui / simple-quote-contract"
         },
         {
           "id": "save-checkpoint / reset-input / to-result",
@@ -519,7 +536,8 @@
           "owner": "app",
           "proof": "BLOCKED_UNCONFIRMED_SCOPE"
         }
-      ]
+      ],
+      "continuation": "MSG0583"
     }
   ]
 }

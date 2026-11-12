@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "f8b0bde72b8cfba16e8a8fce16e087179dac3c8b28ee0a50191f2ec0d2c5bd90"
+      "sha256": "4cea4265b17389e6ba4d612dfc05324e5297625fb9a61b25b32383c1ef00fc2b"
     },
     {
       "source": "web/common-ui.mjs",
@@ -87,12 +87,12 @@
     {
       "source": "web/storage.mjs",
       "output": "storage.mjs",
-      "sha256": "5d3a77acd6727b6755cc20bd0a7abd3abf3430126de0c75944320be773af14ed"
+      "sha256": "b6aee51195023d262270e84165e077f4a9d1a5a4c71dc19c026cfd8717d8b1a2"
     },
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "63d2170559ed91bd13c14dee62c056658f2b70be268f386e68532aaff32a0d72"
+      "sha256": "259e61e66fe0de5a361635e134999ccbf0eff5e2ae6c0c3fd71f1d5db7ddcf65"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -117,7 +117,7 @@
     {
       "source": "web/date-field.css",
       "output": "date-field.css",
-      "sha256": "79a8f06b48d491029b688befecbe8519fa60f4a06fcef98466c0d20d69bfd49b"
+      "sha256": "e6f65a5e713da62b21c935f06e9d323c50cb16f548b73a90b6dda69cfa26db4a"
     },
     {
       "source": "web/quantity-menu.mjs",
@@ -142,17 +142,17 @@
     {
       "source": "web/simple-quote-contract.mjs",
       "output": "simple-quote-contract.mjs",
-      "sha256": "11d2c565a8ef22bec3b1ac4b686748e05be7ec8789f819742c6d99772a0a9eb0"
+      "sha256": "b5c2e7ce2c94885f8b14526a02dede6c80b3e8ac23228919633c4867ba0c7b67"
     },
     {
       "source": "web/simple-quote-ui.mjs",
       "output": "simple-quote-ui.mjs",
-      "sha256": "a009db5905eed8c7a0cf53019938733caccabfa8d45f7a37ef8895d1811c19c8"
+      "sha256": "3c00da8bc8d92bf57967e37243243d93997b6dfe7c730fd028920c40a5564a53"
     },
     {
       "source": "web/quote-document.mjs",
       "output": "quote-document.mjs",
-      "sha256": "e225588964e77fd5aafb06922da763d4184094fdc9727940ac909755b7c79d5b"
+      "sha256": "362b9b68a1721b811852ed0697e49139bf51f98df8b8957f16b224b70881c0a9"
     },
     {
       "source": "web/q2-cost.mjs",
@@ -168,6 +168,16 @@
       "source": "web/spinning-counter.css",
       "output": "spinning-counter.css",
       "sha256": "6088ed5972e97ba41ba23f5657fe28ddba7036805aa24c865359ebbfdc6b431c"
+    },
+    {
+      "source": "web/region-reference.mjs",
+      "output": "region-reference.mjs",
+      "sha256": "513a3e2773dcf32a147cbcbb0aadd9795ccc6de095269e747ec3d132743aa5dc"
+    },
+    {
+      "source": "web/simple-region-ui.mjs",
+      "output": "simple-region-ui.mjs",
+      "sha256": "59422d993653ffec776e4d77c66ff92b958b12389d45ae4dcf4371925f30434f"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

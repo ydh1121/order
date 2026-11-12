@@ -75,7 +75,7 @@ jobs:
         run: node test/browser/product.smoke.mjs
       - name: MSG0579 actual result consumer with synthetic approved quotes
         run: node test/browser/quote-result-0579.smoke.mjs
-      - name: MSG0581 provisional simple quote with actual built entry and isolated storage
+      - name: MSG0583 provisional simple quote with actual built entry, schema10 and isolated storage
         if: always()
         run: node test/browser/simple-quote-0581.smoke.mjs
       - name: MSG0583 common cost visibility, exact amounts and selected reel motion

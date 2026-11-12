@@ -1,116 +1,123 @@
-/* MSG0581 provisional Q3/Q4 adapter. Q1/Q2 controls remain app-owned;
- * calendar, modal, numeric editing and persistence retain their existing owners. */
+/* MSG0583 candidate body adapter. Shared region/date/numeric controls edit raw
+ * intent; the app remains the only durable storage and transaction owner. */
 import {dateFieldMarkup,bindDateField} from './date-field.mjs';
 import {dateModeOptions} from './q4-date.mjs';
 import {bindNumericInputs} from './numeric-input.mjs';
-import {inspectSimpleQuote,createSimpleAuthHandoff,resumeSimpleAuthHandoff} from './simple-quote-contract.mjs';
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+import {inspectSimpleQuote} from './simple-quote-contract.mjs';
+import {bindSimpleRegion} from './simple-region-ui.mjs';
 const kinds={FLEX:'소진 시 주문',FIXED:'정기 주문',ONCE:'1회 주문'};
-export function createSimpleQuoteUI({bridge,onAuthRequest=null}){
- const $=id=>document.getElementById(id),shell=window.OrderModalShell;
- let mounted=false,renderedRegions='',numeric=null,draft=null,baseline=null,baselineDateParts=null,dateClearRequested=false,openingInput=null,date=null,generation=0,pending=false,lastHandoff=null,authStatus='UNKNOWN',authGeneration=0,authRequest=null,latestCountCommit=Promise.resolve({ok:true}),q3ProceedPending=false;
- const get=()=>bridge.getState().simpleQuote;
+export function createSimpleQuoteUI({bridge}){
+ const $=id=>document.getElementById(id),get=()=>bridge.getState().simpleQuote;
+ const regionOwners=new Map();let mounted=false,numeric=null,latestWrite=Promise.resolve({ok:true}),q3Pending=false,q4Pending=false,localGeneration=0,forceSync=false;
+ let date=null,dateMode=null,dateBaselineParts=null,dateDirty=false,dateLocalValue='',dateListeners=[],dateFinalizing=false;
+ const notify=()=>bridge.notify?.();
  const id=()=>`simple-site-${crypto.randomUUID()}`;
+ function write(next){
+  const unchanged=JSON.stringify(next)===JSON.stringify(get()),prior=latestWrite;let request;
+  try{request=bridge.write(next);}catch{request={ok:false,status:'WRITE_FAILED'};}
+  latestWrite=Promise.all([prior,Promise.resolve(request).catch(()=>({ok:false,status:'WRITE_FAILED'}))]).then(([,result])=>result??(unchanged?{ok:true,status:'UNCHANGED'}:{ok:false,status:'WRITE_RESULT_REQUIRED'}));return latestWrite;
+ }
+ async function settled(){let request,result;do{request=latestWrite;result=await request;}while(request!==latestWrite);return result;}
  function mount(){
   if(mounted)return;mounted=true;document.documentElement.dataset.quoteMode='simple';
   $('add-site').closest('.add-row').hidden=true;$('q3-empty').hidden=true;
-  $('q3-sites').innerHTML='<div class="simple-quote-fields"><label class="ui-field-title" for="simple-site-count">사업장 수</label><input class="text-input" id="simple-site-count" type="text" inputmode="numeric" autocomplete="off"><label class="ui-field-title" for="simple-region">지역</label><input class="text-input" id="simple-region" maxlength="1024" placeholder="시·구·동" autocomplete="address-level2"><label class="q4-check-row"><input id="simple-regions-differ" type="checkbox"><span class="q4-check-icon" aria-hidden="true">✓</span><span class="q4-check-copy">사업장별 지역이 달라요</span></label><div id="simple-site-regions" class="simple-quote-fields"></div></div>';
-  numeric=bindNumericInputs($('q3-sites'),{selector:'#simple-site-count',options:()=>({grouped:false,allowEmpty:true,allowZero:true,maxDigits:3,min:0,max:500,step:1})});
-  $('simple-site-count').addEventListener('input',event=>{if(event.isComposing||event.orderNumeric?.accepted!==true)return;applySiteCount(event.orderNumeric.value,{shrink:['step-key','step-wheel'].includes(event.orderNumeric.phase)});});
-  $('simple-site-count').addEventListener('blur',()=>finishSiteCount());
-  $('simple-site-count').addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing||event.keyCode===229)return;event.preventDefault();event.stopPropagation();finishSiteCount();});
-  $('simple-region').addEventListener('input',event=>{if(event.isComposing)return;writeQ3({...get(),sharedRegion:event.target.value});});
-  $('simple-region').addEventListener('compositionend',event=>writeQ3({...get(),sharedRegion:event.target.value}));
-  $('simple-regions-differ').onchange=event=>{const next={...get(),regionsDiffer:event.target.checked};writeQ3(next);renderRegions(next);};
-  $('simple-site-regions').addEventListener('input',event=>{const input=event.target.closest('[data-simple-site-region]');if(!input||event.isComposing)return;writeRegion(input);});
-  $('simple-site-regions').addEventListener('compositionend',event=>{const input=event.target.closest('[data-simple-site-region]');if(input)writeRegion(input);});
+  $('q3-sites').innerHTML='<div class="simple-quote-fields"><div class="numeric-field ui-egg-field simple-count-field"><label for="simple-site-count">사업장 수</label><div class="input-unit ui-egg-number"><input id="simple-site-count" type="text" inputmode="numeric" autocomplete="off" value="1" min="1" max="500" step="1"><span>개</span></div></div><div id="simple-shared-region-host"></div><label class="q4-check-row"><input id="simple-regions-differ" type="checkbox"><span class="q4-check-icon" aria-hidden="true">✓</span><span class="q4-check-copy">사업장 위치가 여러곳이에요</span></label><div id="simple-site-regions" class="simple-quote-fields"></div></div>';
+  numeric=bindNumericInputs($('q3-sites'),{selector:'#simple-site-count',options:()=>({grouped:true,allowEmpty:true,allowZero:false,maxDigits:3,min:1,max:500,step:1})});
+  $('simple-site-count').addEventListener('input',event=>{if(event.isComposing||event.orderNumeric?.accepted!==true)return;applyCount(event.orderNumeric.value,{shrink:['step-key','step-wheel'].includes(event.orderNumeric.phase)});});
+  $('simple-site-count').addEventListener('blur',()=>finishCount());
+  $('simple-site-count').addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing||event.keyCode===229)return;event.preventDefault();event.stopPropagation();finishCount();});
+  $('q3-sites').addEventListener('numericstatechange',notify);
+  $('simple-regions-differ').onchange=event=>{const next=structuredClone(get());next.regionsDiffer=event.target.checked;growSites(next,Number(next.siteCount));write(next);renderRegions(next);notify();};
   $('q3-next').onclick=async()=>{
-   if(q3ProceedPending)return;q3ProceedPending=true;const openingStage=bridge.getState().open;
-   try{
-    if(!(await finishSiteCount())?.ok)return;
-    let settled,result;do{settled=latestCountCommit;result=await settled;}while(settled!==latestCountCommit);
-    if(!result?.ok||bridge.getState().open!==openingStage||!bridge.guard('simple-q3-next'))return;
-    const stage=inspectSimpleQuote(bridge.getState()).stages.q3;if(!q3InputValid()||!stage.ready){bridge.error('err-q3','사업장 수와 지역을 확인해 주세요.');return;}bridge.error('err-q3','');bridge.openStage('q4');
-   }finally{q3ProceedPending=false;}
+   if(q3Pending)return;q3Pending=true;const generation=localGeneration,openingStage=bridge.getState().open;
+   try{const completion=finishCount(),intent=q3Intent();const finished=await completion;if(!finished.ok)return;const saved=await settled();if(!saved.ok||intent!==q3Intent()||generation!==localGeneration||bridge.getState().open!==openingStage||!bridge.guard('simple-q3-next'))return;
+    if(!q3InputValid()||!inspectSimpleQuote(bridge.getState()).stages.q3.ready){bridge.error('err-q3','사업장 수와 지역을 확인해 주세요.');focusQ3();return;}bridge.error('err-q3','');closeRegions();bridge.openStage('q4');
+   }finally{q3Pending=false;}
   };
-  $('allocations-delivery').innerHTML='<div id="simple-order-summary" class="muted"></div><button class="ui-copy-action" id="simple-order-edit" type="button">주문 방식 선택</button>';
-  $('simple-order-edit').onclick=()=>openOrder($('simple-order-edit'));
-  $('q4-next').onclick=()=>{if(!bridge.guard('simple-q4-next'))return;if(!inspectSimpleQuote(bridge.getState()).stages.q4.ready){openOrder($('q4-next'));return;}bridge.openStage('');};
-  const dialog=document.createElement('dialog');dialog.id='simple-order-dialog';dialog.className='q4-regular-dialog';dialog.dataset.modalRole='editor';dialog.setAttribute('aria-labelledby','simple-order-title');
-  dialog.innerHTML='<div class="q4-regular-panel"><header class="q4-regular-head"><strong id="simple-order-title">주문 방식</strong><button type="button" class="ui-icon-button" data-simple-order-close aria-label="닫기">'+window.OrderIcons.svg('close')+'</button></header><div class="q4-regular-scroll"><div class="simple-quote-fields"><div class="qa-mode-choices qa-three" id="simple-order-kinds" role="group" aria-label="주문 방식"></div><div class="qa-mode-choices qa-two" id="simple-flex-basis" role="group" aria-label="소진 시 주문 기준"></div><p id="simple-consult-fixed" hidden>협의</p><div id="simple-date-slot"></div><button type="button" class="ui-copy-action" id="simple-date-clear">희망일 지우기</button><p id="simple-order-error" class="err" role="alert" hidden></p></div></div><footer class="q4-regular-actions ui-transaction-group"><button type="button" class="ui-transaction-action" data-simple-order-cancel>취소</button><button type="button" class="ui-transaction-action ui-transaction-action--primary" data-simple-order-confirm>확인</button></footer></div>';
-  document.body.append(dialog);
-  dialog.querySelector('[data-simple-order-close]').onclick=()=>shell.requestClose(dialog,'close');dialog.querySelector('[data-simple-order-cancel]').onclick=()=>shell.requestClose(dialog,'cancel');
-  shell.bind(dialog,closeOrder,{editable:true,isDirty:()=>!!draft&&(JSON.stringify(draft)!==baseline||JSON.stringify(date?.parts()??null)!==baselineDateParts),onExitIntent:()=>{generation++;setPending(false);}});
-  dialog.querySelector('[data-simple-order-confirm]').onclick=confirmOrder;
-  $('simple-order-kinds').onclick=event=>{const b=event.target.closest('[data-simple-kind]');if(!b||!draft||pending)return;draft.orderKind=b.dataset.simpleKind;renderOrderDraft();};
-  $('simple-flex-basis').onclick=event=>{const b=event.target.closest('[data-simple-basis]');if(!b||!draft||pending)return;draft.flexBasis=b.dataset.simpleBasis;paintOrderChoices();};
-  $('simple-date-clear').onclick=()=>{if(!draft||pending)return;draft.preferredDate='';date.sync('');dateClearRequested=true;shell.resize(dialog);};
-  const auth=document.createElement('dialog');auth.id='simple-auth-dialog';auth.className='q1-sku-dialog';auth.setAttribute('aria-labelledby','simple-auth-title');auth.innerHTML='<div class="q1-confirm"><h2 id="simple-auth-title">여러 종류의 계란이 필요한가요?</h2><p>회원가입 후 여러 종류를 상세 견적할 수 있어요.</p><p id="simple-auth-status" role="status" hidden></p><div class="ui-transaction-group"><button class="ui-transaction-action" type="button" data-simple-auth-cancel>계속 입력</button><button class="ui-transaction-action ui-transaction-action--primary" type="button" data-simple-auth-request>회원가입으로 이어가기</button></div></div>';document.body.append(auth);
-  shell.bind(auth,closeAuth);auth.querySelector('[data-simple-auth-cancel]').onclick=()=>shell.requestClose(auth,'cancel');
-  auth.querySelector('[data-simple-auth-request]').onclick=async()=>{
-   if(authStatus==='PENDING'&&authCurrent(authRequest)||!auth.open||!bridge.guard('simple-auth-request'))return;lastHandoff=createSimpleAuthHandoff(bridge.getState(),{requestId:`simple-auth-${crypto.randomUUID()}`,inputRevision:bridge.revision()});const request={generation:++authGeneration,handoff:lastHandoff,inputSignature:bridge.signature(),cancelled:false};authRequest=request;
-   authStatus=onAuthRequest?'PENDING':'UNAVAILABLE';$('simple-auth-status').hidden=false;$('simple-auth-status').textContent=onAuthRequest?'연결 중':'회원가입 연결을 아직 이용할 수 없습니다.';
-   if(onAuthRequest){try{await onAuthRequest(lastHandoff);if(authCurrent(request)&&authStatus==='PENDING'){authStatus='REQUESTED';$('simple-auth-status').textContent='입력 내용이 유지됩니다.';}}catch{if(authCurrent(request)){authStatus='UNAVAILABLE';$('simple-auth-status').textContent='다시 시도해 주세요.';}}}
+  $('allocations-delivery').innerHTML='<div class="simple-quote-fields simple-inline-order"><section class="qa-form-section"><div class="ui-field-title">주문 방식</div><div class="qa-mode-choices qa-three" id="simple-order-kinds" role="group" aria-label="주문 방식"></div><div class="qa-mode-choices qa-two" id="simple-flex-basis" role="group" aria-label="소진 시 주문 기준"></div><p id="simple-consult-fixed" hidden>협의</p></section><section class="qa-form-section"><div id="simple-date-slot"></div><button type="button" class="ui-copy-action" id="simple-date-clear">희망일 지우기</button><p class="ui-field-error" id="simple-order-error" role="alert" hidden></p></section></div>';
+  $('simple-order-kinds').innerHTML=Object.entries(kinds).map(([kind,label])=>`<button type="button" class="ui-choice" data-simple-kind="${kind}" aria-pressed="false">${label}</button>`).join('');
+  $('simple-flex-basis').innerHTML=[['WEEK','주 단위'],['MONTH','월 단위']].map(([basis,label])=>`<button type="button" class="ui-choice" data-simple-basis="${basis}" aria-pressed="false">${label}</button>`).join('');
+  $('simple-order-kinds').onclick=event=>{const button=event.target.closest('[data-simple-kind]');if(!button)return;const next={...get(),orderKind:button.dataset.simpleKind};write(next);paintOrder();renderDate();notify();};
+  $('simple-flex-basis').onclick=event=>{const button=event.target.closest('[data-simple-basis]');if(!button)return;write({...get(),flexBasis:button.dataset.simpleBasis});paintOrder();notify();};
+  $('simple-date-clear').onclick=()=>{if(!date)return;date.sync('');dateLocalValue='';dateBaselineParts=JSON.stringify(date.parts());dateDirty=false;date.setError('');bridge.error('simple-order-error','');write({...get(),preferredDate:''});notify();};
+  $('q4-next').onclick=async()=>{
+   if(q4Pending)return;q4Pending=true;const generation=localGeneration,openingStage=bridge.getState().open;
+   try{const completion=finishDate(),intent=q4Intent();const valid=await completion;if(!valid.ok)return;const saved=await settled();if(!saved.ok||intent!==q4Intent()||generation!==localGeneration||bridge.getState().open!==openingStage||!bridge.guard('simple-q4-next'))return;
+    if(!inspectSimpleQuote(bridge.getState()).stages.q4.ready){bridge.error('err-q4','주문 방식을 확인해 주세요.');$('simple-order-kinds').querySelector('button')?.focus();return;}bridge.error('err-q4','');bridge.openStage('');
+   }finally{q4Pending=false;}
   };
  }
- // This only awaits the existing storage owner. It neither owns a second
- // persistence queue nor invents a successful write when that owner fails.
- function writeQ3(next){
-  const unchanged=JSON.stringify(next)===JSON.stringify(get());
-  const previous=latestCountCommit;let requested;try{requested=bridge.write(next);}catch{requested={ok:false,status:'WRITE_FAILED'};}
-  latestCountCommit=Promise.all([previous,Promise.resolve(requested).catch(()=>({ok:false,status:'WRITE_FAILED'}))]).then(([,result])=>result??(unchanged?{ok:true,status:'UNCHANGED'}:{ok:false,status:'WRITE_RESULT_REQUIRED'}));return latestCountCommit;
+ function growSites(next,count){while(next.sites.length<count)next.sites.push({id:id(),region:'',regionSelection:null});}
+ function applyCount(value,{shrink=false}={}){
+  if(value===''){notify();return Promise.resolve({ok:false,status:'INCOMPLETE_COUNT'});}
+  if(!/^[1-9]\d{0,2}$/.test(value)||Number(value)>500){$('simple-site-count').setAttribute('aria-invalid','true');bridge.error('err-q3','사업장 수를 확인해 주세요.');notify();return Promise.resolve({ok:false,status:'INVALID_COUNT'});}
+  $('simple-site-count').setAttribute('aria-invalid','false');bridge.error('err-q3','');const next=structuredClone(get()),count=Number(value);next.siteCount=value;next.siteCountConfirmed=true;
+  if(shrink)next.sites=next.sites.slice(0,count);growSites(next,count);const result=write(next);renderRegions(next);notify();return result;
  }
- function applySiteCount(value,{shrink=false}={}){
-  if(!/^\d{0,3}$/.test(value)||Number(value)>500){$('simple-site-count').setAttribute('aria-invalid','true');bridge.error('err-q3','사업장 수를 확인해 주세요.');return Promise.resolve({ok:false,status:'INVALID_COUNT'});}
-  $('simple-site-count').setAttribute('aria-invalid','false');bridge.error('err-q3','');
-  const next=structuredClone(get()),count=Number(value)||0;next.siteCount=value;
-  // Empty/zero and positive typing prefixes are not deletion instructions.
-  // Keep stable IDs and region text until an explicit positive completion.
-  if(count>0){if(shrink)next.sites=next.sites.slice(0,count);while(next.sites.length<count)next.sites.push({id:id(),region:''});}
-  const commit=writeQ3(next);renderRegions(next);return commit;
+ function finishCount(){
+  const field=$('simple-site-count');if(!numeric?.inspect().valid){bridge.error('err-q3','사업장 수를 확인해 주세요.');return Promise.resolve({ok:false,status:'INVALID_COUNT'});}
+  const parsed=numeric.read(field);if(parsed.value===''){numeric.replace(field,get().siteCount,{history:'append'});notify();return Promise.resolve({ok:false,status:'INCOMPLETE_COUNT'});}
+  return parsed.valid?applyCount(parsed.value,{shrink:true}):Promise.resolve({ok:false,status:'INVALID_COUNT'});
  }
- function finishSiteCount(){if(!numeric?.inspect().valid){bridge.error('err-q3','사업장 수를 확인해 주세요.');return Promise.resolve({ok:false,status:'INVALID_COUNT'});}const parsed=numeric.read($('simple-site-count'));return parsed.valid?applySiteCount(parsed.value,{shrink:true}):Promise.resolve({ok:false,status:'INVALID_COUNT'});}
- function writeRegion(input){const next=structuredClone(get()),row=next.sites.find(s=>s.id===input.dataset.simpleSiteRegion);if(row){row.region=input.value;writeQ3(next);}}
- // Editing safety is separate from required-stage completion: an untouched
- // empty count must not prevent entering the form or saving incomplete input.
- function q3InputValid(){if(!mounted)return true;if(!numeric?.inspect().valid)return false;const parsed=numeric.read($('simple-site-count'));return parsed.valid&&/^\d{0,3}$/.test(parsed.value)&&Number(parsed.value)<=500&&parsed.value===get().siteCount;}
+ function activeRegions(){const value=get();return value.regionsDiffer?value.sites.map(site=>regionOwners.get(site.id)).filter(Boolean):[regionOwners.get('shared')].filter(Boolean);}
+ function q3Intent(){return JSON.stringify({state:get(),count:$('simple-site-count')?.value,regions:activeRegions().map(owner=>{const {rootQuery,leafQuery,composing,editing,selection}=owner.inspect();return {rootQuery,leafQuery,composing,editing,selection};})});}
+ function dateEditing(){return dateDirty||date?.inspect().valid===false;}
+ function q4Intent(){return JSON.stringify({state:get(),parts:date?.parts(),dirty:dateDirty,numeric:date?.inspect()});}
+ function q3InputValid(){if(!mounted)return true;const parsed=numeric.read($('simple-site-count'));return numeric.inspect().valid&&parsed.valid&&parsed.value===get().siteCount&&/^[1-9]\d{0,2}$/.test(parsed.value)&&Number(parsed.value)<=500&&activeRegions().every(owner=>{const view=owner.inspect();return !view.editing&&!view.composing;});}
+ function focusQ3(){for(const owner of activeRegions()){const view=owner.inspect();if(view.editing||view.composing){const host=owner.host;host.querySelector(`[data-region-query="${view.rootQuery&&view.openLevel==='leaf'?'leaf':'root'}"]`)?.focus({preventScroll:true});return;}}$('simple-site-count')?.focus({preventScroll:true});}
+ function closeRegions(){for(const owner of regionOwners.values())owner.close();}
+ function selectionText(selection){return selection.rootCode===selection.leafCode?selection.rootLabel:selection.rootLabel+' '+selection.leafLabel;}
+ function regionOwner(host,key,label,value,raw){
+  let controller=regionOwners.get(key);
+  if(!controller){
+   const bound=bindSimpleRegion(host,{idPrefix:key==='shared'?'simple-region':'simple-site-'+key,label,value,legacyText:raw,onSelect:selection=>{
+    const next=structuredClone(get());if(key==='shared'){next.sharedRegionSelection=selection;next.sharedRegion=selectionText(selection);}else{const row=next.sites.find(site=>site.id===key);if(!row)return;row.regionSelection=selection;row.region=selectionText(selection);}write(next);notify();
+   },onDraftChange:notify});controller={...bound,host};regionOwners.set(key,controller);
+  }else controller.setValue(value,{legacyText:raw,force:forceSync});
+  return controller;
+ }
  function renderRegions(value){
-  $('simple-region').closest('.simple-quote-fields').querySelector('label[for="simple-region"]').hidden=value.regionsDiffer;$('simple-region').hidden=value.regionsDiffer;
-  const signature=JSON.stringify([value.regionsDiffer,value.sites.map(s=>s.id)]);if(signature!==renderedRegions){renderedRegions=signature;
-   $('simple-site-regions').innerHTML=value.regionsDiffer?value.sites.map((s,i)=>`<label class="ui-field-title" for="simple-region-${esc(s.id)}">사업장 ${i+1} 지역</label><input class="text-input" id="simple-region-${esc(s.id)}" data-simple-site-region="${esc(s.id)}" value="${esc(s.region)}" maxlength="1024" placeholder="시·구·동" autocomplete="address-level2">`).join(''):'';
-  }else for(const input of $('simple-site-regions').querySelectorAll('[data-simple-site-region]')){const row=value.sites.find(site=>site.id===input.dataset.simpleSiteRegion);if(row&&document.activeElement!==input&&input.value!==row.region)input.value=row.region;}
+  const shared=$('simple-shared-region-host');shared.hidden=value.regionsDiffer;regionOwner(shared,'shared','사업장 1',value.sharedRegionSelection,value.sharedRegion);
+  const sites=$('simple-site-regions');sites.hidden=!value.regionsDiffer;const ids=new Set(value.sites.map(site=>site.id));
+  for(const [key,owner]of regionOwners)if(key!=='shared'&&!ids.has(key)){owner.destroy();owner.host.remove();regionOwners.delete(key);}
+  value.sites.forEach((site,index)=>{
+   let host=regionOwners.get(site.id)?.host;if(!host){host=document.createElement('div');host.dataset.simpleSiteRegionHost=site.id;sites.append(host);}if(sites.children[index]!==host)sites.insertBefore(host,sites.children[index]||null);
+   regionOwner(host,site.id,'사업장 '+(index+1),site.regionSelection,site.region);
+  });
  }
- function render(){mount();const s=get();if(document.activeElement!==$('simple-site-count'))numeric.replace($('simple-site-count'),s.siteCount);if(document.activeElement!==$('simple-region'))$('simple-region').value=s.sharedRegion;$('simple-regions-differ').checked=s.regionsDiffer;renderRegions(s);$('simple-order-summary').textContent=s.orderKind?[kinds[s.orderKind],s.orderKind==='FLEX'?{WEEK:'주 단위',MONTH:'월 단위'}[s.flexBasis]:s.orderKind==='FIXED'?'협의':'',s.preferredDate].filter(Boolean).join(' · '):'주문 방식 미선택';}
- function paintOrderChoices(){
-  const active=document.activeElement,focusedKind=active?.dataset.simpleKind,focusedBasis=active?.dataset.simpleBasis;
-  $('simple-order-kinds').innerHTML=Object.entries(kinds).map(([key,label])=>`<button type="button" class="ui-choice" data-simple-kind="${key}" aria-pressed="${draft.orderKind===key}">${label}</button>`).join('');
-  $('simple-flex-basis').hidden=draft.orderKind!=='FLEX';$('simple-flex-basis').innerHTML=[['WEEK','주 단위'],['MONTH','월 단위']].map(([key,label])=>`<button type="button" class="ui-choice" data-simple-basis="${key}" aria-pressed="${draft.flexBasis===key}">${label}</button>`).join('');$('simple-consult-fixed').hidden=draft.orderKind!=='FIXED';
-  if(focusedKind)$('simple-order-kinds').querySelector(`[data-simple-kind="${focusedKind}"]`)?.focus({preventScroll:true});else if(focusedBasis&&!$('simple-flex-basis').hidden)$('simple-flex-basis').querySelector(`[data-simple-basis="${focusedBasis}"]`)?.focus({preventScroll:true});
+ function paintOrder(){const value=get();for(const button of $('simple-order-kinds').querySelectorAll('[data-simple-kind]'))button.setAttribute('aria-pressed',String(button.dataset.simpleKind===value.orderKind));for(const button of $('simple-flex-basis').querySelectorAll('[data-simple-basis]'))button.setAttribute('aria-pressed',String(button.dataset.simpleBasis===value.flexBasis));$('simple-flex-basis').hidden=value.orderKind!=='FLEX';$('simple-consult-fixed').hidden=value.orderKind!=='FIXED';}
+ function disposeDate(){for(const [node,type,listener]of dateListeners)node.removeEventListener(type,listener);dateListeners=[];date?.destroy();date=null;}
+ function renderDate(){
+  const mode=get().orderKind==='ONCE'?'ONCE':'FIXED';
+  if(date&&dateMode===mode){if(!dateDirty&&date.value!==get().preferredDate){date.sync(get().preferredDate);dateLocalValue=date.value;dateBaselineParts=JSON.stringify(date.parts());}return;}
+  const raw=date?.parts(),dirty=dateDirty,local=dateDirty?dateLocalValue:get().preferredDate,baseline=dateBaselineParts;disposeDate();dateMode=mode;
+  $('simple-date-slot').innerHTML=dateFieldMarkup({id:'simple-preferred-date',label:'납품 희망 시기',required:false,value:local});
+  const root=$('simple-preferred-date');date=bindDateField(root,{getDate:()=>get().preferredDate,getParts:raw?()=>raw:null,policyOptions:dateModeOptions(mode).policyOptions,onChange:(value,result)=>{
+   dateLocalValue=value||'';if(result?.source==='calendar'){dateDirty=false;dateBaselineParts=JSON.stringify(date.parts());bridge.error('simple-order-error','');write({...get(),preferredDate:dateLocalValue});}
+   else dateDirty=JSON.stringify(date.parts())!==dateBaselineParts;
+   notify();
+  }});
+  dateLocalValue=date.value;dateBaselineParts=raw&&dirty?baseline:JSON.stringify(date.parts());dateDirty=dirty;
+  const on=(type,listener)=>{root.addEventListener(type,listener);dateListeners.push([root,type,listener]);};
+  on('input',event=>{if(event.target.matches('[data-order-date-part]')){dateDirty=JSON.stringify(date.parts())!==dateBaselineParts;notify();}});
+  on('numericstatechange',()=>{dateDirty=JSON.stringify(date.parts())!==dateBaselineParts;notify();});
+  // Date owner handles normalization first. Its Enter stopPropagation does not
+  // prevent this same-root listener; calendar opening is never a save boundary.
+  on('keydown',event=>{if(event.key==='Enter'&&event.target.matches('[data-order-date-part]')&&!event.isComposing&&event.keyCode!==229)void finishDate();});
+  on('focusout',event=>{if(!event.target.matches('[data-order-date-part]')||root.contains(event.relatedTarget)||event.relatedTarget?.id==='simple-date-clear'||event.relatedTarget?.closest?.('#order-common-calendar')||$('order-common-calendar')?.open)return;void finishDate();});
  }
- function renderOrderDraft(){
-  const parts=date?.parts(),dialog=$('simple-order-dialog'),mutate=()=>{date?.destroy();paintOrderChoices();const policyOptions=dateModeOptions(draft.orderKind==='ONCE'?'ONCE':'FIXED').policyOptions;$('simple-date-slot').innerHTML=dateFieldMarkup({id:'simple-preferred-date',label:'납품 희망 시기',required:false,value:draft.preferredDate});date=bindDateField($('simple-preferred-date'),{getDate:()=>draft.preferredDate,getParts:parts?()=>parts:null,policyOptions,onChange:value=>{if(draft&&!pending){dateClearRequested=false;draft.preferredDate=value||'';shell.resize(dialog);}}});};
-  if(dialog.open)shell.resize(dialog,mutate);else mutate();
+ async function finishDate(){
+  if(!date||dateFinalizing)return {ok:!dateEditing()};dateFinalizing=true;
+  try{
+   const result=date.commit(),parts=date.parts(),changed=JSON.stringify(parts)!==dateBaselineParts,value=date.value;
+   const incomplete=!value&&changed,invalid=!date.inspect().valid||result?.status==='invalid'||result?.status==='editing'||incomplete||value&&!date.repaint()?.selectable;
+   if(invalid){dateDirty=changed;date.setError('날짜를 확인해 주세요.');notify();return {ok:false,status:'INVALID_DATE'};}
+   if(!changed&&value===get().preferredDate){dateDirty=false;notify();return {ok:true,status:'UNCHANGED'};}
+   dateLocalValue=value;dateBaselineParts=JSON.stringify(parts);dateDirty=false;date.setError('');bridge.error('simple-order-error','');notify();return await write({...get(),preferredDate:value});
+  }finally{dateFinalizing=false;}
  }
- function setPending(value){pending=value;const dialog=$('simple-order-dialog');dialog.querySelector('[data-simple-order-confirm]').disabled=value;dialog.querySelector('.q4-regular-scroll').inert=value;}
- function openOrder(trigger){if(draft||!bridge.guard('simple-order-open'))return;draft=structuredClone(get());baseline=JSON.stringify(draft);openingInput=bridge.signature();generation++;dateClearRequested=false;setPending(false);$('simple-order-error').hidden=true;renderOrderDraft();baselineDateParts=JSON.stringify(date.parts());shell.open($('simple-order-dialog'),{variant:'editor',role:'editor',history:true,returnFocus:trigger});}
- function closeOrder(){generation++;setPending(false);date?.destroy();date=null;draft=null;baselineDateParts=null;shell.close($('simple-order-dialog'),{after:()=>bridge.refresh()});}
- async function confirmOrder(){
-  if(!draft||pending)return;const dateResult=date.commit(),candidate={...bridge.getState(),simpleQuote:structuredClone(draft)},stage=inspectSimpleQuote(candidate).stages.q4;
-  const editedPartial=!date.value&&!dateClearRequested&&JSON.stringify(date.parts())!==baselineDateParts;
-  const dateInvalid=!date.inspect().valid||dateResult?.status==='invalid'||dateResult?.status==='editing'||editedPartial||date.parts().day!==''&&!date.value||date.value&&!date.repaint()?.selectable;
-  if(!stage.ready||dateInvalid){$('simple-order-error').hidden=false;$('simple-order-error').textContent=dateInvalid?'날짜를 확인해 주세요.':'주문 방식을 확인해 주세요.';return;}
-  if(openingInput!==bridge.signature()){$('simple-order-error').hidden=false;$('simple-order-error').textContent='입력이 변경되었습니다. 취소 후 다시 확인해 주세요.';return;}
-  setPending(true);const seq=++generation;let result;
-  try{result=await bridge.commit(structuredClone(draft),{canCommit:()=>seq===generation&&!!draft&&$('simple-order-dialog').open&&openingInput===bridge.signature(),errorId:'simple-order-error'});}catch{result={ok:false};if(seq===generation){$('simple-order-error').hidden=false;$('simple-order-error').textContent='저장하지 못했습니다. 다시 시도해 주세요.';}}
-  if(seq!==generation)return;setPending(false);if(result?.ok)closeOrder();
- }
- function authCurrent(request){return !!request&&request===authRequest&&request.generation===authGeneration&&!request.cancelled&&$('simple-auth-dialog').open&&request.inputSignature===bridge.signature()&&request.handoff.inputRevision===bridge.revision();}
- function closeAuth(){authGeneration++;if(authRequest)authRequest.cancelled=true;authStatus='CANCELLED';shell.close($('simple-auth-dialog'));}
- function additional(trigger){mount();authGeneration++;if(authRequest)authRequest.cancelled=true;authRequest=null;lastHandoff=null;authStatus='UNKNOWN';$('simple-auth-status').hidden=true;shell.open($('simple-auth-dialog'),{variant:'compact',role:'confirm',history:true,returnFocus:trigger});}
- function resumeAuth(value){
-  if(!lastHandoff)return {ok:false,status:'NO_REQUEST'};
-  if(!authCurrent(authRequest)){const cancelled=authRequest?.cancelled||!$('simple-auth-dialog').open;authStatus=cancelled?'CANCELLED':'UNKNOWN';return Object.freeze({ok:false,status:cancelled?'CANCELLED':'STALE',requestId:lastHandoff.requestId,inputRevision:lastHandoff.inputRevision,input:lastHandoff.input,authentication:authStatus,businessVerification:'UNKNOWN'});}
-  const result=resumeSimpleAuthHandoff(lastHandoff,value);authStatus=result.authentication;return result;
- }
- return Object.freeze({render,additional,hasDraft:()=>!!draft,inspect:()=>({draft:draft?structuredClone(draft):null,dateParts:date?.parts()??null,lastHandoff,authStatus,q3InputValid:q3InputValid(),state:structuredClone(get())}),resumeAuth});
+ function focusDraft(){const field=$('simple-preferred-date');const inputs=[...field?.querySelectorAll('[data-order-date-part]')||[]];(inputs.find(input=>!input.value)||inputs.at(-1))?.focus({preventScroll:true});}
+ function resetLocal(){localGeneration++;closeRegions();for(const owner of regionOwners.values())owner.destroy();regionOwners.clear();$('simple-site-regions')?.replaceChildren();disposeDate();dateMode=null;dateDirty=false;dateBaselineParts=null;dateLocalValue='';forceSync=true;}
+ function render(){mount();const value=get();if(forceSync||document.activeElement!==$('simple-site-count'))numeric.replace($('simple-site-count'),value.siteCount);$('simple-regions-differ').checked=value.regionsDiffer;renderRegions(value);paintOrder();renderDate();forceSync=false;}
+ return Object.freeze({render,resetLocal,focusDraft,focusQ3,hasDraft:dateEditing,inspect:()=>({draft:dateEditing()?{preferredDate:dateLocalValue,parts:date?.parts()}:null,dateParts:date?.parts()??null,q3InputValid:q3InputValid(),regions:activeRegions().map(owner=>owner.inspect()),state:structuredClone(get()),authStatus:'UNAVAILABLE',lastHandoff:null}),resumeAuth:()=>({ok:false,status:'UNAVAILABLE'})});
 }

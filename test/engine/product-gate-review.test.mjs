@@ -538,9 +538,12 @@ test('C54 date composition cancels a held Q4 write without silently committing t
 
 test('C54-06 reset can inspect the old Q2 controls after the durable model cleared their SKU',()=>{
  const lines=new Map([['L',{id:'L',qtyUnit:'each',pack:'30'}]]);
- const options=vm.runInNewContext(productionFunction(app,appAst,'q2NumericOptions')+'\nq2NumericOptions',{quantityDisplayUnit,lineById:id=>lines.get(id)});
+ let unknown=false;
+ const options=vm.runInNewContext(productionFunction(app,appAst,'q2NumericOptions')+'\nq2NumericOptions',{quantityDisplayUnit,lineById:id=>lines.get(id),simpleUnknown:()=>unknown});
  const input={dataset:{lineQty:'L'}};
  assert.equal(options(input).step,'30');assert.equal(options(input).maxDigits,12);
+ unknown=true;assert.equal(options(input).step,1,'unknown raw units never inherit the dormant 30-piece package step');
+ assert.equal(options({dataset:{simpleBudget:'L'}}).step,1);unknown=false;
  lines.clear();assert.doesNotThrow(()=>options(input));assert.equal(options(input).step,1);assert.equal(options(input).maxDigits,12);
  assert.equal(options({dataset:{linePrice:'L'}}).step,1);
 });

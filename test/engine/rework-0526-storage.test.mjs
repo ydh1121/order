@@ -17,13 +17,13 @@ const interval=(preferredDate='')=>({version:'2.0.0',kind:'INTERVAL_DAYS',interv
 const monthly=(dayRule,preferredDate='')=>({version:'2.0.0',kind:'MONTHLY',dayRule,preferredDate});
 
 test('C26 legacy schemas1–4 preserve2/3/4-week patterns byte-for-byte; explicit commit alone upgrades current schema',async()=>{
- assert.equal(STORAGE_SCHEMA_VERSION,9);
+ assert.equal(STORAGE_SCHEMA_VERSION,10);
  for(const schema of [1,2,3,4])for(const weeks of [2,3,4]){
   const source=legacy(weeks),raw=envelope(schema,source),env=setup(new MemoryStorage({[STORAGE_KEY]:raw})),read=await env.api.load();
   assert.equal(read.status,'LOADED');assert.deepEqual(read.data,source);assert.equal(env.local.writes,0);assert.equal(env.local.getItem(STORAGE_KEY),raw);
   const unrelated=structuredClone(read.data);unrelated.locations[0].name='합성 A 수정';
   const saved=await env.api.commit(unrelated,options(read));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);
-  assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,9);assert.equal(saved.data.allocations[0].cadence,undefined);assert.equal(saved.data.allocations[0].intervalWeeks,weeks);assert.equal(saved.data.allocations[0].cycleCount,weeks*2);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');assert.equal(saved.data.locations[0].postal,'08843');
+  assert.equal(JSON.parse(env.local.getItem(STORAGE_KEY)).schemaVersion,10);assert.equal(saved.data.allocations[0].cadence,undefined);assert.equal(saved.data.allocations[0].intervalWeeks,weeks);assert.equal(saved.data.allocations[0].cycleCount,weeks*2);assert.equal(saved.data.allocations[0].advanced.fixedOrderProcess,'auto');assert.equal(saved.data.locations[0].postal,'08843');
  }
 });
 test('C26 explicit new cadence keeps legacy fields recoverable and commits once, without touching source on failure',async()=>{

@@ -1,9 +1,12 @@
 /** MSG0581 candidate input only. This is not an approved quote request, an
  * authentication provider, a booking, or an instruction to contact a customer. */
 import {validMonthlyQuantity,currentPurchaseCost,quantityUnit} from './quantity-contract.mjs';
+import {projectRegionSelection,inspectRegionSelection} from './region-reference.mjs';
 
-export const SIMPLE_QUOTE_VERSION='provisional-0581-1';
-export const SIMPLE_QUOTE_SNAPSHOT='ORDER-PARTIAL-20261112-063305-R1';
+export const SIMPLE_QUOTE_VERSION='provisional-0583-1';
+export const SIMPLE_QUOTE_SNAPSHOT='MASTER-UI-MOTION-FEEDBACK-20261112-R1';
+export const LEGACY_SIMPLE_QUOTE_VERSION='provisional-0581-1';
+export const LEGACY_SIMPLE_QUOTE_SNAPSHOT='ORDER-PARTIAL-20261112-063305-R1';
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value));
 const fail=(path,reason='TYPE')=>{throw Object.assign(new TypeError(reason),{path,reason});};
 const string=(value,path,max=2048)=>typeof value==='string'&&value.length<=max?value:fail(path);
@@ -19,16 +22,44 @@ function civilDate(value,path){
 const freeze=value=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 const handoffs=new WeakSet();
 
-export function blankSimpleQuote(){return {version:SIMPLE_QUOTE_VERSION,snapshotId:SIMPLE_QUOTE_SNAPSHOT,specUnknown:false,consultationInterest:false,monthlyScope:'UNCONFIRMED',siteCount:'',regionsDiffer:false,sharedRegion:'',sites:[],orderKind:'',flexBasis:'',preferredDate:''};}
+function blankLegacySimpleQuote(){return {version:LEGACY_SIMPLE_QUOTE_VERSION,snapshotId:LEGACY_SIMPLE_QUOTE_SNAPSHOT,specUnknown:false,consultationInterest:false,monthlyScope:'UNCONFIRMED',siteCount:'',regionsDiffer:false,sharedRegion:'',sites:[],orderKind:'',flexBasis:'',preferredDate:''};}
+export function blankSimpleQuote(){return {version:SIMPLE_QUOTE_VERSION,snapshotId:SIMPLE_QUOTE_SNAPSHOT,specUnknown:false,consultationInterest:false,monthlyScope:'UNCONFIRMED',unknownMonthly:{qty:'',unit:'each',budget:''},siteCount:'1',siteCountConfirmed:true,legacySiteCount:null,regionsDiffer:false,sharedRegion:'',sharedRegionSelection:null,sites:[],orderKind:'',flexBasis:'',preferredDate:''};}
 
 /** Strict projection preserves inactive-mode raw intent without interpreting it. */
-export function projectSimpleQuote(value,path='simpleQuote'){
- fields(value,path,Object.keys(blankSimpleQuote()));
+export function projectLegacySimpleQuote(value,path='simpleQuote'){
+ fields(value,path,Object.keys(blankLegacySimpleQuote()));
  if(!Array.isArray(value.sites)||value.sites.length>500)fail(path+'.sites','ARRAY');
  const sites=value.sites.map((site,index)=>{const p=path+'.sites.'+index;fields(site,p,['id','region']);return {id:id(site.id,p+'.id'),region:string(site.region,p+'.region',1024)};});
  if(new Set(sites.map(site=>site.id)).size!==sites.length)fail(path+'.sites','DUPLICATE_ID');
  if(typeof value.siteCount!=='string'||!/^\d{0,12}$/.test(value.siteCount))fail(path+'.siteCount','COUNT_DIGITS');
- return {version:oneOf(value.version,path+'.version',[SIMPLE_QUOTE_VERSION]),snapshotId:oneOf(value.snapshotId,path+'.snapshotId',[SIMPLE_QUOTE_SNAPSHOT]),specUnknown:bool(value.specUnknown,path+'.specUnknown'),consultationInterest:bool(value.consultationInterest,path+'.consultationInterest'),monthlyScope:oneOf(value.monthlyScope,path+'.monthlyScope',['UNCONFIRMED']),siteCount:value.siteCount,regionsDiffer:bool(value.regionsDiffer,path+'.regionsDiffer'),sharedRegion:string(value.sharedRegion,path+'.sharedRegion',1024),sites,orderKind:oneOf(value.orderKind,path+'.orderKind',['','FLEX','FIXED','ONCE']),flexBasis:oneOf(value.flexBasis,path+'.flexBasis',['','WEEK','MONTH']),preferredDate:civilDate(value.preferredDate,path+'.preferredDate')};
+ return {version:oneOf(value.version,path+'.version',[LEGACY_SIMPLE_QUOTE_VERSION]),snapshotId:oneOf(value.snapshotId,path+'.snapshotId',[LEGACY_SIMPLE_QUOTE_SNAPSHOT]),specUnknown:bool(value.specUnknown,path+'.specUnknown'),consultationInterest:bool(value.consultationInterest,path+'.consultationInterest'),monthlyScope:oneOf(value.monthlyScope,path+'.monthlyScope',['UNCONFIRMED']),siteCount:value.siteCount,regionsDiffer:bool(value.regionsDiffer,path+'.regionsDiffer'),sharedRegion:string(value.sharedRegion,path+'.sharedRegion',1024),sites,orderKind:oneOf(value.orderKind,path+'.orderKind',['','FLEX','FIXED','ONCE']),flexBasis:oneOf(value.flexBasis,path+'.flexBasis',['','WEEK','MONTH']),preferredDate:civilDate(value.preferredDate,path+'.preferredDate')};
+}
+
+
+const countValid=value=>typeof value==='string'&&/^[1-9]\d{0,2}$/.test(value)&&Number(value)<=500;
+const numericRaw=(value,path)=>typeof value==='string'&&/^(?:|0|[1-9]\d{0,11})$/.test(value)?value:fail(path,'NUMERIC_RAW');
+/** Current strict model; raw query text and pending count edits are not stored. */
+export function projectSimpleQuote(value,path='simpleQuote'){
+ fields(value,path,Object.keys(blankSimpleQuote()));
+ if(!countValid(value.siteCount))fail(path+'.siteCount','SITE_COUNT_RANGE');
+ if(value.legacySiteCount!==null&&(typeof value.legacySiteCount!=='string'||!/^\d{0,12}$/.test(value.legacySiteCount)))fail(path+'.legacySiteCount','LEGACY_COUNT');
+ fields(value.unknownMonthly,path+'.unknownMonthly',['qty','unit','budget']);
+ const unknownMonthly={qty:numericRaw(value.unknownMonthly.qty,path+'.unknownMonthly.qty'),unit:oneOf(value.unknownMonthly.unit,path+'.unknownMonthly.unit',['','each','tray','pack']),budget:numericRaw(value.unknownMonthly.budget,path+'.unknownMonthly.budget')};
+ if(!Array.isArray(value.sites)||value.sites.length>500)fail(path+'.sites','ARRAY');
+ const sites=value.sites.map((site,index)=>{const p=path+'.sites.'+index;fields(site,p,['id','region','regionSelection']);return {id:id(site.id,p+'.id'),region:string(site.region,p+'.region',1024),regionSelection:projectRegionSelection(site.regionSelection,p+'.regionSelection')};});
+ if(new Set(sites.map(site=>site.id)).size!==sites.length)fail(path+'.sites','DUPLICATE_ID');
+ return {version:oneOf(value.version,path+'.version',[SIMPLE_QUOTE_VERSION]),snapshotId:oneOf(value.snapshotId,path+'.snapshotId',[SIMPLE_QUOTE_SNAPSHOT]),specUnknown:bool(value.specUnknown,path+'.specUnknown'),consultationInterest:bool(value.consultationInterest,path+'.consultationInterest'),monthlyScope:oneOf(value.monthlyScope,path+'.monthlyScope',['UNCONFIRMED']),unknownMonthly,siteCount:value.siteCount,siteCountConfirmed:bool(value.siteCountConfirmed,path+'.siteCountConfirmed'),legacySiteCount:value.legacySiteCount,regionsDiffer:bool(value.regionsDiffer,path+'.regionsDiffer'),sharedRegion:string(value.sharedRegion,path+'.sharedRegion',1024),sharedRegionSelection:projectRegionSelection(value.sharedRegionSelection,path+'.sharedRegionSelection'),sites,orderKind:oneOf(value.orderKind,path+'.orderKind',['','FLEX','FIXED','ONCE']),flexBasis:oneOf(value.flexBasis,path+'.flexBasis',['','WEEK','MONTH']),preferredDate:civilDate(value.preferredDate,path+'.preferredDate')};
+}
+/** Pure opt-in upgrade. Decoding schema9 never calls this and never writes.
+ * The original line remains in the caller state, including any exact rational.
+ * Unrepresentable legacy unknown input requires review, never digit stripping. */
+export function upgradeSimpleQuote(value,{line=null}={}){
+ if(value?.version===SIMPLE_QUOTE_VERSION)return projectSimpleQuote(value);
+ const legacy=projectLegacySimpleQuote(value),next={...blankSimpleQuote(),...legacy,version:SIMPLE_QUOTE_VERSION,snapshotId:SIMPLE_QUOTE_SNAPSHOT};
+ next.siteCountConfirmed=countValid(legacy.siteCount);next.legacySiteCount=next.siteCountConfirmed?null:legacy.siteCount;next.siteCount=next.siteCountConfirmed?legacy.siteCount:'1';
+ next.sharedRegionSelection=null;next.sites=legacy.sites.map(site=>({...site,regionSelection:null}));
+ if(legacy.specUnknown){next.unknownMonthly={qty:!line?.qtyExact&&typeof line?.qty==='string'&&/^(?:|0|[1-9]\d{0,11})$/.test(line.qty)?line.qty:'',unit:['each','tray','pack'].includes(line?.qtyUnit)?line.qtyUnit:'',budget:''};}
+ return projectSimpleQuote(next);
 }
 
 function lineInput(line){
@@ -50,8 +81,11 @@ function lineInput(line){
 export function projectSimpleInput(state){
  const simple=projectSimpleQuote(state?.simpleQuote??blankSimpleQuote());
  if(!Array.isArray(state?.lines)||state.lines.length>1)fail('lines','SINGLE_SKU_REQUIRED');
- const line=state.lines.length?lineInput(state.lines[0]):null;
- return {contractVersion:SIMPLE_QUOTE_VERSION,snapshotId:SIMPLE_QUOTE_SNAPSHOT,product:{specUnknown:simple.specUnknown,line},monthly:{scope:simple.monthlyScope,quantity:line?.qty??'',unit:line?(line.qtyUnit??(['10','20','30'].includes(line.pack)?quantityUnit(line):null)):null,price:line?.price??''},regions:{siteCount:simple.siteCount,regionsDiffer:simple.regionsDiffer,sharedRegion:simple.sharedRegion,sites:simple.sites},order:{kind:simple.orderKind,flexBasis:simple.flexBasis,preferredDate:simple.preferredDate},consultationInterest:simple.consultationInterest,authentication:'UNKNOWN',businessVerification:'UNKNOWN'};
+ const original=state.lines.length?lineInput(state.lines[0]):null;
+ // Unknown intent is not an offer for the dormant known product. Neither its
+ // quantity, package, price nor exact conversion may become active input.
+ const line=simple.specUnknown&&original?{id:original.id,housing:'',size:'',pack:'',qty:simple.unknownMonthly.qty,price:'',...(simple.unknownMonthly.unit?{qtyUnit:simple.unknownMonthly.unit,qtyDisplayUnit:simple.unknownMonthly.unit}:{})}:original;
+ return {contractVersion:SIMPLE_QUOTE_VERSION,snapshotId:SIMPLE_QUOTE_SNAPSHOT,product:{specUnknown:simple.specUnknown,line},monthly:{scope:simple.monthlyScope,quantity:simple.specUnknown?simple.unknownMonthly.qty:line?.qty??'',unit:simple.specUnknown?simple.unknownMonthly.unit||null:line?(line.qtyUnit??(['10','20','30'].includes(line.pack)?quantityUnit(line):null)):null,price:simple.specUnknown?'':line?.price??'',budget:simple.specUnknown?simple.unknownMonthly.budget:null,unitConversion:simple.specUnknown?'UNCONFIRMED':'CATALOG'},regions:{siteCount:simple.siteCount,siteCountConfirmed:simple.siteCountConfirmed,legacySiteCount:simple.legacySiteCount,regionsDiffer:simple.regionsDiffer,sharedRegion:simple.sharedRegion,sharedRegionSelection:simple.sharedRegionSelection,sites:simple.sites},order:{kind:simple.orderKind,flexBasis:simple.flexBasis,preferredDate:simple.preferredDate},consultationInterest:simple.consultationInterest,authentication:'UNKNOWN',businessVerification:'UNKNOWN'};
 }
 
 /** Form advancement and proven price comparison are intentionally separate. */
@@ -64,12 +98,14 @@ export function inspectSimpleQuote(state){
   const line=input.product.line,identity=line&&['1','2','3','4'].includes(line.housing)&&['왕란','특란','대란','중란','소란'].includes(line.size)&&['10','20','30'].includes(line.pack);
   if(!line)stages.q1.issues.push('PRODUCT_REQUIRED');else if(!simple.specUnknown&&!identity)stages.q1.issues.push('SPEC_REQUIRED');
   if(simple.specUnknown)proofBlockers.push('SPEC_UNKNOWN');else if(!identity)proofBlockers.push('SPEC_REQUIRED');
-  if(!line||!validMonthlyQuantity(line))stages.q2.issues.push('MONTHLY_QUANTITY_REQUIRED');
+  const quantityReady=simple.specUnknown?!!line&&/^[1-9]\d{0,11}$/.test(simple.unknownMonthly.qty)&&['each','tray','pack'].includes(simple.unknownMonthly.unit):!!line&&validMonthlyQuantity(line);
+  if(!quantityReady)stages.q2.issues.push('MONTHLY_QUANTITY_REQUIRED');
+  if(simple.specUnknown&&!simple.unknownMonthly.qty&&state?.lines?.[0]?.qtyExact)stages.q2.issues.push('UNKNOWN_QUANTITY_REVIEW_REQUIRED');
   if(!line||!currentPurchaseCost(line))proofBlockers.push('CURRENT_PRICE_OR_PACKAGE_REQUIRED');
   const count=/^[1-9]\d{0,11}$/.test(simple.siteCount)?BigInt(simple.siteCount):0n;
-  if(!count)stages.q3.issues.push('SITE_COUNT_REQUIRED');
-  if(simple.regionsDiffer){if(count!==BigInt(simple.sites.length))stages.q3.issues.push('REGION_COUNT_MISMATCH');if(simple.sites.some(site=>!site.region.trim()))stages.q3.issues.push('REGION_REQUIRED');}
-  else if(!simple.sharedRegion.trim())stages.q3.issues.push('REGION_REQUIRED');
+  if(!count||!simple.siteCountConfirmed)stages.q3.issues.push('SITE_COUNT_REQUIRED');
+  if(simple.regionsDiffer){if(count!==BigInt(simple.sites.length))stages.q3.issues.push('REGION_COUNT_MISMATCH');if(simple.sites.some(site=>!inspectRegionSelection(site.regionSelection).valid))stages.q3.issues.push('REGION_REQUIRED');}
+  else if(!inspectRegionSelection(simple.sharedRegionSelection).valid)stages.q3.issues.push('REGION_REQUIRED');
   if(!simple.orderKind)stages.q4.issues.push('ORDER_KIND_REQUIRED');
   if(simple.orderKind==='FLEX'&&!simple.flexBasis)stages.q4.issues.push('FLEX_BASIS_REQUIRED');
   for(const stage of Object.values(stages))stage.ready=stage.issues.length===0;

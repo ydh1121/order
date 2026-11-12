@@ -1,3 +1,4 @@
+import {regionSelection} from '../../web/region-reference.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readSupplierShippingBundle,projectShippingBundleQuantity,SHIPPING_BUNDLE_VERSION} from '../../src/engine/contracts/shipping-bundle.mjs';
@@ -135,7 +136,7 @@ test('actual request lifecycle snapshots bind the model and invalidate it when i
 });
 
 test('simple unconfirmed monthly scope blocks even a valid old detailed quote and never fabricates allocation',()=>{
-  const input={...state(),simpleQuote:{...blankSimpleQuote(),siteCount:'2',sharedRegion:'서울 관악구',orderKind:'FLEX',flexBasis:'MONTH'}};
+  const input={...state(),simpleQuote:{...blankSimpleQuote(),siteCount:'2',sharedRegion:'서울 관악구',sharedRegionSelection:regionSelection('1100000000','1162000000'),orderKind:'FLEX',flexBasis:'MONTH'}};
   const before=structuredClone(input),m=model({state:input}),c=comparison(m);
   assert.equal(m.inputScope.mode,'SIMPLE');assert.equal(m.inputScope.assessment.readyToAdvance,true);
   assert.equal(m.inputScope.assessment.proofBlocked,true);assert.ok(m.uncertainties.includes('MONTHLY_SCOPE_UNCONFIRMED'));
@@ -148,7 +149,7 @@ test('simple unconfirmed monthly scope blocks even a valid old detailed quote an
 });
 
 test('simple district/dong IDs, optional interest and unknown spec remain raw unverified intentions',()=>{
-  const input={...state(),simpleQuote:{...blankSimpleQuote(),specUnknown:true,siteCount:'2',regionsDiffer:true,sharedRegion:'부산 남구',sites:[{id:'simple-b',region:'서울 관악구 신림동'},{id:'simple-a',region:'서울 관악구 봉천동'}],orderKind:'FIXED',flexBasis:'WEEK',preferredDate:'2026-11-24'}};
+  const input={...state(),simpleQuote:{...blankSimpleQuote(),specUnknown:true,unknownMonthly:{qty:'1200',unit:'each',budget:''},siteCount:'2',regionsDiffer:true,sharedRegion:'부산 남구',sites:[{id:'simple-b',region:'서울 관악구 신림동',regionSelection:null},{id:'simple-a',region:'서울 관악구 봉천동',regionSelection:null}],orderKind:'FIXED',flexBasis:'WEEK',preferredDate:'2026-11-24'}};
   Object.assign(input.lines[0],{housing:'',size:'',pack:'',price:'',qty:'1200',qtyUnit:'each'});
   const m=model({state:input});assert.equal(m.groups[0].specUnknown,true);assert.equal(m.groups[0].currentPurchaseTotal,null);
   assert.deepEqual(m.groups[1].regionIntent.sites,input.simpleQuote.sites);assert.equal(m.groups[1].regionIntent.sharedRegion,'부산 남구');

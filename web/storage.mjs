@@ -4,8 +4,8 @@
  */
 import {isVerifiedAddress} from './address-contract.mjs';
 import {inspectCadence} from './cadence-contract.mjs';
-import {projectSimpleQuote} from './simple-quote-contract.mjs';
-export const STORAGE_SCHEMA_VERSION=9;
+import {projectSimpleQuote,projectLegacySimpleQuote} from './simple-quote-contract.mjs';
+export const STORAGE_SCHEMA_VERSION=10;
 export const STORAGE_KEY='order_q1_q4_v1';
 export const STORAGE_LOCK='order-q1-q4-storage';
 export const LEGACY_KEYS=Object.freeze(['order_v015R2_draft','order_v015R1_draft']);
@@ -77,7 +77,7 @@ const legacyAllocation=object(allocationSpec,['id','lineId','locationId']);
 const currentAllocationShape=object({...allocationSpec,monthlyPlanQty:optionalPackageRaw,monthlyPlanUnit:packageUnit,monthlyPlanSource:oneOf(['manual','derived']),monthlyDemandBasis:oneOf(['known','residual','single-total','package-plan','unknown']),cadence:nullable(cadence),planningReference,nominalVisitCount:nominalVisits,deliveryPlan},['id','lineId','locationId']);
 const allocation=(v,p)=>{const out=currentAllocationShape(v,p);if(out.cadence?.version==='3.0.0'){for(const key of ['qty','qtyMin','qtyMax','monthlyPlanQty'])if(Object.hasOwn(out,key))approvedQuantity(out[key],p+'.'+key);}const planFields=['monthlyPlanQty','monthlyPlanUnit','monthlyPlanSource','monthlyDemandBasis'];if(planFields.some(key=>Object.hasOwn(out,key))){if(planFields.some(key=>!Object.hasOwn(out,key))||out.monthlyAllocationContract!=='2.0.0')fail(p,'PACKAGE_CONTRACT_INCOMPLETE');const known=['known','residual','single-total'].includes(out.monthlyDemandBasis);if(known&&(!out.monthlyDemandQty||out.monthlyDemandUnit!=='each'||!out.monthlyDemandSource))fail(p,'DEMAND_REQUIRED');if(!known&&out.monthlyDemandQty!=='')fail(p,'UNKNOWN_DEMAND_MUST_STAY_EMPTY');if(known){const value=out.monthlyDemandQty;if(!/^[1-9]\d*$/.test(value)&&!(out.monthlyDemandExact?.conversionReviewed===true&&out.monthlyDemandExact.raw===value&&out.monthlyDemandExact.unit==='each'&&/^\d+\/[1-9]\d*$/.test(value)))fail(p,'DEMAND_SYNTAX');}if(['residual','single-total'].includes(out.monthlyDemandBasis)&&out.monthlyDemandSource!=='derived')fail(p,'RESIDUAL_PROVENANCE');if(out.qtySource!==undefined&&!['user','auto'].includes(out.qtySource))fail(p,'QUANTITY_SOURCE');}return out;};
 const bodyCheckpoint=object({version:oneOf(['1.0.0']),q1Selection:object({id,housing:oneOf(['','1','2','3','4']),size:oneOf(['','왕란','특란','대란','중란','소란']),pack:oneOf(['','10','20','30'])},['id','housing','size','pack'])},['version','q1Selection']);
-const payloadShape=(schemaVersion=STORAGE_SCHEMA_VERSION)=>object({bodyCheckpoint,...(schemaVersion>=9?{simpleQuote:projectSimpleQuote}:{}),lines:list(line),current:nullable(id),locations:list(schemaVersion<3?legacyLocation:location),allocations:list(schemaVersion<4?legacyAllocation:allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
+const payloadShape=(schemaVersion=STORAGE_SCHEMA_VERSION)=>object({bodyCheckpoint,...(schemaVersion>=9?{simpleQuote:schemaVersion===9?projectLegacySimpleQuote:projectSimpleQuote}:{}),lines:list(line),current:nullable(id),locations:list(schemaVersion<3?legacyLocation:location),allocations:list(schemaVersion<4?legacyAllocation:allocation),open:oneOf(['','q1','q2','q3','q4']),allocationRevision:integer,
  stage:omit,errorExposure:omit,validation:omit,dnsCache:omit,pendingRequests:omit},['lines','locations','allocations']);
 export const emptyStoredPayload=()=>({lines:[],current:null,locations:[],allocations:[],open:'q1',allocationRevision:0});
 function canonical(value){return Array.isArray(value)?'['+value.map(canonical).join(',')+']':plain(value)?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);}
@@ -140,10 +140,10 @@ function migrateLegacy(input,key){
 }
 const receiptShape=object({transactionId:id,fingerprint:text(64),revision:integer,operation:oneOf(['commit','reset'])},['transactionId','fingerprint','revision','operation']);
 const migrationShape=nullable(object({source:oneOf(['session-R2','session-R1']),legacyKey:oneOf(LEGACY_KEYS)},['source','legacyKey']));
-const envelopeShape=object({schemaVersion:oneOf([1,2,3,4,5,6,7,8,9]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
+const envelopeShape=object({schemaVersion:oneOf([1,2,3,4,5,6,7,8,9,10]),generation:id,revision:integer,state:oneOf(['data','reset']),data:v=>v,receipts:list(receiptShape,MAX_RECEIPTS),migration:migrationShape,updatedAt:integer},['schemaVersion','generation','revision','state','data','receipts','migration','updatedAt']);
 function decode(rawValue){
  if(typeof rawValue!=='string'||new TextEncoder().encode(rawValue).length>MAX_BYTES)fail('record','SIZE_LIMIT');
- const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3,4,5,6,7,8,9].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
+ const value=JSON.parse(rawValue);if(!plain(value))fail('record','OBJECT');if(![1,2,3,4,5,6,7,8,9,10].includes(value.schemaVersion))fail('record','UNSUPPORTED_VERSION');
  const envelope=envelopeShape(value,'record');if(envelope.revision<1)fail('record.revision');
  if(envelope.state==='reset'){if(envelope.data!==null)fail('record.data');}else{
   if(envelope.schemaVersion===1&&envelope.data?.lines?.some(row=>Object.hasOwn(row,'qtyDisplayUnit')))fail('record.data.lines','UNKNOWN_FIELD');
