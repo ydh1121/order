@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "4f3814363a9874e3b358d417e0f01d9d2d53db4279ec616ec242756ce5e62259"
+      "sha256": "f8b0bde72b8cfba16e8a8fce16e087179dac3c8b28ee0a50191f2ec0d2c5bd90"
     },
     {
       "source": "web/common-ui.mjs",
@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "f126c1636dbf52fbd03b127d7fbd34e2f8134aa36a14df3a5f0c74645ad88c14"
+      "sha256": "c96784fbc65354d7a2cf73497c0c1964310186ccf436cae2a5cbbb8901170075"
     },
     {
       "source": "web/main.mjs",
@@ -67,7 +67,7 @@
     {
       "source": "web/numeric-input.mjs",
       "output": "numeric-input.mjs",
-      "sha256": "8a6a0239239cf9393336ce7f8150228bcbe84a58094ab1354e9bd4d247c7c2de"
+      "sha256": "9bb3c31ec1f6d537bdeac355a185ab1c1a96767832f662c8d27ec46449e1dddc"
     },
     {
       "source": "web/q4-planning.mjs",
@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "17f601ce89450705973d669fd991ec64df3982c5373cd3b5823865e2ae453db5"
+      "sha256": "63d2170559ed91bd13c14dee62c056658f2b70be268f386e68532aaff32a0d72"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -153,6 +153,21 @@
       "source": "web/quote-document.mjs",
       "output": "quote-document.mjs",
       "sha256": "e225588964e77fd5aafb06922da763d4184094fdc9727940ac909755b7c79d5b"
+    },
+    {
+      "source": "web/q2-cost.mjs",
+      "output": "q2-cost.mjs",
+      "sha256": "fa884ae8e94d78b0e5d2cb8e397420ea5bce1283758efdc4e96dae229f833da9"
+    },
+    {
+      "source": "web/spinning-counter.mjs",
+      "output": "spinning-counter.mjs",
+      "sha256": "a34c4b808bfcedcd2141af5f355a106e787f65d0c96aef018802cf79bbab3285"
+    },
+    {
+      "source": "web/spinning-counter.css",
+      "output": "spinning-counter.css",
+      "sha256": "6088ed5972e97ba41ba23f5657fe28ddba7036805aa24c865359ebbfdc6b431c"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

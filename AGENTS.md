@@ -32,3 +32,8 @@ Fixed source entry: https://drive.google.com/file/d/19162YmgCYeyIP4Wgt_fYwORtQPq
 - Reuse actual app Q1/Q2, numeric/date/modal/storage owners. Simple mode is explicit `?mode=simple`, uses an isolated versioned namespace, and never imports detailed legacy sessions. Schema9 adds an optional simple envelope; historical schemas remain readable.
 - Preserve the eleven provisional source comments, including contradictory recommendation/freeform values. Missing decisions remain unconfirmed. Simple monthly scope, unverified regions, supplier display timing, auth/provider and commercial decisions cannot become confirmed price or delivery policy.
 - UX05/06 motion work remains with UIUX_MOTION_ASSET_EXECUTION. No R3.1 or new motion/company tokens here.
+
+## MSG0583 two-lane boundary
+- Common accordion direction and Q2 cost visibility/selected Spinning counter may be merged and published to the existing canonical development Pages project after checks.
+- Keep simple Q1–Q4 in existing Draft PR17. Do not merge that PR as a common-change publication vehicle. After common publication, merge main normally into the candidate branch and preserve history.
+- Common scope uses existing schema8 and exact price policy; no candidate schema9/10, new price source, alternate deployment or unselected motion is authorized by this common change.

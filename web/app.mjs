@@ -2,6 +2,8 @@ import {q4Issue,inspectQ4Allocation,monthlyIssues} from './q4-validation.mjs';
 import {createBrowserStorage,projectStoredPayload} from './storage.mjs';
 import {bindNumericInputs} from './numeric-input.mjs';
 import {bindQuantityMenu} from './quantity-menu.mjs';
+import {createSpinningCounter} from './spinning-counter.mjs';
+import {projectQ2Costs} from './q2-cost.mjs';
 import {createQuoteRequestService} from '../src/engine/adapters/quote-request.mjs';
 import {projectQuoteInput,quoteResultView,patchQuoteResult} from './quote-result.mjs';
 
@@ -154,7 +156,7 @@ resetDialog.querySelector('[data-reset-confirm]').onclick=async()=>{
  if(resetAttempt?.pending)return;const attempt={pending:true,cancelled:false,transactionId:resetAttempt?.transactionId||ident('reset')};resetAttempt=attempt;storageEpoch++;checkpointAttempt=null;checkpointReceipt=null;clearCheckpointStatus();storagePending++;storagePaint();
  const run=async()=>{let result;try{result=await storage.reset({expectedRevision:storageRevision,expectedToken:storageToken,transactionId:attempt.transactionId,canCommit:()=>resetAttempt===attempt&&!attempt.cancelled&&resetDialog.open&&!resetDialog.classList.contains('is-closing')});}catch{result={ok:false,status:'WRITE_FAILED'};}
   document.documentElement.dataset.storageStatus=result.status;
-  if(result.ok){storageRevision=result.revision;storageToken=result.versionToken;S=blank();lastCommitted=structuredClone(S);editing=empty();editorMode='initial';addingSku=false;inlineDraft=false;uncertainWrite=null;storageFailure=null;err('form-error','');$('retry-input-save').hidden=true;OrderEmailLifecycle.reconcile();OrderModalShell.close(resetDialog,{after:()=>render()});}
+  if(result.ok){settleQ2Costs();storageRevision=result.revision;storageToken=result.versionToken;S=blank();lastCommitted=structuredClone(S);editing=empty();editorMode='initial';addingSku=false;inlineDraft=false;uncertainWrite=null;storageFailure=null;err('form-error','');$('retry-input-save').hidden=true;OrderEmailLifecycle.reconcile();OrderModalShell.close(resetDialog,{after:()=>render()});}
   else if(result.status!=='CANCELLED'){if(result.uncertain||['CONFLICT','CORRUPT','UNSUPPORTED','UNAVAILABLE'].includes(result.status))storageFailure=result;storageFeedback(result,'reset-input-error');}return result;
  };
  const result=storageTail.then(run,run);storageTail=result.catch(()=>{});await result;attempt.pending=false;storagePending--;storagePaint();
@@ -203,6 +205,7 @@ function show(page,record=true,{emailProofs=null}={}){
  if(page!==current&&!guardPendingEdits('page'))return false;
  if(page==='result'&&!complete(emailProofs)){page='form';err('form-error','구매조건을 먼저 모두 입력해 주세요.');}
  const prior=current,previous=$('page-'+prior),dest=$('page-'+page);
+ if(prior==='form'&&page!=='form')settleQ2Costs();
  if(prior==='result'&&page!=='result')quoteService.detach();
  const seq=++pageSeq,ready=prior!==page&&page!=='qa'&&prior!=='qa';
  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -220,6 +223,7 @@ function show(page,record=true,{emailProofs=null}={}){
  const showDestination=()=>{if(seq!==pageSeq)return;
   if(previous&&previous!==dest)cleanup(previous);
   dest.classList.add('active');dest.classList.remove('leaving');dest.inert=false;dest.removeAttribute('aria-hidden');dest.style.opacity='';
+  if(page==='form')paintQ2Costs();
   if(!ready||reduce){dest.classList.remove('entering');return;}
   dest.classList.add('entering');routeAnimation=dest.animate([{opacity:0},{opacity:1}],{duration:135,easing:'ease-out'});
   const mine=routeAnimation;mine.finished.then(()=>{if(seq===pageSeq&&routeAnimation===mine){dest.classList.remove('entering');routeAnimation=null;}},()=>{});
@@ -233,7 +237,7 @@ function show(page,record=true,{emailProofs=null}={}){
 }
 function skuDraftActive(){return editorMode==='edit'||editorMode==='new'}
 function complete(emailProofs=null){const v=simpleMode?simpleVerdict():q4ReviewVerdict(S,null,emailProofs);return q2Numeric.inspect().valid&&!storagePending&&!storageFailure&&!inlineDraft&&simpleUI?.inspect().q3InputValid!==false&&v.valid&&!v.confirmations.length&&!skuDraftActive()&&!siteFocusDirty()&&!siteEditingDirty()&&!q4DraftActive()&&!simpleUI?.hasDraft()}
-function changeOpen(target,persist=true){if(target!==S.open&&!guardPendingEdits('step'))return false;S.open=target;render();return true;}
+function changeOpen(target,persist=true){if(target!==S.open&&!guardPendingEdits(target==='q2'?'q2-repair':'step'))return false;S.open=target;render();return true;}
 function pickGroup(id,field,values){
  const widths={'왕란':24,'특란':22,'대란':20,'중란':18,'소란':16};
  $(id).innerHTML=values.map(t=>{
@@ -516,16 +520,48 @@ function syncQ2Tracks(){
  list.style.setProperty('--ui-q2-quantity-track',Math.min(qtyWidth,Math.max(140,list.clientWidth-180))+'px');
 }
 window.addEventListener('resize',syncQ2Tracks);document.fonts?.ready.then(syncQ2Tracks);
+const q2CostCounters=new Map();
+const q2LineRenderKey=line=>JSON.stringify([line.id,itemIdentity(line),quantityDisplayUnit(line),quantityInputText(line),String(line.price??'')]);
+function settleQ2Costs(){for(const counter of q2CostCounters.values())counter.settle();}
+function releaseQ2Cost(output){q2CostCounters.get(output)?.destroy();q2CostCounters.delete(output);}
+function paintQ2Costs(){
+ const list=$('q2-lines'),total=$('q2-aggregate');
+ const view=projectQ2Costs(S.lines,id=>{
+  const panel=[...list.children].find(node=>node.dataset.lineId===String(id));
+  const quantity=panel?.querySelector('[data-line-qty]'),price=panel?.querySelector('[data-line-price]'),unit=panel?.querySelector('[data-line-qty-unit]');
+  return quantity&&price?{quantity:q2Numeric.inspectInput(quantity),price:q2Numeric.inspectInput(price),unit:unit?.value}:null;
+ });
+ const paint=(output,area,cost)=>{
+  if(!output||!area)return;
+  let counter=q2CostCounters.get(output);if(!counter){counter=createSpinningCounter(output);q2CostCounters.set(output,counter);}
+  if(cost===null){counter.hide();area.hidden=true;area.dataset.costVisible='false';return;}
+  area.hidden=false;area.dataset.costVisible='true';counter.set(w(cost),{visible:current==='form'&&$('page-form').classList.contains('active')&&S.open==='q2'});
+ };
+ for(const row of view.rows){const output=list.querySelector(`[data-line-subtotal="${CSS.escape(String(row.id))}"]`);paint(output,output?.closest('.line-subtotal'),row.cost);}
+ paint($('q2-total'),total,view.total);
+ for(const [output,counter]of q2CostCounters)if(!output.isConnected){counter.destroy();q2CostCounters.delete(output);}
+}
+function stampQ2Line(line){const panel=$('q2-lines').querySelector(`[data-line-id="${CSS.escape(String(line.id))}"]`);if(panel)panel.dataset.q2RenderKey=q2LineRenderKey(line);}
+function updateQ2Unit(line){
+ const panel=$('q2-lines').querySelector(`[data-line-id="${CSS.escape(String(line.id))}"]`);if(!panel)return;
+ q2Numeric.replace(panel.querySelector('[data-line-qty]'),quantityInputText(line),{notify:false});
+ panel.querySelector('.ui-quantity-label').textContent=quantityDisplayUnit(line)==='each'?'개':unit(line.pack);
+ panel.querySelector('[data-line-demand]').textContent=lineDemandNote(line);
+ stampQ2Line(line);q2UnitMenu.refresh();paintQ2Costs();syncQ2Tracks();
+}
+window.addEventListener('pagehide',settleQ2Costs);
 function renderQ2(){
  q2UnitMenu.close();
- $('q2-lines').innerHTML=S.lines.map(l=>`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field ui-egg-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit ui-egg-number"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(quantityInputText(l)))}" placeholder="0" step="${quantityDisplayUnit(l)==='each'?esc(l.pack||'1'):'1'}"><span class="ui-quantity-choice" data-open="false"><span class="ui-quantity-label" aria-hidden="true">${quantityDisplayUnit(l)==='each'?'개':unit(l.pack)}</span><svg class="ui-quantity-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg><button type="button" class="ui-quantity-trigger" role="combobox" id="q2-unit-trigger-${esc(l.id)}" aria-label="월 구매량 단위" aria-haspopup="listbox" aria-expanded="false" aria-controls="order-quantity-menu" data-unit-trigger="${esc(l.id)}"></button><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}" hidden aria-hidden="true" tabindex="-1">${!['each',String(l.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(l))?'<option value="" selected disabled>단위 확인</option>':''}<option value="each" ${quantityDisplayUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityDisplayUnit(l)===(String(l.pack)==='30'?'tray':'pack')?'selected':''}>${unit(l.pack)}</option></select></span></div><p class="muted q2-demand-note" data-line-demand="${esc(l.id)}">${esc(lineDemandNote(l))}</p><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field ui-egg-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit ui-egg-number"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal"><span>현재 월 구매비용</span><output data-line-subtotal="${esc(l.id)}">${lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l))}</output></div></fieldset>`).join('');
- $('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());
+ const list=$('q2-lines'),existing=new Map([...list.children].map(node=>[node.dataset.lineId,node]));
+ const rows=S.lines.map(l=>{const previous=existing.get(String(l.id)),key=q2LineRenderKey(l);if(previous?.dataset.q2RenderKey===key)return previous;const template=document.createElement('template');template.innerHTML=`<fieldset class="line-panel" data-line-id="${esc(l.id)}"><legend>${esc(itemIdentity(l))}</legend><div class="pair"><div class="numeric-field ui-egg-field" data-q2-field="qty"><label for="qty-${esc(l.id)}">월 구매량</label><div class="input-unit ui-egg-number"><input id="qty-${esc(l.id)}" data-line-qty="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(quantityInputText(l)))}" placeholder="0" step="${quantityDisplayUnit(l)==='each'?esc(l.pack||'1'):'1'}"><span class="ui-quantity-choice" data-open="false"><span class="ui-quantity-label" aria-hidden="true">${quantityDisplayUnit(l)==='each'?'개':unit(l.pack)}</span><svg class="ui-quantity-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg><button type="button" class="ui-quantity-trigger" role="combobox" id="q2-unit-trigger-${esc(l.id)}" aria-label="월 구매량 단위" aria-haspopup="listbox" aria-expanded="false" aria-controls="order-quantity-menu" data-unit-trigger="${esc(l.id)}"></button><select class="ui-quantity-unit" aria-label="월 구매량 단위" data-line-qty-unit="${esc(l.id)}" hidden aria-hidden="true" tabindex="-1">${!['each',String(l.pack)==='30'?'tray':'pack'].includes(quantityDisplayUnit(l))?'<option value="" selected disabled>단위 확인</option>':''}<option value="each" ${quantityDisplayUnit(l)==='each'?'selected':''}>개</option><option value="${String(l.pack)==='30'?'tray':'pack'}" ${quantityDisplayUnit(l)===(String(l.pack)==='30'?'tray':'pack')?'selected':''}>${unit(l.pack)}</option></select></span></div><p class="muted q2-demand-note" data-line-demand="${esc(l.id)}">${esc(lineDemandNote(l))}</p><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-qty-${esc(l.id)}" role="alert" hidden></p></div><div class="numeric-field ui-egg-field" data-q2-field="price"><label for="price-${esc(l.id)}">현재 구매가격</label><div class="input-unit ui-egg-number"><input id="price-${esc(l.id)}" data-line-price="${esc(l.id)}" type="text" inputmode="numeric" value="${esc(showComma(l.price))}" placeholder="0"><span>원/${unit(l.pack)}</span></div><p class="code1-q2-field-error ui-feedback-sr" id="q2-error-price-${esc(l.id)}" role="alert" hidden></p></div></div><div class="line-subtotal" hidden data-cost-visible="false"><span>현재 월 구매비용</span><output data-line-subtotal="${esc(l.id)}"></output></div></fieldset>`;const node=template.content.firstElementChild;node.dataset.q2RenderKey=key;return node;});
+ for(const old of [...list.children])if(!rows.includes(old)){releaseQ2Cost(old.querySelector('[data-line-subtotal]'));old.remove();}
+ rows.forEach((node,i)=>{if(list.children[i]!==node)list.insertBefore(node,list.children[i]||null);});
  if(simpleMode)for(const line of S.lines.filter(value=>!valid(value.pack))){
   const quantity=$('qty-'+line.id),panel=quantity.closest('.line-panel'),select=panel.querySelector('[data-line-qty-unit]');
   select.innerHTML='<option value="each" selected>개</option>';panel.querySelector('.ui-quantity-trigger').disabled=true;panel.querySelector('.ui-quantity-chevron').hidden=true;
   const price=$('price-'+line.id);price.disabled=true;price.nextElementSibling.textContent='단위 확인';
  }
- q2Numeric.refresh();q2UnitMenu.refresh();syncQ2Tracks();
+ q2Numeric.refresh();q2UnitMenu.refresh();paintQ2Costs();syncQ2Tracks();
  if(orderErrorExposure)paintPageFieldIssues(orderValidationProjection().exposedErrors);
 }
 function paintPageFieldIssues(issues,{shake=false,projection=orderValidationProjection()}={}){
@@ -714,7 +750,7 @@ for(const id of ['picks-housing','picks-size','picks-pack'])$(id).addEventListen
  const delta=e.key==='ArrowLeft'||e.key==='ArrowUp'?-1:1;
  options[(i+delta+options.length)%options.length].click();
 });$('commit-sku').onclick=()=>upsertSku(false);
-$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=valid(line.pack)?['each',String(line.pack)==='30'?'tray':'pack']:['each'];if(!allowed.includes(e.target.value)||quantityDisplayUnit(line)===e.target.value)return;Object.assign(line,convertMonthlyUnit(line,e.target.value));inlineDraft=true;void save(S,{publish:false});renderQ2();refreshCompletionBadges();});
+$('q2-lines').addEventListener('change',e=>{const id=e.target.dataset.lineQtyUnit;if(!id)return;const line=lineById(id);if(!line)return;const allowed=valid(line.pack)?['each',String(line.pack)==='30'?'tray':'pack']:['each'];if(!allowed.includes(e.target.value)||quantityDisplayUnit(line)===e.target.value)return;Object.assign(line,convertMonthlyUnit(line,e.target.value));inlineDraft=true;void save(S,{publish:false});updateQ2Unit(line);refreshCompletionBadges();});
 const q2UnitMenu=bindQuantityMenu($('q2-lines'));
 function q2NumericOptions(input){
  // A durable reset replaces S before the old rendered controls are removed.
@@ -723,8 +759,8 @@ function q2NumericOptions(input){
  return {grouped:true,allowEmpty:true,allowZero:true,maxDigits:12,step:line&&quantityDisplayUnit(line)==='each'?(line.pack||1):1};
 }
 const q2Numeric=bindNumericInputs($('q2-lines'),{selector:'input[data-line-qty],input[data-line-price]',options:q2NumericOptions});
-$('q2-lines').addEventListener('numericstatechange',()=>refreshCompletionBadges());
-$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const digits=e.orderNumeric?.value;if(digits===undefined||e.isComposing)return;if(el.dataset.lineQty){const previousUnit=quantityUnit(l);for(const a of S.allocations.filter(a=>a.lineId===l.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=previousUnit;delete l.qtyExact;l.qtyUnit=quantityDisplayUnit(l);}l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const demand=document.querySelector(`[data-line-demand="${CSS.escape(String(id))}"]`);if(demand)demand.textContent=lineDemandNote(l);const output=document.querySelector(`[data-line-subtotal="${CSS.escape(String(id))}"]`);if(output)output.textContent=lineSubtotal(l)===null?'입력 필요':w(lineSubtotal(l));$('q2-total').textContent=buyerTotal()===null?'입력 필요':w(buyerTotal());if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();syncQ2Tracks();inlineDraft=true;void save(S,{publish:false});});
+$('q2-lines').addEventListener('numericstatechange',()=>{paintQ2Costs();refreshCompletionBadges();});
+$('q2-lines').addEventListener('input',e=>{const el=e.target;const id=el.dataset.lineQty||el.dataset.linePrice;if(!id)return;const l=lineById(id);if(!l)return;const digits=e.orderNumeric?.value;if(digits===undefined||e.isComposing)return;if(el.dataset.lineQty){const previousUnit=quantityUnit(l);for(const a of S.allocations.filter(a=>a.lineId===l.id))if(!a.monthlyDemandUnit)a.monthlyDemandUnit=previousUnit;delete l.qtyExact;l.qtyUnit=quantityDisplayUnit(l);}l[el.dataset.lineQty?'qty':'price']=digits;if(el.dataset.lineQty)q4InvalidateSiteDemand(id);const demand=document.querySelector(`[data-line-demand="${CSS.escape(String(id))}"]`);if(demand)demand.textContent=lineDemandNote(l);stampQ2Line(l);paintQ2Costs();if($('err-q2')&&!$('err-q2').hidden){legacyErrorState('err-q2','계란별 월 구매량과 단가를 확인해 주세요.');if(buyerTotal()!==null)err('err-q2','');}refreshCompletionBadges();if(orderErrorExposure)renderOrderPageFeedback();syncQ2Tracks();inlineDraft=true;void save(S,{publish:false});});
 
 $('q1-next').onclick=()=>{if(!guardPendingEdits('q1-next'))return;const bad=(simpleMode?simpleVerdict():CODE1_ORDER_VALIDATION.validateOrderDraft(S,{scope:'full'})).fieldErrors.find(x=>x.stage==='q1');if(bad){errorAt('q1',bad.message);return;}err('err-q1','');if(changeOpen('q2'))navigateRegularStage('q2');};
 let regularStageEpoch=0;
@@ -757,7 +793,7 @@ function refreshCompletionBadges(){paintStageCompletion();updateResultCTA();}
 function guardPendingEdits(destination){
  if(!storageReady)return false;
  if(simpleUI?.inspect().q3InputValid===false){$('simple-site-count').focus({preventScroll:true});return false;}
- if(!q2Numeric.inspect().valid){[...$('q2-lines').querySelectorAll('input')].find(input=>!q2Numeric.read(input).valid)?.focus({preventScroll:true});return false;}
+ if(current==='form'&&destination!=='q2-repair'&&!q2Numeric.inspect().valid){[...$('q2-lines').querySelectorAll('input')].find(input=>!q2Numeric.read(input).valid)?.focus({preventScroll:true});return false;}
  if(storagePending||storageFailure){if(storageFailure)storageFeedback(storageFailure);return false;}
  if(simpleUI?.hasDraft()){$('simple-order-dialog').querySelector('[data-simple-order-confirm]').focus({preventScroll:true});return false;}
  if($('sku-delete-dialog').open){$('sku-delete-cancel').focus({preventScroll:true});return false;}
