@@ -36,7 +36,11 @@ async function open(data=fixture(),{reducedMotion='reduce'}={}){
   await page.goto(base+'/__common0583-fixture');await page.emulateMedia({reducedMotion});
   const result=await harness.evaluate(async({data,key})=>{localStorage.clear();sessionStorage.clear();const {createBrowserStorage}=await import('/storage.mjs'),storage=createBrowserStorage();const loaded=await storage.load();if(!loaded.ok)return loaded;return storage.commit(data,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'common-fixture-'+crypto.randomUUID()});},{data,key:KEY});
   assert.equal(result.ok,true,JSON.stringify(result));
-  await page.goto(`${base}/?common0583=${++sequence}#/form`);await ready();await page.locator('#page-form.active').waitFor({state:'visible'});
+  await page.goto(`${base}/?common0583=${++sequence}#/form`);
+  // The separate native-storage fixture tab must not leave the real product in
+  // the background: Chromium can throttle its rAF to about one frame per second,
+  // skipping the selected effect's entire anticipation/spring interval.
+  await page.bringToFront();await ready();await page.locator('#page-form.active').waitFor({state:'visible'});
   assert.equal(await page.locator('[data-open="q2"]').getAttribute('aria-expanded'),data.open==='q2'?'true':'false');
 }
 async function amount(id,expected){
@@ -124,8 +128,8 @@ try{
     await price(A).press('Control+z');await amount(A,'10000');await amount('total','16300');assert.equal(await price(A).evaluate(el=>document.activeElement===el),true);await stable();await ready();
   });
   await check('CC08_SELECTED_REEL_MOTION_CHANGED_DIGITS_PUNCTUATION_AND_ACCESSIBILITY',async item=>{
-    await settle(A);await settle('total');await price(A).fill('5001');await amount(A,'10002');
-    const observation=frames(A);await framePause(470);await capture('common-cost-reel-intermediate-390.png');const sample=await observation;report.motion.push({id:item.id,samples:sample});
+    await settle(A);await settle('total');item.environment=await page.evaluate(()=>({visibilityState:document.visibilityState,hasFocus:document.hasFocus()}));assert.equal(item.environment.visibilityState,'visible','motion evidence requires a foreground product document');await price(A).fill('5001');await amount(A,'10002');
+    const observation=frames(A);await framePause(470);await capture('common-cost-reel-intermediate-390.png');const sample=await observation;const gaps=sample.slice(1).map((s,i)=>s.t-sample[i].t);item.frameCadence={samples:sample.length,firstMs:sample[0]?.t,lastMs:sample.at(-1)?.t,maxGapMs:gaps.length?Math.max(...gaps):null,gapsMs:gaps};report.motion.push({id:item.id,environment:item.environment,frameCadence:item.frameCadence,samples:sample});assert.ok(sample.length>=10,'actual frame cadence must resolve the spring, not background-tab timer throttling');
     assert.ok(sample.some(s=>s.state==='rolling'),'actual rAF rolling state observed');
     assert.ok(sample.some(s=>s.columns.some(c=>c.moving==='true'&&c.cells.some(d=>d.transform!=='none'&&d.opacity>0&&d.opacity<1))),'moving drum has transformed faint adjacent digits');
     assert.ok(sample.every(s=>s.columns.filter(c=>c.from===c.target).every(c=>c.moving==='false'&&c.cells.every(d=>d.transform==='none'))),'unchanged digits stay still');
