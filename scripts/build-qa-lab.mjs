@@ -62,11 +62,20 @@ const storage={getItem:key=>values.has(String(key))?values.get(String(key)):null
 const sessionStorage={getItem:key=>sessionValues.get(String(key))??null,setItem:(key,value)=>sessionValues.set(String(key),String(value)),removeItem:key=>sessionValues.delete(String(key))};
 const locks={request(_name,_options,callback){const task=tail.then(()=>callback({name:_name,mode:'exclusive'}));tail=task.catch(()=>{});return task;}};
 const key='order_qa_lab_'+source.commitSha;
-export function createQaStorage(options={}){return createBrowserStorage({...options,localStorage:storage,sessionStorage,locks,key,lockName:key});}
+let productWriter=null;
+export function createQaStorage(options={}){
+ if(options.key!=null&&(typeof options.key!=='string'||!options.key))throw TypeError('STORAGE_CONFIG');
+ const scopedKey=options.key==null?key:key+':'+options.key;
+ productWriter=createBrowserStorage({...options,localStorage:storage,sessionStorage,locks,key:scopedKey,lockName:scopedKey});
+ return productWriter;
+}
 const writer=createQaStorage();
+const mode=new URL(location.href).searchParams.get('mode')==='simple'?'simple':'detailed';
+const modeControl=document.getElementById('qa-lab-mode');modeControl.value=mode;
+modeControl.addEventListener('change',()=>{const target=new URL(location.href);if(modeControl.value==='simple')target.searchParams.set('mode','simple');else target.searchParams.delete('mode');target.hash='';location.href=target.href;});
 const status=text=>{document.getElementById('qa-lab-status').textContent=text;};
 const comparisonSeed=window.__orderQaEnvelope?.state??(typeof window.name==='string'&&window.name.startsWith('order-qa-seed:')?JSON.parse(window.name.slice(14)):typeof window.name==='string'&&window.name.startsWith('order-qa-envelope:')?JSON.parse(window.name.slice(18)).state:null);
-const seed=location.hash==='#qa-allocation-200'||!!comparisonSeed;
+const seed=mode!=='simple'&&(location.hash==='#qa-allocation-200'||!!comparisonSeed);
 if(seed){const loaded=await writer.load();const applied=await writer.commit(comparisonSeed||allocationFixture(),{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'qa-explicit-fixture'});if(!applied.ok)throw Error('QA_FIXTURE_REJECTED:'+applied.status);}
 const dnsControl=document.getElementById('qa-lab-dns');
 const addressControl=document.getElementById('qa-lab-address'),addressServices=new Set();
@@ -82,17 +91,19 @@ export async function qaFetch(url,{signal,method,body:requestBody}={}){
  else throw TypeError('QA_OFFLINE_NO_EXTERNAL_NETWORK');
  return new Response(JSON.stringify(body),{status:responseStatus,headers:{'content-type':'application/json','cache-control':'no-store'}});
 }
-document.getElementById('qa-lab-fixture').addEventListener('click',()=>{location.hash='qa-allocation-200';location.reload();});
+document.getElementById('qa-lab-fixture').disabled=mode==='simple';
+document.getElementById('qa-lab-fixture').addEventListener('click',()=>{if(mode==='simple')return;location.hash='qa-allocation-200';location.reload();});
 document.getElementById('qa-lab-restart').addEventListener('click',()=>{location.hash='';location.reload();});
 document.getElementById('qa-lab-fail-next').addEventListener('click',()=>{failNext=true;status('다음 저장 1회 실패를 설정했습니다. 입력은 유지됩니다.');});
 document.getElementById('qa-lab-conflict').addEventListener('click',async()=>{
- const loaded=await writer.load();if(!loaded.ok||!loaded.data||loaded.revision<1){status('먼저 제품에서 입력을 한 번 확정해 주세요.');return;}
- const changed=await writer.commit(loaded.data,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'qa-conflict-'+crypto.randomUUID()});
+ const active=productWriter??writer;const loaded=await active.load();if(!loaded.ok||!loaded.data||loaded.revision<1){status('먼저 제품에서 입력을 한 번 확정해 주세요.');return;}
+ const changed=await active.commit(loaded.data,{expectedRevision:loaded.revision,expectedToken:loaded.versionToken,transactionId:'qa-conflict-'+crypto.randomUUID()});
  status(changed.ok?'다른 작성자의 revision을 만들었습니다. 다음 제품 확정에서 충돌을 확인하세요.':'충돌 준비 실패: '+changed.status);
 });
 dnsControl.addEventListener('change',()=>{window.OrderEmailDomain?.clearCache();status(dnsControl.value==='example-route'?'example.com만 합성 DNS 응답을 사용합니다. 실제 이메일 검증이 아닙니다.':'외부 DNS를 호출하지 않습니다.');});
 addressControl.addEventListener('change',()=>{for(const service of addressServices){service.cancel();service.clearCache();}status(addressControl.value==='synthetic'?'합성 주소 후보를 사용합니다. 실제 제공자 조회가 아닙니다.':addressControl.value==='empty'?'주소 후보 없음 모의 응답입니다.':'주소 검색 장애 모의 응답입니다.');});
 document.documentElement.dataset.qaLabStorage='ISOLATED_MEMORY';
+document.documentElement.dataset.qaLabMode=mode;
 document.documentElement.dataset.qaLabFixture=seed?'allocation-200':'none';
 status(seed?'명시적으로 선택한 합성 200 / A50 / B제안 fixture입니다.':'빈 상태입니다. LAB 입력은 메모리에만 보관합니다.');
 `;
@@ -138,7 +149,7 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  const styleTag=styleLinks[0][0],entryTag='<script type="module" src="/main.mjs"></script>';
  if(html.split(styleTag).length!==2||html.split(entryTag).length!==2||/<script\b/i.test(html.replace(entryTag,'')))throw Error('QA_HTML_ENTRY_CONTRACT_CHANGED');
  if(/@import\b|url\s*\(/i.test(css))throw Error('QA_EXTERNAL_CSS_ASSET_REQUIRES_EXPLICIT_BUNDLING');
- const banner=`<aside id="qa-lab-toolbar" aria-label="로컬 QA LAB"><strong>로컬 QA LAB</strong><code id="qa-lab-commit" data-source-state="${identity.sourceState}">${commitSha}</code><span>${identity.sourceState==='EXACT_GIT_COMMIT'?'고정 Git 소스':'미커밋 변경 포함 · 검토용'}</span><p>제품과 격리된 메모리 저장 · 실제 지속 저장/온라인 DNS/주소 제공자 검증 아님 · 실제 개인정보를 입력하지 마세요.</p><div><button type="button" id="qa-lab-fixture">합성 200 / A50 / B제안 불러오기</button><button type="button" id="qa-lab-fail-next">다음 저장 1회 실패</button><button type="button" id="qa-lab-conflict">다른 작성자 충돌 만들기</button><button type="button" id="qa-lab-restart">LAB 다시 시작</button><label>DNS <select id="qa-lab-dns"><option value="offline">오프라인 UNKNOWN</option><option value="example-route">example.com 합성 경로</option></select></label><label>주소 <select id="qa-lab-address"><option value="offline">오프라인 · 검색 장애</option><option value="synthetic">합성 주소 후보</option><option value="empty">후보 없음</option><option value="unavailable">검색 장애</option></select></label></div><output id="qa-lab-status" aria-live="polite"></output></aside>`;
+ const banner=`<aside id="qa-lab-toolbar" aria-label="로컬 QA LAB"><strong>로컬 QA LAB</strong><code id="qa-lab-commit" data-source-state="${identity.sourceState}">${commitSha}</code><span>${identity.sourceState==='EXACT_GIT_COMMIT'?'고정 Git 소스':'미커밋 변경 포함 · 검토용'}</span><p>제품과 격리된 메모리 저장 · 실제 지속 저장/온라인 DNS/주소 제공자 검증 아님 · 실제 개인정보를 입력하지 마세요.</p><div><label>입력 모드 <select id="qa-lab-mode"><option value="detailed">기존 상세 입력</option><option value="simple">간편 입력 후보</option></select></label><button type="button" id="qa-lab-fixture">합성 200 / A50 / B제안 불러오기</button><button type="button" id="qa-lab-fail-next">다음 저장 1회 실패</button><button type="button" id="qa-lab-conflict">다른 작성자 충돌 만들기</button><button type="button" id="qa-lab-restart">LAB 다시 시작</button><label>DNS <select id="qa-lab-dns"><option value="offline">오프라인 UNKNOWN</option><option value="example-route">example.com 합성 경로</option></select></label><label>주소 <select id="qa-lab-address"><option value="offline">오프라인 · 검색 장애</option><option value="synthetic">합성 주소 후보</option><option value="empty">후보 없음</option><option value="unavailable">검색 장애</option></select></label></div><output id="qa-lab-status" aria-live="polite"></output></aside>`;
  const qaStyles='#qa-lab-toolbar{position:relative;z-index:2;padding:12px 16px;border-bottom:2px solid #333;background:#fff9db;color:#222;font:13px/1.5 system-ui;overflow-wrap:anywhere}#qa-lab-toolbar>strong,#qa-lab-toolbar>code,#qa-lab-toolbar>span{display:inline-block;margin-right:12px}#qa-lab-toolbar p{margin:6px 0}#qa-lab-toolbar>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center}#qa-lab-toolbar button,#qa-lab-toolbar select{min-height:44px;padding:8px;border:1px solid #777;border-radius:6px;background:white;color:#222;font:inherit;cursor:pointer}#qa-lab-status{display:block;margin-top:6px}';
  const policy=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
  let bundledHtml=html;for(const match of styleLinks.slice(1))bundledHtml=bundledHtml.replace(match[0],'');

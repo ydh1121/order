@@ -81,6 +81,33 @@ try{
   assert.match(await page.locator('#q3-address-slot').textContent(),/08843/);await page.locator('#cancel-site').click();await closedAfterExplicitDiscard(page,'site-editor-dialog');assert.deepEqual(await committed(),before,'parent cancel discards synthetic address');
   assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);assert.equal(await page.evaluate(()=>window.__qaLabReadNative('local','order_q1_q4_v1')),'TEST_PRODUCT_SENTINEL_NOT_LAB_DATA');
  });
+ await check('L09_LOCAL_FILE_SIMPLE_MODE_USES_PRODUCT_OWNER_AND_SEPARATE_MEMORY',async()=>{
+  await page.goto(pathToFileURL(labPath).href);await ready();
+  await Promise.all([page.waitForURL(url=>url.protocol==='file:'&&url.searchParams.get('mode')==='simple'),page.locator('#qa-lab-mode').selectOption('simple')]);await ready();
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.quoteMode),'simple');assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabMode),'simple');
+  assert.equal(await page.locator('#qa-lab-fixture').isDisabled(),true);await page.locator('#qa-lab-fixture').evaluate(button=>button.click());
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.qaLabFixture),'none');assert.equal((await committed()).lines.length,0,'detailed fixture cannot enter a simple draft');
+  // MSG0583 unknown selection stays in Q1. Only the explicit successful
+  // consultation check may advance; this still uses the actual product owner.
+  await form();await page.locator('#simple-spec-unknown').click();
+  await page.waitForFunction(()=>document.documentElement.dataset.storagePending!=='true'&&OrderRegularQ4Bridge.committed.simpleQuote?.specUnknown===true&&OrderRegularQ4Bridge.committed.lines.length===1);
+  const state=await committed(),inspection=await page.evaluate(()=>OrderSimpleQuoteReview.inspect());assert.equal(state.simpleQuote.specUnknown,true);assert.equal(state.lines.length,1);
+  for(const key of ['housing','size','pack','price'])assert.equal(state.lines[0][key],'','unknown specification stays unknown');
+  assert.deepEqual(state.locations,[]);assert.deepEqual(state.allocations,[]);assert.equal(inspection.input.monthly.scope,'UNCONFIRMED');
+  const comparison=inspection.document.groups.find(group=>group.id==='comparison');assert.equal(comparison.quoteCost,null);assert.equal(comparison.proof.amountAllowed,false);
+  assert.equal(await page.locator('#section-q1').getAttribute('data-open'),'true');assert.equal(await page.locator('#simple-consultation-interest').isChecked(),false);assert.equal(await page.locator('#add-line').isVisible(),false);
+  await page.locator('#simple-consultation-interest').check();await page.waitForFunction(()=>document.documentElement.dataset.storagePending!=='true'&&OrderRegularQ4Bridge.committed.simpleQuote.consultationInterest===true&&document.getElementById('section-q2').dataset.open==='true');
+  await page.locator('[data-simple-unknown-qty]').fill('23');await page.locator('[data-simple-monthly-budget]').fill('200000');await settled();
+  const monthly=(await committed()).simpleQuote.unknownMonthly;assert.deepEqual(monthly,{qty:'23',unit:'each',budget:'200000'});assert.equal(await page.locator('[data-line-price]').count(),0);
+  await stage('q3');assert.equal(await page.locator('#simple-site-count').inputValue(),'1');const host=page.locator('#simple-shared-region-host');await host.locator('[data-region-query="root"]').fill('ㅅㅇ');await host.locator('[data-region-option="1100000000"]').click();await host.locator('[data-region-option="1168000000"]').click();await settled();assert.equal((await committed()).simpleQuote.sharedRegionSelection.leafCode,'1168000000');
+  await page.locator('#q3-next').click();await page.locator('[data-simple-kind="ONCE"]').waitFor({state:'visible'});await page.locator('[data-simple-kind="ONCE"]').click();await settled();assert.equal(await page.locator('#simple-order-dialog,#simple-order-edit').count(),0);const beforeCalendar=await committed();await page.locator('#simple-preferred-date [data-order-calendar-open]').click();await page.locator('#order-common-calendar[open] [data-order-calendar-close]').click();await page.locator('#order-common-calendar').waitFor({state:'hidden'});assert.deepEqual(await committed(),beforeCalendar);
+  const current=await page.evaluate(()=>OrderSimpleQuoteReview.inspect());assert.equal(current.document.groups.find(group=>group.id==='purchase').currentPurchaseTotal,null);assert.equal(current.document.groups.find(group=>group.id==='purchase').monthlyBudget,'200000');assert.equal(current.document.groups.find(group=>group.id==='comparison').proof.amountAllowed,false);
+  const stored=await page.evaluate(async()=>{const {createBrowserStorage}=await import('order-qa/virtual/storage.mjs');const simple=await createBrowserStorage({key:'order_simple_prework_0581',migrateLegacy:false}).load(),detailed=await createBrowserStorage().load();return {simple,detailed};});
+  assert.equal(stored.simple.ok,true);assert.equal(stored.simple.data.simpleQuote.specUnknown,true);assert.equal(stored.detailed.status,'EMPTY');assert.deepEqual(stored.detailed.data.lines,[]);
+  assert.deepEqual(await page.evaluate(()=>window.__qaLabNativeAccess),[]);
+  const capture='simple-candidate-local-file.png';await page.screenshot({path:join(evidence,capture),fullPage:true});
+  report.simpleCandidate={entry:'FILE_URL_MODE_SIMPLE_FROM_QA_TOOLBAR',commitSha:report.source.commitSha,storage:'ISOLATED_MEMORY_EXPLICIT_KEY',message:'MSG0583',q1:'UNKNOWN_STAYS_Q1_EXPLICIT_CHECK_SUCCESS_ADVANCES',unknownMonthly:'RAW_QUANTITY_SEPARATE_OPTIONAL_BUDGET',region:'PINNED_OFFICIAL_PAIR_SELECTION',q4:'INLINE_CALENDAR_CANCEL_ZERO',quoteProof:false,capture};
+ });
  await check('L08_NO_EXTERNAL_NETWORK_OR_UNCAUGHT_PRODUCT_ERRORS',async()=>{assert.deepEqual(network,[]);assert.deepEqual(pageErrors,[]);});report.status='PASS';
 }catch(error){report.status=/Operation not permitted|socket\(\) failed|Executable doesn't exist/.test(String(error))?'BLOCKED_BROWSER_ENVIRONMENT':'FAIL';report.error=String(error.stack||error);process.exitCode=1;await page?.screenshot({path:join(evidence,'failure.png'),fullPage:true}).catch(()=>{});}
 finally{await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));await mkdir(evidence,{recursive:true});await writeFile(join(evidence,'qa-lab.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));}

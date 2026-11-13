@@ -27,7 +27,20 @@ Fixed source entry: https://drive.google.com/file/d/19162YmgCYeyIP4Wgt_fYwORtQPq
 - Required delivery order: finalize files/manifest → approved role folder upload or verified identical existing ID → metadata/access/parent readback → raw byte count and SHA-256 match → history/own CURRENT/own Bus readback → final report. Use PARTIAL_DELIVERY or DELIVERY_BLOCKED_DRIVE if incomplete. Never promote local/CI success to delivery, visual selection or commercial acceptance.
 - Resume the recovered existing state before fresh action IDs. Preserve unavailable historical logs as unavailable; never reconstruct them as recovered originals. New exports must carry the actual terminal receipts and referenced logs, with their hashes, so subsequent resume can verify them. Keep the 4000 output budget and large manifests on disk.
 
+## MSG0581 provisional candidate overlay
+- Source: https://drive.google.com/file/d/1MWgZ9arOi10P0coqs47jkwPTm45uh0p3/view; snapshot ORDER-PARTIAL-20261112-063305-R1. Continue this WO and branch, but this candidate is authorized only through Draft PR, same-head CI and durable delivery. Do not merge main or deploy this candidate.
+- Reuse actual app Q1/Q2, numeric/date/modal/storage owners. Simple mode is explicit `?mode=simple`, uses an isolated versioned namespace, and never imports detailed legacy sessions. Schema9 adds an optional simple envelope; historical schemas remain readable.
+- Preserve the eleven provisional source comments, including contradictory recommendation/freeform values. Missing decisions remain unconfirmed. Simple monthly scope, unverified regions, supplier display timing, auth/provider and commercial decisions cannot become confirmed price or delivery policy.
+- UX05/06 motion work remains with UIUX_MOTION_ASSET_EXECUTION. No R3.1 or new motion/company tokens here.
+
 ## MSG0583 two-lane boundary
 - Common accordion direction and Q2 cost visibility/selected Spinning counter may be merged and published to the existing canonical development Pages project after checks.
 - Keep simple Q1–Q4 in existing Draft PR17. Do not merge that PR as a common-change publication vehicle. After common publication, merge main normally into the candidate branch and preserve history.
 - Common scope uses existing schema8 and exact price policy; no candidate schema9/10, new price source, alternate deployment or unselected motion is authorized by this common change.
+
+## MSG0583 candidate continuation
+- The scoped common change is published at main `720ad6e3f83b11b331754eadd114b9ce7c1b62ca` through PR18. This branch inherited that main normally; PR17 remains a draft candidate and must not be merged or deployed under that publication approval.
+- Reuse Q1/Q2, numeric, calendar, modal and storage owners. Candidate contract v2/schema10 separates unknown monthly raw quantity/unit/budget from dormant known quantity/price. Budget is optional as an explicit working assumption, never a current cost or savings basis.
+- Schema9/v1 reads remain strict and perform no writes. Upgrade only through a successful explicit transaction; retain invalid legacy count and raw region text without silently declaring them confirmed.
+- Region options use the pinned official code reference with source/version/hash provenance. Catalog membership does not verify an address, delivery coverage or a business. Query/IME/partial root selection are not stored selections.
+- Q4 is inline. Calendar open/navigation/cancel write zero; a changed explicit day selection writes once. Typed partial date stays local; completed Enter/blur uses the shared date owner. Duplicate/stale/failure safeguards remain active.

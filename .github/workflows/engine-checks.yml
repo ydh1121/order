@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Verify the exact common or main source commit
+      - name: Verify the exact checked out source commit
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
@@ -43,7 +43,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Verify the exact common or main source commit
+      - name: Verify the exact checked out source commit
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
@@ -75,6 +75,9 @@ jobs:
         run: node test/browser/product.smoke.mjs
       - name: MSG0579 actual result consumer with synthetic approved quotes
         run: node test/browser/quote-result-0579.smoke.mjs
+      - name: MSG0583 provisional simple quote with actual built entry, schema10 and isolated storage
+        if: always()
+        run: node test/browser/simple-quote-0581.smoke.mjs
       - name: MSG0583 common cost visibility, exact amounts and selected reel motion
         if: always()
         run: node test/browser/common-cost-0583.smoke.mjs
@@ -123,7 +126,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Verify the exact common or main source commit
+      - name: Verify the exact checked out source commit
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
@@ -181,7 +184,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Verify the exact common or main source commit
+      - name: Verify the exact checked out source commit
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"

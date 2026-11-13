@@ -855,9 +855,9 @@ dialog{color:var(--ui-title-color)}
 
 .q4-regular-dialog .qa-calendar-actions{display:flex;justify-content:flex-end}
 .q4-regular-dialog .qa-calendar-actions button{min-height:2.5rem;padding:.375rem .75rem;border:0;background:transparent;color:var(--ink);font:inherit;font-size:var(--type-small)}
-.q4-regular-dialog .qa-date-segments{width:0}
-.q4-regular-dialog .qa-date-segments input{flex:1;max-width:3.25rem;color:var(--text-primary);}
-.q4-regular-dialog .qa-date-segments :is([data-date-part="year"],[data-plan-reference="year"]){flex:1.4;max-width:4.0625rem}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments{width:0}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments input{flex:1;max-width:3.25rem;color:var(--text-primary);}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments :is([data-date-part="year"],[data-plan-reference="year"]){flex:1.4;max-width:4.0625rem}
 
 /* CODE1 global UI module, v0.15 Q1 approved morphology. Reuse through class API rather than page-specific overrides. */
 :root{
@@ -1161,8 +1161,8 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-combo-editable[data-selected="true"] input{width:var(--ui-month-width,2ch);font-variant-numeric:tabular-nums}
 .q4-regular-dialog .qa-combo-editable>[data-combo]{grid-column:3;grid-row:1;width:2.75rem;height:2.625rem;border:0;background:transparent;padding:0 var(--ui-combo-inline) 0 0;display:grid;place-items:center end;color:inherit}
 .q4-regular-dialog .qa-combo-editable .t-acc-chevron{color:inherit!important}
-.q4-regular-dialog .qa-combo-editable:focus-within{border-color:transparent;background:#fff;outline:2px solid var(--ui-input-focus);outline-offset:-2px;box-shadow:none}
-.q4-regular-dialog .qa-combo-editable:is([aria-invalid="true"],[data-error="true"]):focus-within{border-color:var(--ui-danger);outline-color:var(--ui-danger)}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-editable:focus-within{border-color:transparent;background:#fff;outline:2px solid var(--ui-input-focus);outline-offset:-2px;box-shadow:none}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-editable:is([aria-invalid="true"],[data-error="true"]):focus-within{border-color:var(--ui-danger);outline-color:var(--ui-danger)}
 /* Q3 uses the existing page width and accordion/editor tokens, not gallery layout. */
 #q3-sites{display:grid;gap:.6rem}
 .q3-site-information{display:grid;gap:var(--info-line-gap);padding:.25rem 0 .75rem;font-size:var(--type-small);overflow-wrap:anywhere;color:var(--text-primary);font-weight:400}
@@ -1194,8 +1194,8 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 /* MSG0460 integration: Q4-only selectors, no QA page globals. */
 :root{}
 .q4-regular-dialog .qa-section-title{display:block;margin-bottom:9px;}
-.q4-regular-dialog .qa-mode-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
-.q4-regular-dialog .qa-mode-choices button{font-size:var(--type-small);padding:10px 3px;min-height:44px;}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-mode-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-mode-choices button{font-size:var(--type-small);padding:10px 3px;min-height:44px;}
 .q4-regular-dialog .qa-contact-choices{display:flex;gap:9px;flex-wrap:wrap}
 .q4-regular-dialog .qa-headline{font-size:var(--type-label);font-weight:var(--type-weight-field);margin:0 0 10px}
 .q4-regular-dialog .qa-site-parent.t-acc,.q4-regular-dialog .qa-site-child.t-acc{background:white;padding:0;border:1px solid var(--stage-pending-stroke);border-radius:12px;min-width:0;overflow:hidden;transition:border-color 160ms ease,background-color 160ms ease}
@@ -1246,7 +1246,7 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-form-section{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:var(--ui-field-control-gap);}
 .q4-regular-dialog .qa-section-title{margin:0;}
 .q4-regular-dialog .qa-help-inline{color:var(--ui-help-color);font-size:var(--type-meta);margin:0;font-weight:var(--type-weight-body);}
-.q4-regular-dialog .qa-mode-choices.qa-two{grid-template-columns:repeat(2,minmax(0,1fr))}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-mode-choices.qa-two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .q4-regular-dialog .qa-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:12px;row-gap:4px;min-width:0}
 .q4-regular-dialog .qa-checks .q4-check-copy{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .q4-regular-dialog .qa-check-wrap{min-width:0;display:grid;gap:6px}
@@ -1266,14 +1266,14 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-site-child .qa-next{display:inline-flex;align-items:center;justify-content:center;padding:0 16px;border:1px solid var(--blue);border-radius:9px;color:var(--blue);background:#fff;min-height:43px;font-weight:740;min-width:138px}
 .q4-regular-dialog .qa-site-child .qa-next.qa-final{color:white;background:var(--blue)}
 .q4-regular-dialog .qa-single-section{display:grid;gap:15px}
-.q4-regular-dialog .qa-combo{position:relative;min-width:0}
-.q4-regular-dialog .qa-combo-trigger{width:100%;height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #d3dce5;border-radius:9px;padding:0 11px;color:var(--ink);text-align:left;font:inherit;font-size:var(--type-small)}
-.q4-regular-dialog .qa-combo-trigger .t-acc-chevron{transition:none!important;transform:none!important;flex:none;color:#718191}
-.q4-regular-dialog .qa-combo-menu{z-index:1000;position:absolute;top:calc(100% + 5px);left:0;width:100%;background:#fff;border:1px solid #d3dce5;border-radius:10px;box-shadow:0 10px 28px #1b2b4029;padding:5px;max-height:190px;overflow:auto;transform-origin:top left;animation:qaDropdown .22s cubic-bezier(.22,1,.36,1) both}
-.q4-regular-dialog .qa-combo-menu[hidden]{display:none}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo{position:relative;min-width:0}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-trigger{width:100%;height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #d3dce5;border-radius:9px;padding:0 11px;color:var(--ink);text-align:left;font:inherit;font-size:var(--type-small)}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-trigger .t-acc-chevron{transition:none!important;transform:none!important;flex:none;color:#718191}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-menu{z-index:1000;position:absolute;top:calc(100% + 5px);left:0;width:100%;background:#fff;border:1px solid #d3dce5;border-radius:10px;box-shadow:0 10px 28px #1b2b4029;padding:5px;max-height:190px;overflow:auto;transform-origin:top left;animation:qaDropdown .22s cubic-bezier(.22,1,.36,1) both}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-menu[hidden]{display:none}
 @keyframes qaDropdown{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
-.q4-regular-dialog .qa-combo-menu button{display:block;border:0;border-radius:7px;background:#fff;padding:10px;width:100%;text-align:left;color:var(--ink);font:inherit;font-size:var(--type-small)}
-.q4-regular-dialog .qa-combo-menu button:hover,.q4-regular-dialog .qa-combo-menu button:focus-visible{background:var(--pale)}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-menu button{display:block;border:0;border-radius:7px;background:#fff;padding:10px;width:100%;text-align:left;color:var(--ink);font:inherit;font-size:var(--type-small)}
+:is(.q4-regular-dialog,.simple-region-field) .qa-combo-menu button:hover,:is(.q4-regular-dialog,.simple-region-field) .qa-combo-menu button:focus-visible{background:var(--pale)}
 .q4-regular-dialog .qa-week-grid{display:grid;gap:10px}
 .q4-regular-dialog .qa-week-choice{display:flex;flex-wrap:wrap;gap:7px}
 .q4-regular-dialog .qa-week-choice button{height:35px;min-width:35px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;font:inherit;font-size:var(--type-small)}
@@ -1322,19 +1322,19 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-mode-choices.qa-four button{font-size:var(--type-micro);}}
 .q4-regular-dialog .qa-mode-choices:has(>button:nth-child(4)){grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;}
 .q4-regular-dialog .qa-mode-choices:has(>button:nth-child(4)) button{font-size:clamp(0.625rem,2.65vw,0.75rem);padding:5px 1px;letter-spacing:-.06em;}
-.q4-regular-dialog .qa-date-anchor{position:relative;display:flex;align-items:center;min-height:44px;border:1px solid #d8e0e8;border-radius:10px;background:white;gap:4px;padding:2px 8px}
-.q4-regular-dialog .qa-date-anchor:focus-within{border-color:transparent;background:#fff;outline:2px solid var(--ui-input-focus);outline-offset:-2px;box-shadow:none}
-.q4-regular-dialog .qa-date-anchor[data-date-error="true"]:focus-within{outline-color:var(--ui-danger)}
-.q4-regular-dialog .qa-date-anchor[data-date-error=true]{border-color:#d92d48!important}
-.q4-regular-dialog .qa-date-segments{display:flex;align-items:center;gap:3px;min-width:0;flex:1;white-space:nowrap}
-.q4-regular-dialog .qa-date-segments input{width:52px;min-width:0;height:36px;text-align:center;border:0;background:transparent;outline:none;font-size:var(--type-small);font-weight:650;font-variant-numeric:tabular-nums;color:var(--text-primary);padding:0 2px;appearance:textfield}
-.q4-regular-dialog .qa-date-segments :is([data-date-part="year"],[data-plan-reference="year"]){width:65px}
-.q4-regular-dialog .qa-date-segments [data-date-part="day"]{width:44px}
-.q4-regular-dialog .qa-date-segments input::-webkit-inner-spin-button,.q4-regular-dialog .qa-date-segments input::-webkit-outer-spin-button{appearance:none;margin:0}
-.q4-regular-dialog .qa-date-segments span{color:var(--text-primary);font-size:var(--type-small)}
-.q4-regular-dialog .qa-calendar-trigger{flex:none;width:40px;height:40px;min-width:40px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--blue);border-radius:8px}
-.q4-regular-dialog .qa-calendar-trigger:focus-visible{outline:2px solid #315dde}
-.q4-regular-dialog .qa-date-error{color:#d92d48;margin:0}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-anchor{position:relative;display:flex;align-items:center;min-height:44px;border:1px solid #d8e0e8;border-radius:10px;background:white;gap:4px;padding:2px 8px}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-anchor:focus-within{border-color:transparent;background:#fff;outline:2px solid var(--ui-input-focus);outline-offset:-2px;box-shadow:none}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-anchor[data-date-error="true"]:focus-within{outline-color:var(--ui-danger)}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-anchor[data-date-error=true]{border-color:#d92d48!important}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments{display:flex;align-items:center;gap:3px;min-width:0;flex:1;white-space:nowrap}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments input{width:52px;min-width:0;height:36px;text-align:center;border:0;background:transparent;outline:none;font-size:var(--type-small);font-weight:650;font-variant-numeric:tabular-nums;color:var(--text-primary);padding:0 2px;appearance:textfield}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments :is([data-date-part="year"],[data-plan-reference="year"]){width:65px}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments [data-date-part="day"]{width:44px}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments input::-webkit-inner-spin-button,:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments input::-webkit-outer-spin-button{appearance:none;margin:0}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments span{color:var(--text-primary);font-size:var(--type-small)}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-calendar-trigger{flex:none;width:40px;height:40px;min-width:40px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--blue);border-radius:8px}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-calendar-trigger:focus-visible{outline:2px solid #315dde}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-error{color:#d92d48;margin:0}
 .q4-regular-dialog .qa-date-popover{position:fixed;z-index:9600;display:grid;gap:12px;background:white;border:1px solid #d9e1ed;box-shadow:0 18px 50px #1d2c4e36;border-radius:13px;padding:13px;width:min(304px,calc(100vw - 16px));max-height:min(380px,calc(100dvh - 16px));overflow:auto}
 .q4-regular-dialog .qa-date-popover[hidden]{display:none!important}
 .q4-regular-dialog .qa-calendar-heading{display:flex;align-items:center;justify-content:space-between;gap:9px}
@@ -1346,8 +1346,8 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 .q4-regular-dialog .qa-calendar-grid button{aspect-ratio:1;border-radius:8px;border:0;background:white;font-size:.78rem;color:#2a394a;padding:0;min-width:0}
 .q4-regular-dialog .qa-calendar-grid button:focus-visible{outline:2px solid #315dde;outline-offset:1px}
 @media (hover:hover){.q4-regular-dialog .qa-calendar-grid button:not(:disabled):not([aria-pressed="true"]):hover{background:var(--pale)}}
-@media (max-width:360px){.q4-regular-dialog .qa-date-segments input{width:40px;color:var(--text-primary);}
-.q4-regular-dialog .qa-date-segments :is([data-date-part="year"],[data-plan-reference="year"]){width:56px}}
+@media (max-width:360px){:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments input{width:40px;color:var(--text-primary);}
+:is(.q4-regular-dialog,.simple-inline-order) .qa-date-segments :is([data-date-part="year"],[data-plan-reference="year"]){width:56px}}
 .q4-regular-dialog .q4-regular-scroll{overflow-y:auto;overscroll-behavior:contain;min-height:0;flex:1 1 auto;padding:.65rem 1.25rem 1rem}
 .q4-regular-dialog .q4-regular-scroll{scrollbar-width:none;-ms-overflow-style:none;scrollbar-gutter:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .q4-regular-dialog .q4-regular-scroll::-webkit-scrollbar{width:0;height:0;display:none}
@@ -1735,4 +1735,35 @@ button,input,select,textarea{font-family:inherit}
 @media(max-width:390px){.q4-regular-dialog .qa-repeat-pair .qa-label{font-size:var(--type-meta)}}
 @media(max-width:360px){.q4-regular-dialog [data-section="repeat"] .qa-repeat-pair{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);column-gap:12px}.q4-regular-dialog .qa-repeat-pair .qa-label{white-space:nowrap}.q4-regular-dialog .qa-repeat-pair .qa-combo-trigger{padding-inline:8px;grid-template-columns:12px minmax(0,1fr) 12px;gap:3px}.q4-regular-dialog .qa-repeat-pair .qa-combo-trigger:not(.qa-combo-editable)::before{width:12px}.q4-regular-dialog .qa-repeat-pair .qa-combo-trigger>.t-acc-chevron{width:12px}}
 
+/* MSG0581 candidate layout only; fields, buttons and modal motion retain shared owners. */
+.simple-quote-fields{display:grid;gap:var(--ui-field-nested-gap);min-width:0}
+.simple-quote-fields>.text-input{max-width:100%;min-width:0}
+#simple-site-count{width:8ch}
+#simple-order-kinds,#simple-flex-basis{display:flex;flex-wrap:wrap;gap:var(--ui-action-gap)}
+#simple-consultation-row{margin-block:var(--ui-field-nested-gap)}
 /* MSG0583: absent costs have no card or reserved layout; numeric reels own digits. */
+
+/* MSG0583 candidate variants consume the existing field, combobox and choice owners. */
+.simple-spec-unknown{display:flex;width:fit-content;max-width:100%;margin-inline:auto;justify-self:center;margin-block:var(--ui-section-gap,var(--ui-field-nested-gap));color:var(--muted)}
+#simple-unknown-selection{margin-block:var(--ui-field-nested-gap)}
+.simple-count-field{width:max-content;max-width:100%}
+.simple-count-field .ui-egg-number{width:max-content;max-width:100%}
+.simple-count-field #simple-site-count{width:4ch;min-width:2ch}
+.simple-region-field{display:grid;gap:var(--ui-field-control-gap);min-width:0}
+.simple-region-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-action-gap)}
+.simple-region-pair:has(>[hidden]){grid-template-columns:minmax(0,1fr)}
+.simple-region-field .qa-combo-editable{padding:0;display:grid;grid-template-columns:minmax(0,1fr) var(--ui-icon-target);gap:0;overflow:hidden}
+.simple-region-field .qa-combo-editable input{border:0;background:transparent;min-width:0;width:100%;height:100%;padding:0 .6875rem;color:inherit;font:inherit;outline:none;text-align:left}
+.simple-region-field .qa-combo-editable>[data-combo]{border:0;background:transparent;color:inherit;padding:0;display:grid;place-items:center;min-width:var(--ui-icon-target);min-height:var(--ui-icon-target)}
+.simple-region-field .qa-combo-editable:has(input:disabled){color:var(--ui-disabled-color);background:var(--ui-disabled-bg)}
+.simple-region-field .qa-combo-menu{position:static;inset:auto;margin-top:var(--ui-field-control-gap);max-height:12rem;box-sizing:border-box}
+.simple-region-field .qa-combo-menu button[data-active="true"]{background:var(--pale)}
+.simple-region-field [data-region-empty]{margin:var(--ui-field-control-gap) 0 0;font-size:var(--type-small)}
+[data-quote-mode="simple"] #q3-sites{margin-bottom:var(--ui-section-gap,var(--ui-field-nested-gap))}
+.simple-inline-order .qa-form-section{display:grid;gap:var(--ui-field-control-gap);min-width:0;margin:0}
+.simple-inline-order{gap:var(--ui-section-gap,var(--ui-field-nested-gap))}
+.simple-inline-order #simple-order-kinds,.simple-inline-order #simple-flex-basis{display:grid}
+.simple-inline-order #simple-flex-basis[hidden],.simple-inline-order #simple-consult-fixed[hidden]{display:none}
+.simple-inline-order #simple-consult-fixed{margin:0;color:var(--text-secondary);font-size:var(--type-small)}
+.simple-inline-order #simple-date-clear{justify-self:end}
+@media(prefers-reduced-motion:reduce){.simple-region-field .qa-combo-menu{animation:none}}
