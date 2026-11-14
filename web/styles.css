@@ -19,9 +19,10 @@ small{font-size:var(--type-meta)}
 .header,.main{width:min(calc(100% - 36px),var(--max));margin:auto}
 .header{height:61px;display:flex;align-items:center}
 /* The source SVG keeps 40/200 cap-height padding above and below its ink. */
-.brand{--brand-cap:.73em;display:inline-flex;align-items:baseline;font-size:var(--type-brand);font-weight:830;letter-spacing:-.075em;line-height:1;white-space:nowrap}
-.brand .brand-dot{color:var(--blue)}
-.brand-mark{position:relative;top:calc(var(--brand-cap)*.2);display:block;flex:none;width:calc(var(--brand-cap)*2.860225);height:calc(var(--brand-cap)*1.4);max-width:none;margin-inline-start:calc(.18em - var(--brand-cap)*.18);pointer-events:none;user-select:none}
+/* CODE1 optical lockup: visible circles are 1.16 cap high, bottom aligned. */
+.brand{--brand-cap:.73em;--brand-diameter:calc(var(--brand-cap)*1.16);display:inline-flex;align-items:baseline;font-size:var(--type-brand,25px);font-weight:830;letter-spacing:-.055em;line-height:1;white-space:nowrap;color:var(--ink,#20272b)}
+.brand .brand-dot{color:inherit;letter-spacing:0;margin-inline-start:.02em}
+.brand-mark{position:relative;top:calc(var(--brand-diameter)*.2);display:block;flex:none;width:calc(var(--brand-diameter)*2.860225);height:calc(var(--brand-diameter)*1.4);max-width:none;margin-inline-start:calc(.24em - var(--brand-diameter)*.18);overflow:visible;pointer-events:none;user-select:none}
 @supports(height:1cap){.brand{--brand-cap:1cap}}
 .main{min-height:calc(100dvh - 61px);padding-bottom:40px}
 .page{display:none}
