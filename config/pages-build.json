@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "c96784fbc65354d7a2cf73497c0c1964310186ccf436cae2a5cbbb8901170075"
+      "sha256": "bb07448ea406bbbf5086b924d35a4052693e931fe642777128bfa10deed12af7"
     },
     {
       "source": "web/main.mjs",
@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "f53386a76d2ce072875f83e1108efc266d9a474abb6a4e8e715cac518744316e"
+      "sha256": "be7039fd7d53ad101941b479556a2720d977e49cab1d94aa8965e47c5a4fe2e7"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -153,6 +153,11 @@
       "source": "web/spinning-counter.css",
       "output": "spinning-counter.css",
       "sha256": "6088ed5972e97ba41ba23f5657fe28ddba7036805aa24c865359ebbfdc6b431c"
+    },
+    {
+      "source": "web/assets/CODE1_jelly_interactive.svg",
+      "output": "assets/CODE1_jelly_interactive.svg",
+      "sha256": "162b77755b41ba108a2e165cb026ded5323a64b6852ddba95fb3f33a5b843171"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

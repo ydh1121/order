@@ -18,8 +18,11 @@ h1{font-weight:var(--type-weight-page)}h2,h3{font-weight:var(--type-weight-title
 small{font-size:var(--type-meta)}
 .header,.main{width:min(calc(100% - 36px),var(--max));margin:auto}
 .header{height:61px;display:flex;align-items:center}
-.brand{font-size:var(--type-brand);font-weight:830;letter-spacing:-.075em}
-.brand span{color:var(--blue)}
+/* The source SVG keeps 40/200 cap-height padding above and below its ink. */
+.brand{--brand-cap:.73em;display:inline-flex;align-items:baseline;font-size:var(--type-brand);font-weight:830;letter-spacing:-.075em;line-height:1;white-space:nowrap}
+.brand .brand-dot{color:var(--blue)}
+.brand-mark{position:relative;top:calc(var(--brand-cap)*.2);display:block;flex:none;width:calc(var(--brand-cap)*2.860225);height:calc(var(--brand-cap)*1.4);max-width:none;margin-inline-start:calc(.18em - var(--brand-cap)*.18);pointer-events:none;user-select:none}
+@supports(height:1cap){.brand{--brand-cap:1cap}}
 .main{min-height:calc(100dvh - 61px);padding-bottom:40px}
 .page{display:none}
 .page.active{display:block}

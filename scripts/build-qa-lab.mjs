@@ -114,9 +114,17 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  const styles=new Map();
  for(const match of styleLinks){const path='web'+match[1];if(styles.has(path))throw Error('QA_DUPLICATE_STYLESHEET');styles.set(path,await readSource(root,path));}
  const css=[...styles.values()].join('\n');
+ // Image-context embedding preserves the original SVG bytes without executing
+ // its document script or weakening the offline LAB's image policy.
+ const imageAssets=new Map();
+ for(const [,url]of html.matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)){
+  if(url!=='/assets/CODE1_jelly_interactive.svg')throw Error('QA_IMAGE_ASSET_NOT_REVIEWED:'+url);
+  if(!imageAssets.has(url))imageAssets.set(url,await readSource(root,'web'+url));
+ }
  const reference=await buildBrowserReference({directory:pathToFileURL(resolve(root,'src/engine/reference')+sep),now});
  const sourceFiles=new Map([...modules].map(([path,file])=>[path,file.source]));
  for(const path of ['web/index.html',...styles.keys(),...buildSourcePaths,'src/engine/reference/iana-manifest.json','src/engine/reference/'+reference.manifest.rawFile])sourceFiles.set(path,await readSource(root,path));
+ for(const [url,source]of imageAssets)sourceFiles.set('web'+url,source);
  const dirtySourceFiles=[];
  for(const [path,source]of sourceFiles){let committed=null;try{committed=execFileSync('git',['show',commitSha+':'+path],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']});}catch{}if(committed!==source)dirtySourceFiles.push(path);}
  if(dirtySourceFiles.length&&!allowDirty)throw Error('QA_UNCOMMITTED_SOURCE:'+dirtySourceFiles.join(','));
@@ -142,6 +150,7 @@ export async function buildQaLab({root=repositoryRoot,outputPath=resolve(root,'.
  const qaStyles='#qa-lab-toolbar{position:relative;z-index:2;padding:12px 16px;border-bottom:2px solid #333;background:#fff9db;color:#222;font:13px/1.5 system-ui;overflow-wrap:anywhere}#qa-lab-toolbar>strong,#qa-lab-toolbar>code,#qa-lab-toolbar>span{display:inline-block;margin-right:12px}#qa-lab-toolbar p{margin:6px 0}#qa-lab-toolbar>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center}#qa-lab-toolbar button,#qa-lab-toolbar select{min-height:44px;padding:8px;border:1px solid #777;border-radius:6px;background:white;color:#222;font:inherit;cursor:pointer}#qa-lab-status{display:block;margin-top:6px}';
  const policy=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
  let bundledHtml=html;for(const match of styleLinks.slice(1))bundledHtml=bundledHtml.replace(match[0],'');
+ for(const [url,source]of imageAssets)bundledHtml=bundledHtml.replaceAll('src="'+url+'"','src="data:image/svg+xml;base64,'+Buffer.from(source).toString('base64')+'"');
  let outputHtml=bundledHtml.replace(styleTag,policy+'<style>'+css.replace(/<\/style/gi,'<\\/style')+'\n'+qaStyles+'</style>')
   .replace('<body>','<body>'+banner)
   .replace(entryTag,`<script type="application/json" id="qa-lab-identity">${json(identity)}</script><script type="importmap">${json({imports})}</script><script>{const raw=window.frameElement?.getAttribute('data-qa-envelope');const meta=raw?JSON.parse(raw):window.name.startsWith('order-qa-envelope:')?JSON.parse(window.name.slice(18)):null;if(meta){window.__orderQaEnvelope=meta;document.documentElement.dataset.qaSeedGeneration=String(meta.seedGeneration??'');document.documentElement.dataset.qaSeedCase=String(meta.caseId??'');if(meta.asOf){const OriginalDate=Date,at=OriginalDate.parse(meta.asOf+'T03:00:00Z');if(Number.isFinite(at)){window.Date=class extends OriginalDate{constructor(...args){super(...(args.length?args:[at]));}static now(){return at;}};document.documentElement.dataset.qaClock=meta.asOf;}}}}</script><script type="module">import ${json(moduleKey('web/main.mjs'))};${qaEntry?`import * as cases from ${json(moduleKey(qaEntry))};window.OrderQa0528=cases;`:''}document.documentElement.dataset.qaLabReady='true';</script>`);
