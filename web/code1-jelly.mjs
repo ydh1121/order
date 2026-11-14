@@ -1,0 +1,291 @@
+/* CODE1 jelly motion v2. No dependencies. Original three-circle palette. */
+const Code1Jelly = (function (global) {
+  'use strict';
+  const NS = 'http://www.w3.org/2000/svg';
+  const TAU = Math.PI * 2;
+  const CENTERS = [100, 5523 / 22.09, 8837 / 22.09];
+  const COLORS = ['#F5800B', '#F59E0B', '#FFCC00'];
+  const KEYS = ['x', 'y', 'squeeze', 'bulge', 'shear'];
+  const instances = new WeakMap();
+  const clamp = x => Math.max(0, Math.min(1, x));
+  const ease = x => { const p = clamp(x); return p * p * (3 - 2 * p); };
+  const fmt = x => Number(x.toFixed(3));
+  const zero = () => ({x: 0, y: 0, squeeze: 0, bulge: 0, shear: 0});
+  function seedNow() {
+    return global.crypto && global.crypto.getRandomValues
+      ? global.crypto.getRandomValues(new Uint32Array(1))[0]
+      : Math.floor(Math.random() * 4294967296);
+  }
+  function random(seed) {
+    let n = seed >>> 0;
+    return () => {
+      n += 0x6D2B79F5;
+      let t = Math.imul(n ^ (n >>> 15), n | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Reciprocal scaling and normalized radial harmonics retain apparent volume.
+  // Eight cubic segments, with shared analytic tangents, stay smooth at joins.
+  function pathFor(s) {
+    const sx = Math.exp(s.squeeze), sy = 1 / sx;
+    const a = s.bulge, b = a * 0.28;
+    const radius = 100 / Math.sqrt(1 + (a * a + b * b) / 2);
+    const point = t => {
+      const r = radius * (1 + a * Math.sin(3 * t) + b * Math.cos(4 * t));
+      const dr = radius * (3 * a * Math.cos(3 * t) - 4 * b * Math.sin(4 * t));
+      const x = r * Math.cos(t), y = r * Math.sin(t);
+      const tx = dr * Math.cos(t) - r * Math.sin(t);
+      const ty = dr * Math.sin(t) + r * Math.cos(t);
+      return {x: s.x + sx * x + s.shear * y, y: s.y + sy * y,
+        tx: sx * tx + s.shear * ty, ty: sy * ty};
+    };
+    const step = TAU / 8, handle = 4 / 3 * Math.tan(step / 4);
+    let p = point(0), d = 'M' + fmt(p.x) + ' ' + fmt(p.y);
+    for (let i = 1; i <= 8; i++) {
+      const q = point(i * step);
+      d += 'C' + [p.x + p.tx * handle, p.y + p.ty * handle,
+        q.x - q.tx * handle, q.y - q.ty * handle, q.x, q.y].map(fmt).join(' ');
+      p = q;
+    }
+    return d + 'Z';
+  }
+  const REST = pathFor(zero());
+
+  function createSimulation() {
+    const bodies = CENTERS.map(center => ({center, value: zero(), velocity: zero()}));
+    let kind = null, elapsed = 0, profiles = [];
+    function trigger(nextKind, seed) {
+      if (nextKind !== 'idle' && nextKind !== 'gather') throw new TypeError('Use idle or gather.');
+      const rng = random(seed == null ? seedNow() : seed);
+      kind = nextKind; elapsed = 0;
+      profiles = bodies.map((_, index) => ({
+        delay: kind === 'gather' ? [0, 0.032, 0.057][index] : rng() * 0.18,
+        omega: kind === 'gather' ? 14.5 + rng() * 1.4 : 13 + rng() * 1.5,
+        damping: kind === 'gather' ? 0.45 + rng() * 0.04 : 0.48 + rng() * 0.08,
+        phase: rng() * TAU, duration: 0.88 + rng() * 0.18,
+        sign: rng() < 0.5 ? -1 : 1, strength: 0.9 + rng() * 0.12
+      }));
+      // Preserve both position and velocity when a click interrupts idle motion.
+    }
+    function targetFor(index) {
+      const profile = profiles[index];
+      const t = elapsed - profile.delay;
+      if (t < 0) return zero();
+      if (kind === 'gather') {
+        const pulse = ease(t / 0.115) * (1 - ease((t - 0.245) / 0.13));
+        const direction = Math.sign(CENTERS[1] - CENTERS[index]);
+        return {
+          x: (CENTERS[1] - CENTERS[index]) * 0.37 * pulse,
+          y: profile.sign * 2.6 * pulse,
+          squeeze: -(index === 1 ? 0.095 : 0.125) * pulse,
+          bulge: profile.sign * 0.024 * pulse,
+          shear: (direction || profile.sign * 0.5) * 0.048 * pulse
+        };
+      }
+      const p = clamp(t / profile.duration);
+      const envelope = Math.pow(Math.sin(Math.PI * p), 2);
+      const wave = Math.sin(TAU * 1.1 * p + profile.phase);
+      return {
+        x: 3.8 * envelope * Math.sin(TAU * p + profile.phase),
+        y: 2.8 * envelope * Math.cos(TAU * p + profile.phase),
+        squeeze: 0.14 * profile.strength * envelope * wave,
+        bulge: 0.038 * envelope * Math.sin(TAU * p + profile.phase * 0.7),
+        shear: 0.09 * envelope * Math.cos(TAU * 0.8 * p + profile.phase)
+      };
+    }
+    function reset() {
+      bodies.forEach(body => { body.value = zero(); body.velocity = zero(); });
+      kind = null; elapsed = 0;
+    }
+    function step(seconds) {
+      if (!kind) return false;
+      // Small bounded substeps make the spring stable across frame rates.
+      const dt = Math.max(0, Math.min(seconds, 0.048));
+      const count = Math.max(1, Math.ceil(dt / (1 / 240)));
+      const h = dt / count;
+      for (let sub = 0; sub < count; sub++) {
+        elapsed += h;
+        bodies.forEach((body, index) => {
+          const profile = profiles[index], target = targetFor(index);
+          KEYS.forEach(key => {
+            const speed = profile.omega * (key === 'x' || key === 'y' ? 1 : 1.16);
+            const damping = profile.damping + (key === 'squeeze' ? 0.055 : 0);
+            const acceleration = speed * speed * (target[key] - body.value[key])
+              - 2 * damping * speed * body.velocity[key];
+            body.velocity[key] += acceleration * h;
+            body.value[key] += body.velocity[key] * h;
+          });
+        });
+      }
+      const settled = bodies.every(body => KEYS.every(key => {
+        const scale = key === 'x' || key === 'y' ? 1 : 100;
+        return Math.abs(body.value[key] * scale) < 0.02 && Math.abs(body.velocity[key] * scale) < 0.08;
+      }));
+      if ((elapsed > 1.5 && settled) || elapsed > 3.6) reset();
+      return Boolean(kind);
+    }
+    return {trigger, step, reset, paths: () => bodies.map(body => pathFor(body.value)),
+      snapshot: () => ({kind, elapsed, bodies: bodies.map(body => ({center: body.center,
+        value: {...body.value}, velocity: {...body.velocity}}))})};
+  }
+
+  function createSVG(options) {
+    const palette = options && options.palette || COLORS;
+    if (palette.length !== 3 || palette.some(color => !/^#[0-9a-f]{6}$/i.test(color))) {
+      throw new TypeError('palette must contain three six-digit hex colors.');
+    }
+    return '<svg xmlns="' + NS + '" data-code1-jelly="v2" viewBox="-36 -40 572.045 280" width="572" height="280" role="img" aria-label="CODE1 세 원 로고">\n'
+      + '<title>CODE1 jelly motion</title>\n'
+      + '<desc>세 원이 독립적으로 움직입니다. 클릭하면 가운데로 모였다가 탄성으로 벌어지고 원래 위치로 돌아옵니다.</desc>\n'
+      + CENTERS.map((center, i) => '<g transform="translate(' + fmt(center) + ' 100)"><path data-jelly="' + i + '" fill="' + palette[i] + '" d="' + REST + '"/></g>').join('\n')
+      + '\n</svg>';
+  }
+
+  function mount(svg, options) {
+    if (!svg || svg.namespaceURI !== NS || svg.localName !== 'svg') throw new TypeError('Pass an SVG element.');
+    if (instances.has(svg)) return instances.get(svg);
+    const opts = Object.assign({auto: true, minDelay: 10000, maxDelay: 15000, interactive: true}, options || {});
+    function validate(min, max) {
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min < 1000 || max < min) {
+        throw new RangeError('Use millisecond delays with 1000 <= minDelay <= maxDelay.');
+      }
+    }
+    validate(opts.minDelay, opts.maxDelay);
+    const doc = svg.ownerDocument, win = doc.defaultView;
+    const paths = Array.from(svg.querySelectorAll('[data-jelly]'));
+    if (paths.length !== 3) throw new TypeError('Expected the CODE1 jelly SVG.');
+    const trigger = opts.trigger || svg;
+    const previous = {role: svg.getAttribute('role'), tabindex: svg.getAttribute('tabindex'),
+      label: svg.getAttribute('aria-label'), cursor: svg.style.cursor};
+    if (opts.interactive && trigger === svg) {
+      svg.setAttribute('role', 'button'); svg.setAttribute('tabindex', '0');
+      svg.setAttribute('aria-label', 'CODE1 로고: 클릭하여 젤리 모션 재생');
+      svg.style.cursor = 'pointer';
+    }
+    const simulation = createSimulation();
+    const media = win.matchMedia('(prefers-reduced-motion: reduce)');
+    let automatic = Boolean(opts.auto), destroyed = false, kind = null;
+    let inView = !('IntersectionObserver' in win), observer = null;
+    let idleTimer = null, frame = null, deadline = null, lastTime = null;
+    let lastGather = -Infinity;
+    const eligible = () => !destroyed && !media.matches && !doc.hidden && inView && svg.isConnected;
+    const state = () => ({playing: Boolean(kind), kind, automatic, reducedMotion: media.matches,
+      inView, nextIn: deadline == null ? null : Math.max(0, deadline - Date.now()), destroyed});
+    function notify() {
+      svg.setAttribute('data-motion-state', kind || 'rest');
+      svg.dispatchEvent(new win.CustomEvent('code1:statechange', {detail: state()}));
+    }
+    function draw() { simulation.paths().forEach((d, index) => paths[index].setAttribute('d', d)); }
+    function clearIdle() {
+      if (idleTimer !== null) win.clearTimeout(idleTimer);
+      idleTimer = null; deadline = null;
+    }
+    function schedule() {
+      clearIdle();
+      if (automatic && !kind && eligible()) {
+        const delay = opts.minDelay + Math.random() * (opts.maxDelay - opts.minDelay);
+        deadline = Date.now() + delay;
+        idleTimer = win.setTimeout(() => { idleTimer = null; deadline = null; play(); }, delay);
+      }
+      notify();
+    }
+    function halt() {
+      if (frame !== null) win.cancelAnimationFrame(frame);
+      frame = null; lastTime = null; kind = null;
+      simulation.reset(); draw();
+    }
+    function tick(time) {
+      frame = null;
+      if (!eligible()) { clearIdle(); halt(); notify(); return; }
+      const dt = lastTime === null ? 0 : (time - lastTime) / 1000;
+      lastTime = time;
+      const active = simulation.step(dt);
+      draw();
+      if (active) frame = win.requestAnimationFrame(tick);
+      else {
+        const finishedKind = kind;
+        kind = null; lastTime = null;
+        svg.dispatchEvent(new win.CustomEvent('code1:motionend', {detail: {kind: finishedKind}}));
+        schedule();
+      }
+    }
+    function begin(nextKind, settings) {
+      if (!eligible() || (nextKind === 'idle' && kind)) return false;
+      const now = win.performance.now();
+      // Prevent rapid taps from continually recharging the compression.
+      if (nextKind === 'gather' && kind === 'gather' && now - lastGather < 700) return false;
+      if (nextKind === 'gather') lastGather = now;
+      clearIdle();
+      const seed = settings && settings.seed != null ? settings.seed : seedNow();
+      simulation.trigger(nextKind, seed); kind = nextKind;
+      if (frame === null) { lastTime = null; frame = win.requestAnimationFrame(tick); }
+      svg.dispatchEvent(new win.CustomEvent('code1:motionstart', {detail: {kind, seed}}));
+      notify(); return true;
+    }
+    function play(settings) { return begin('idle', settings); }
+    function gather(settings) { return begin('gather', settings); }
+    function onClick() { gather(); }
+    function onKey(event) {
+      if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); gather(); }
+    }
+    function environmentChanged() {
+      if (!eligible()) { clearIdle(); halt(); notify(); }
+      else if (!kind) schedule();
+    }
+    function onPageHide() { clearIdle(); halt(); notify(); }
+    const api = {
+      play, gather, getState: state,
+      startRandom(config) {
+        if (destroyed) return;
+        const min = config && config.minDelay != null ? config.minDelay : opts.minDelay;
+        const max = config && config.maxDelay != null ? config.maxDelay : opts.maxDelay;
+        validate(min, max); opts.minDelay = min; opts.maxDelay = max;
+        automatic = true; schedule();
+      },
+      stopRandom() { if (!destroyed) { automatic = false; clearIdle(); notify(); } },
+      stop() { if (!destroyed) { clearIdle(); halt(); schedule(); } },
+      destroy() {
+        if (destroyed) return;
+        automatic = false; clearIdle(); halt(); destroyed = true;
+        if (observer) observer.disconnect();
+        doc.removeEventListener('visibilitychange', environmentChanged);
+        win.removeEventListener('pagehide', onPageHide);
+        win.removeEventListener('pageshow', environmentChanged);
+        media.removeEventListener('change', environmentChanged);
+        trigger.removeEventListener('click', onClick);
+        if (trigger === svg) {
+          trigger.removeEventListener('keydown', onKey);
+          for (const [key, value] of [['role', previous.role], ['tabindex', previous.tabindex], ['aria-label', previous.label]]) {
+            if (value === null) svg.removeAttribute(key); else svg.setAttribute(key, value);
+          }
+          svg.style.cursor = previous.cursor;
+        }
+        instances.delete(svg); notify();
+      }
+    };
+    if (opts.interactive) {
+      trigger.addEventListener('click', onClick);
+      if (trigger === svg) trigger.addEventListener('keydown', onKey);
+    }
+    if ('IntersectionObserver' in win) {
+      observer = new win.IntersectionObserver(entries => {
+        inView = entries[0].isIntersecting && entries[0].intersectionRatio >= 0.15;
+        environmentChanged();
+      }, {threshold: [0, 0.15]});
+      observer.observe(svg);
+    }
+    doc.addEventListener('visibilitychange', environmentChanged);
+    win.addEventListener('pagehide', onPageHide);
+    win.addEventListener('pageshow', environmentChanged);
+    media.addEventListener('change', environmentChanged);
+    instances.set(svg, api); schedule();
+    return api;
+  }
+  const api = {createSVG, mount, createSimulation, version: '2.0.0'};
+  return api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+export const { createSVG, mount, createSimulation, version } = Code1Jelly;
+export default Code1Jelly;
