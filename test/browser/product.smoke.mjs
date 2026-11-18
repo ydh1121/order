@@ -36,7 +36,7 @@ async function assertActionSpacing(row){
  const [first,second]=await buttons.evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));
  assert.ok(first.width>=44&&first.height>=44&&second.width>=44&&second.height>=44,'both actions meet 44px targets');
  assert.ok(second.left-first.right>=7.5,'row actions retain an eight-pixel gap');
- assert.equal(first.y,second.y,'row actions use one baseline');
+ assert.ok(Math.abs(first.y+first.height/2-second.y-second.height/2)<=2,'primary hit area and secondary action share a center line');
  assert.ok(await row.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'row fits its content width');
 }
 async function editAllocation(){await stage('q4');const toggle=page.locator('[data-q4-body-toggle="qa-line"]');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('[data-edit-allocation="qa-allocation"]').click();await page.locator('#q4-regular-dialog[open]').waitFor();}
@@ -192,6 +192,40 @@ try{
    await page.locator('#allocations-delivery').screenshot({path:join(evidence,`q4-saved-rows-${width}.png`)});
   }
   await page.setViewportSize(originalViewport);
+ });
+ await check('P07C_SAVED_STACK_GESTURES_EDIT_TAGS_AND_CANCEL',async()=>{
+  const fixture=multiSiteFixture();
+  fixture.open='q1';await seedDurable(fixture);await page.reload();await emailReady();await stage('q1');
+  const prior=await persisted();
+  const sku=page.locator('[data-line-id="qa-line"]');
+  assert.deepEqual(await sku.locator('.saved-quantity-tags>span').allTextContents(),['월 200판','월 구매액 1,600,000원']);
+  async function swipe(target,dx,dy){
+   await target.scrollIntoViewIfNeeded();
+   const box=await target.boundingBox();
+   const x=box.x+box.width/2,y=box.y+box.height/2;
+   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:5});await page.mouse.up();
+  }
+  for(const [name,selector] of [['q1','[data-edit="qa-line"]'],['q3','[data-site-edit="qa-site"]'],['q4','[data-edit-allocation="qa-allocation"]']]){
+   await stage(name);
+   if(name!=='q1'){
+    const toggle=name==='q3'?page.locator('#q3-site-qa-site > .accordion-trigger'):page.locator('[data-q4-body-toggle="qa-line"]');
+    if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
+   }
+   const primary=page.locator(selector);
+   const row=primary.locator('xpath=ancestor::*[@data-saved-row][1]');
+   await swipe(primary,-50,2);
+   assert.equal(await row.getAttribute('data-saved-open'),'true');
+   assert.equal(await page.locator('dialog[open]').count(),0);
+   await swipe(primary,50,2);
+   assert.equal(await row.getAttribute('data-saved-open'),'false');
+   await primary.click();
+   const dialog={q1:'sku-dialog',q3:'site-editor-dialog',q4:'q4-regular-dialog'}[name];
+   await page.locator('#'+dialog+'[open]').waitFor();
+   await page.locator({q1:'#cancel-sku',q3:'#cancel-site',q4:'#q4-regular-cancel'}[name]).click();await closed(dialog);
+  }
+  assert.deepEqual((await persisted()).allocations,prior.allocations,'revealing an action and cancelling edits leave the saved allocations unchanged');
+  fixture.lines[0].qty='';fixture.lines[0].price='';await seedDurable(fixture);await page.reload();await stage('q1');
+  assert.equal(await page.locator('[data-line-id="qa-line"] .saved-quantity-tags').count(),0);
  });
  await check('P08_C28_Q4_MULTISITE_DERIVED_REMAINDER_DIRECT_CAP_CANCEL',async()=>{
   const fixture=multiSiteFixture();await seedDurable(fixture);await page.reload();await emailReady();

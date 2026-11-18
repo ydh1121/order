@@ -1621,6 +1621,39 @@ button,input,select,textarea{font-family:inherit}
 @media(prefers-reduced-motion:reduce){#section-q4 .q4-body-panel,#section-q4 .q4-body-chevron{transition:none}}
 
 
+/* A saved card has one large edit target. Removal always opens its own confirmation. */
+#page-form [data-saved-row]{position:relative;isolation:isolate;touch-action:pan-y pinch-zoom;min-width:0}
+#section-q1 #added-lines{display:grid;gap:.5rem}
+#section-q1 #added-lines[hidden]{display:none}
+#section-q1 #added-lines>.sku-entry,
+#section-q3 .q3-products-frame .q3-delivered-item,
+#section-q4 .q4-body-site .allocation-summary{
+ border:0;border-radius:.625rem;background:var(--surface-soft,#f5f7fa);padding:.625rem .75rem;
+ grid-template-columns:minmax(0,1fr) auto;gap:.5rem;min-height:3.75rem;
+}
+#section-q3 .q3-products-frame .q3-delivered-item+.q3-delivered-item,
+#section-q4 .q4-body-site+.q4-body-site{margin-top:.5rem;border-top:0}
+#section-q1 .sku-entry .saved-quantity-tags{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem;min-height:0}
+.saved-quantity-tags>span,.saved-quantity-tag{display:inline-flex;align-items:center;max-width:100%;padding:.12rem .45rem;border-radius:.4rem;background:#e8edf3;color:var(--text-primary);font-size:var(--type-meta);font-weight:var(--type-weight-information);overflow-wrap:anywhere}
+#page-form .saved-row-actions{position:static;align-self:center;justify-self:end;display:flex;align-items:center}
+#page-form .saved-row-actions>.code1-text-action:first-child{
+ position:absolute;z-index:1;inset:0 4rem 0 0;min-width:44px;min-height:44px;width:auto;
+ border-radius:.625rem;overflow:hidden;white-space:nowrap;text-indent:-999rem;
+}
+#page-form .saved-row-actions>.code1-text-action:first-child:focus-visible{outline-offset:-2px}
+#page-form .saved-row-actions>.code1-text-action:nth-child(2),
+#page-form .saved-actions-toggle{position:relative;z-index:2;min-width:44px;min-height:44px}
+#page-form .saved-actions-toggle{display:none;padding:0;border:0;background:transparent;color:var(--text-secondary);font:inherit;font-weight:700;letter-spacing:.1em;cursor:pointer}
+#page-form [data-saved-open=true] .saved-row-actions>.code1-text-action:nth-child(2){background:var(--ui-badge-bg,#fff0f0);color:var(--ui-danger);border-radius:.5rem}
+@media(pointer:coarse){
+ #page-form [data-saved-row]:not([data-saved-open=true]) .saved-row-actions>.code1-text-action:nth-child(2){display:none}
+ #page-form [data-saved-row]:not([data-saved-open=true]) .saved-actions-toggle{display:block}
+}
+@media(pointer:coarse) and (prefers-reduced-motion:no-preference){
+ .saved-row-hint> :first-child:not(.saved-row-actions){animation:saved-row-discover .85s ease-in-out .12s 1}
+}
+@keyframes saved-row-discover{0%,100%{transform:translateX(0)}45%{transform:translateX(-.65rem)}}
+
 /* MSG0528: Q2 presentation belongs only to egg quantities/prices.
    Text, phone, address, dropdown and date controls consume their existing owners
    above (6768f95 morphology); modal lock/motion remains the MSG0526 owner. */

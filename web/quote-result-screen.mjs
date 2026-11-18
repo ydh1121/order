@@ -33,8 +33,14 @@ export function mountQuoteResult(host, options = {}) {
   stage.setAttribute('data-order-result','');
   const brand = node('div','brand',stage);
   brand.setAttribute('role','img'); brand.setAttribute('aria-label','Order.'); brand.hidden=options.brand===false;
-  const word = node('b','word',brand); text(word,'Order.');
-  const ns='http://www.w3.org/2000/svg', icon=doc.createElementNS(ns,'svg');
+  const ns='http://www.w3.org/2000/svg', word=doc.createElementNS(ns,'svg');
+  word.setAttribute('viewBox','0 0 76 33'); word.setAttribute('aria-hidden','true');
+  const letters=doc.createElementNS(ns,'text');letters.setAttribute('x','0');letters.setAttribute('y','26');
+  letters.setAttribute('textLength','76');letters.setAttribute('lengthAdjust','spacingAndGlyphs');
+  letters.setAttribute('font-size','25');letters.setAttribute('font-weight','900');
+  letters.setAttribute('font-family','Arial Black,Arial,sans-serif');letters.setAttribute('fill','#20272b');
+  letters.textContent='Order.';word.append(letters);brand.append(word);
+  const icon=doc.createElementNS(ns,'svg');
   icon.setAttribute('viewBox','0 0 500 200'); icon.setAttribute('aria-hidden','true');
   // Resting geometry of the product's CODE1 jelly mark, in its native 200-unit circles.
   for(const [cx,fill] of [[100,'#F5800B'],[250,'#F59E0B'],[400,'#FFCC00']]){
@@ -210,7 +216,7 @@ export const quoteResultScreenCss = `
 [data-order-result] :where(p,h2,footer){margin:0;padding:0;border:0;background:none}
 [data-order-result] button{appearance:none;border:0;cursor:pointer;font:inherit;text-transform:none;letter-spacing:inherit;box-shadow:none}
 [data-order-result] button:focus-visible{outline:3px solid #197ac4;outline-offset:3px}
-[data-order-result] .oq-brand{position:absolute;left:var(--pad);top:23px;height:33px;display:flex;align-items:center;gap:3px;color:#20272b}.oq-brand .oq-word{font:1000 25px/1 Arial,sans-serif;letter-spacing:-1.6px;transform:scaleX(1.08);transform-origin:left;margin-right:4px}.oq-brand svg{width:52px;height:21px;display:block}
+[data-order-result] .oq-brand{position:absolute;left:var(--pad);top:25px;height:33px;display:flex;align-items:center;gap:4px;color:#20272b}[data-order-result] .oq-brand svg:first-child{width:76px;height:33px}[data-order-result] .oq-brand svg:last-child{width:52px;height:21px;display:block}
 [data-order-result] .oq-heading{position:absolute;left:var(--pad);right:var(--pad);top:clamp(80px,13.4%,122px);padding:0;display:block;text-align:center;color:var(--ink);font:inherit;background:none}
 [data-order-result] .oq-heading>*{padding:0;margin:0;color:inherit}
 [data-order-result] .oq-lead{font-size:16px;font-weight:700;line-height:24px;margin-bottom:6px}
@@ -218,7 +224,7 @@ export const quoteResultScreenCss = `
 [data-order-result] .oq-number{display:inline;font-size:44px;font-weight:700;letter-spacing:-.035em;line-height:56px;color:var(--blue);font-variant-numeric:tabular-nums}
 [data-order-result] .oq-unit{font-size:28px;font-weight:700;line-height:1;color:var(--blue)}
 [data-order-result][data-selection=current] :is(.oq-number,.oq-unit){color:#e53a2b}
-[data-order-result] .oq-ending{margin-top:3px}
+[data-order-result] .oq-ending{margin-top:8px}
 [data-order-result] .oq-sub{font-size:14px;color:var(--grey);margin:15px 0 0}
 [data-order-result] :is(.oq-lead,.oq-title,.oq-number,.oq-unit,.oq-ending,.oq-sub,.oq-rate,.oq-annual,.oq-clock,.oq-expiry-note,.oq-meta-line):empty{display:none}
 [data-order-result] .oq-plot{position:absolute;left:var(--pad);right:var(--pad);bottom:170px;height:var(--detail);isolation:isolate;pointer-events:none}
