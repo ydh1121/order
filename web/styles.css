@@ -1782,3 +1782,27 @@ button,input,select,textarea{font-family:inherit}
 #page-form .nav:has(#quote-mode-switch){height:auto;min-height:var(--ui-icon-target);justify-content:space-between;gap:var(--ui-action-gap)}
 #quote-mode-dialog .q4-check-row{min-height:var(--ui-icon-target);text-align:start}
 #quote-mode-dialog .q4-check-row[hidden]{display:none}
+
+/* The published Order menu stays next to the wordmark at every supported width. */
+.header:has(.order-menu:not([hidden])){display:flex;align-items:center;justify-content:flex-start}
+.order-menu{position:relative;z-index:25}.order-menu[hidden],#order-mode-menu[hidden]{display:none}
+.order-menu-trigger{width:44px;height:44px;border:0;border-radius:12px;background:transparent;color:#344054;font:inherit}
+#order-mode-menu{position:absolute;top:100%;left:0;min-width:10.5rem;max-width:calc(100vw - 6rem);padding:.6rem;display:grid;gap:3px;background:#fff;color:#202830;border-radius:16px;box-shadow:0 8px 32px #17243526;text-align:left;animation:order-menu-in .16s ease-out}
+#order-mode-menu strong{padding:.25rem .6rem}#order-mode-menu button{font:inherit;text-align:left;border:0;border-radius:10px;min-height:44px;background:transparent;color:inherit;padding:.55rem .7rem}
+#order-mode-menu [aria-checked=true]{background:#edf2ff;color:#2545a0}#order-mode-menu button:focus-visible,.order-menu-trigger:focus-visible{outline:2px solid #385ded}
+@keyframes order-menu-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){#order-mode-menu{animation:none}}
+
+#input-review-open{display:block;margin:16px auto 8px;min-height:44px}
+#input-review-dialog{max-width:min(32rem,calc(100vw - 24px));max-height:85dvh;overflow:auto}
+#input-review-title{margin:0 0 12px}
+#input-review-rows{list-style:none;padding:0;margin:0 0 16px}
+#input-review-rows>li{padding:8px 0;border-bottom:1px solid var(--ui-line,#e3e3e3)}
+#input-review-rows>li>div{display:flex;align-items:center;justify-content:space-between}
+#input-review-rows h3{font-size:1rem;margin:0}
+#input-review-rows button{min-height:44px}
+#input-review-rows ul{list-style:none;margin:0;padding:0;font-size:.92rem;line-height:1.65;overflow-wrap:anywhere}
+#input-review-dialog .ui-transaction-group{display:flex;flex-wrap:wrap;gap:6px}
+#input-review-dialog .ui-transaction-action{flex:1 1 auto;min-height:44px;white-space:normal}
+#q2-purpose{margin:0 0 12px;color:var(--muted,#555);font-size:.92rem;line-height:1.55}
+#q2-back{min-height:44px}

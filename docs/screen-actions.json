@@ -25,6 +25,11 @@
           "id": "partners",
           "type": "navigate",
           "to": "/partners"
+        },
+        {
+          "id": "order-mode-menu",
+          "label": "Order 견적 모드 선택",
+          "description": "공개 설정에서 간편·상세 견적을 선택한 뒤 기존 모드 전환 확인과 초안 저장을 진행합니다."
         }
       ]
     },
@@ -284,6 +289,19 @@
           "id": "data-frequency-output",
           "type": "readonly-average-frequency",
           "requires": "FLEX plan/quantity or existing variable range; never fixed delivery count"
+        },
+        {
+          "id": "input-review-open",
+          "type": "review-current-form",
+          "route": "/#/form",
+          "requires": "Read active quote mode after Q1 and editor guards. Reuse existing stage navigation, checkpoint and result validation. Optional step=q2 or step=review is consumed on the form.",
+          "controls": {
+            "input-review-back": "Return to current form",
+            "input-review-save": "Existing save-checkpoint transaction, after closing the review",
+            "input-review-result": "Existing to-result validation and proof gate",
+            "q2-back": "Return to Q1 using the current input guard",
+            "q1/q2/q3/q4 수정": "Return to the matching live form accordion without a write"
+          }
         }
       ]
     },

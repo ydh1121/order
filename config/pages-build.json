@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "7a35e0058d4af97a213295d83bd040f007a3334e44d1b3d49d64a06dbcd2719d"
+      "sha256": "7e1f5743c497a70d3ce172ad8921248085792ba779b2ea57c2432ff897daec2e"
     },
     {
       "source": "web/common-ui.mjs",
@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "0b461a3b0dca212abc9c3f645f07d279d5d47040fb74989971f0ebcf95f75acc"
+      "sha256": "04465f58c8259c4adece8b96dfc39ef3d87b27aa46d2e1575afa27c4b4ea8256"
     },
     {
       "source": "web/main.mjs",
@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "d73fc6a99a0a9c062d97385ba9cb877677881ce3aefb89582c0768971103b977"
+      "sha256": "c9f2215e1b3b1ad99ed251eec0ba67b41af79ec1618d3ba5166019c7934644a2"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -197,7 +197,17 @@
     {
       "source": "web/quote-mode-switch.mjs",
       "output": "quote-mode-switch.mjs",
-      "sha256": "0ef07026f3f1914453c48b6f1f51e493cec3f8a4de12de78213a1ecc2aa8cd7f"
+      "sha256": "a34f0be1dd3505a4db6dcdcdcb9dbe9327ee24b721f1fc5a61d85e96473313cf"
+    },
+    {
+      "source": "web/order-menu.mjs",
+      "output": "order-menu.mjs",
+      "sha256": "4e433229ab138c3b8a0eb4d79ed99f244948fbcc655bb1f8787cb824897b6160"
+    },
+    {
+      "source": "web/quote-input-review.mjs",
+      "output": "quote-input-review.mjs",
+      "sha256": "317145c27c5495fdcaea1fd5c0ff826ce9ca69b5a105d048ce9c36bac0404476"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",
@@ -207,6 +217,11 @@
       "source": "functions/api/address/search.js",
       "route": "/api/address/search",
       "sha256": "88909d4d22418fe4317d283db7ae6b18792082abd5b6ea2338125f1276b83543"
+    },
+    {
+      "source": "functions/api/order/features.js",
+      "route": "/api/order/features",
+      "sha256": "bdb8b129c202c45d1dc94bc5b47316d06d04d28919b97260c32426f2e8188a84"
     }
   ],
   "approvedIntegration": {

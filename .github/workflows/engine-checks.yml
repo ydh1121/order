@@ -177,7 +177,7 @@ jobs:
           retention-days: 14
 
   chromium-canonical-q4:
-    # Identical Noto CJK and Noble mirror contract for before/after capture.
+    # Pin the OS and Noto CJK version for identical before/after capture.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -205,24 +205,13 @@ jobs:
         run: |
           . /etc/os-release
           test "$ID:$VERSION_ID:${VERSION_CODENAME:-}" = "ubuntu:24.04:noble"
-          sudo python3 - <<'PY'
-          from pathlib import Path
-          import re
-          path = Path('/etc/apt/apt-mirrors.txt')
-          original = path.read_text()
-          updated, count = re.subn(
-              r'(?m)^http://azure\.archive\.ubuntu\.com/ubuntu/?(?=\s|$)',
-              'https://archive.ubuntu.com/ubuntu/',
-              original,
-          )
-          if count != 1:
-              raise SystemExit('Unexpected Ubuntu mirror configuration')
-          path.write_text(updated)
-          PY
-          font_apt_options=(-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=1)
-          sudo apt-get "${font_apt_options[@]}" -o APT::Update::Error-Mode=any update -qq
-          sudo apt-get "${font_apt_options[@]}" install -y 'fonts-noto-cjk=1:20230817+repack1-3'
-          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
+          expected='1:20230817+repack1-3'
+          if ! dpkg-query -W -f='${Version}' fonts-noto-cjk 2>/dev/null | grep -Fxq "$expected"; then
+            font_apt_options=(-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3)
+            sudo apt-get "${font_apt_options[@]}" update -qq
+            sudo apt-get "${font_apt_options[@]}" install -y --no-install-recommends "fonts-noto-cjk=$expected"
+          fi
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = "$expected"
           dpkg-query -W fonts-noto-cjk
           fc-match ':lang=ko'
       - run: npm run build

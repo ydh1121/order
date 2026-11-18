@@ -1,3 +1,4 @@
+import {quoteReviewSections} from '../../web/quote-input-review.mjs';
 import {regionSelection} from '../../web/region-reference.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -163,4 +164,25 @@ test('malformed simple envelope cannot fall back to detailed pricing or private 
   const input={...state(),simpleQuote:{...blankSimpleQuote(),monthlyScope:'ALL_SITES'}};
   const m=model({state:input});assert.equal(m.inputScope.mode,'SIMPLE');assert.ok(m.uncertainties.includes('SIMPLE_INPUT_INVALID'));
   assert.equal(comparison(m).quoteCost,null);assert.deepEqual(m.groups[1].sites,[]);assert.deepEqual(m.groups[0].rows,[]);
+});
+
+test('ordered input review keeps monthly demand separate from order terms and renders no internal IDs',()=>{
+  const sections=quoteReviewSections(model());
+  assert.deepEqual(sections.map(section=>section.stage),['q1','q2','q3','q4']);
+  assert.deepEqual(sections[0].values,['난각 4번 · 특란 · 30구']);
+  assert.match(sections[1].values[0],/월 10판 · 포장당 5,000원/);
+  assert.match(sections[2].values.join(' '),/관악구.*월 6판/);
+  assert.match(sections[3].values.join(' '),/1회 주문/);
+  assert.doesNotMatch(JSON.stringify(sections),/ui-egg|site-a|DO_NOT_COPY|object Object/);
+});
+
+test('simple product review reads the active unknown budget and region intent from the current form',()=>{
+  const input=state();input.lines=input.lines.slice(0,1);
+  input.simpleQuote={...blankSimpleQuote(),specUnknown:true,unknownMonthly:{qty:'17',unit:'each',budget:'70000'},sharedRegion:'서울특별시 관악구',orderKind:'ONCE'};
+  const sections=quoteReviewSections(model({state:input}));
+  assert.deepEqual(sections[0].values,['규격 모름']);
+  assert.match(sections[1].values[0],/월 17개 · 월 예상 예산 70,000원/);
+  assert.deepEqual(sections[2].values,['사업장 1곳','서울특별시 관악구']);
+  assert.deepEqual(sections[3].values,['1회 주문']);
+  assert.doesNotMatch(JSON.stringify(sections),/5,000원|관악구 신원동/);
 });

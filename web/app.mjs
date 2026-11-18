@@ -1,3 +1,4 @@
+import {bindQuoteInputReview} from './quote-input-review.mjs';
 import {q4Issue,inspectQ4Allocation,monthlyIssues} from './q4-validation.mjs';
 import {createBrowserStorage,projectStoredPayload} from './storage.mjs';
 import {bindNumericInputs} from './numeric-input.mjs';
@@ -606,6 +607,7 @@ function q2LineMarkup(line){
  ${unknown?'':`<div class="line-subtotal" hidden data-cost-visible="false"><span>현재 월 구매비용</span><output data-line-subtotal="${id}"></output></div>`}</fieldset>`;
 }
 function renderQ2(){
+ $('q2-purpose').textContent=simpleUnknown()?'예상 월 구매량과 단위를 입력해 주세요. 월 예산은 선택사항입니다.':simpleMode?'선택한 계란의 월 구매량을 입력해 주세요. 현재 구매 단가를 아는 경우 함께 입력해 주세요.':'품목별 월 구매량과 포장당 구매 단가를 입력해 주세요. 사업장별 납품량은 다음 단계에서 입력합니다.';
  q2UnitMenu.close();
  const list=$('q2-lines'),existing=new Map([...list.children].map(node=>[node.dataset.lineId,node]));
  const rows=S.lines.map(line=>{const previous=existing.get(String(line.id)),key=q2LineRenderKey(line);if(previous?.dataset.q2RenderKey===key)return previous;const template=document.createElement('template');template.innerHTML=q2LineMarkup(line);const node=template.content.firstElementChild;node.dataset.q2RenderKey=key;return node;});
@@ -837,6 +839,7 @@ let regularStageEpoch=0;
 function cancelRegularStageNavigation(){regularStageEpoch++;}
 window.addEventListener('wheel',cancelRegularStageNavigation,{passive:true});window.addEventListener('touchstart',cancelRegularStageNavigation,{passive:true});window.addEventListener('pointerdown',cancelRegularStageNavigation,{passive:true});
 function navigateRegularStage(q){const seq=++regularStageEpoch;requestAnimationFrame(()=>{const animations=[...document.querySelectorAll('#page-form .t-acc-panel')].flatMap(e=>e.getAnimations());Promise.allSettled(animations.map(a=>a.finished)).then(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))).then(()=>{if(seq!==regularStageEpoch||$('q4-regular-dialog').open)return;const target=q?document.querySelector(`#section-${q}>.accordion-trigger`):$('to-result');if(!target)return;target.scrollIntoView({block:'nearest',behavior:'instant'});target.focus({preventScroll:true});});});}
+$('q2-back').onclick=()=>{if(guardPendingEdits('q2-back'))moveToInputStage('q1');};
 $('q2-next').onclick=finishQty;
 $('added-lines').addEventListener('click',e=>{
  const b=e.target.closest('[data-edit],[data-remove]');if(!b)return;
@@ -1237,6 +1240,22 @@ if(simpleMode){
  simpleUI=createSimpleQuoteUI({onAuthRequest,bridge:{getState:()=>S,write(value){const next=projectSimpleQuote(value);if(JSON.stringify(next)===JSON.stringify(S.simpleQuote))return storageTail;S.simpleQuote=next;inlineDraft=true;return save(S,{publish:false});},commit(value,options){return save({...S,simpleQuote:projectSimpleQuote(value)},options);},guard:guardPendingEdits,openStage(q){if(changeOpen(q))navigateRegularStage(q||null);},error:err,refresh:render,notify:refreshCompletionBadges,signature:()=>JSON.stringify(projectSimpleInput(S)),revision:()=>{reconcileQuoteInput();return quoteInputRevision;}}});
  window.OrderSimpleQuoteReview=Object.freeze({inspect:()=>({...simpleUI.inspect(),input:projectSimpleInput(S),verdict:inspectSimpleQuote(S),revision:storageRevision,inputRevision:quoteInputRevision,document:buildQuoteDocumentModel({state:S,snapshot:quoteService.snapshot(),inputRevision:quoteInputRevision,observedAt:Date.now()})}),resumeAuth:value=>simpleUI.resumeAuth(value)});
 }
-window.OrderValidationState=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify(orderValidationProjection())),line:id=>JSON.parse(JSON.stringify(lineById(id)||null))});window.__orderReviewBoot=async()=>{const restored=await storageHydration;storageRevision=restored.revision;storageToken=restored.versionToken;document.documentElement.dataset.storageStatus=restored.status;if(restored.ok&&restored.data){S=ensureMigration(restored.data);lastCommitted=structuredClone(S);editorMode=S.lines.length?null:'initial';if(editorMode==='initial'&&S.bodyCheckpoint)editing={...empty(),...S.bodyCheckpoint.q1Selection};}else if(!restored.ok)storageFailure=restored;storageReady=true;$('app').inert=false;render();fromHash();if(storageFailure)storageFeedback(storageFailure);OrderEmailLifecycle.boot();document.documentElement.dataset.storageReady='true';storagePaint();};
-return Object.freeze({regularBridge:window.OrderRegularQ4Bridge,quoteService,simpleReview:window.OrderSimpleQuoteReview,quoteDocument:()=>buildQuoteDocumentModel({state:S,snapshot:quoteService.snapshot(),inputRevision:quoteInputRevision,observedAt:Date.now()}),connectQ4(controller){if(q4ReviewUI)throw Error('Q4_ALREADY_CONNECTED');q4ReviewUI=controller;},boot:window.__orderReviewBoot});
+const quoteDocument=()=>buildQuoteDocumentModel({state:S,snapshot:quoteService.snapshot(),inputRevision:quoteInputRevision,observedAt:Date.now()});
+function moveToInputStage(stage){if(changeOpen(stage))navigateRegularStage(stage);}
+function canReviewInput(){
+ if(!guardPendingEdits('input-review'))return false;
+ const issue=orderVerdict().fieldErrors.find(error=>error.stage==='q1');
+ if(issue){errorAt('q1',issue.message);navigateRegularStage('q1');return false;}
+ return true;
+}
+const inputReview=bindQuoteInputReview({document,shell:window.OrderModalShell,quoteDocument,canReview:canReviewInput,editStage:moveToInputStage});
+function openRequestedInput(){
+ const url=new URL(location.href),step=url.searchParams.get('step');
+ if(current!=='form'||!['review','q2'].includes(step))return;
+ url.searchParams.delete('step');history.replaceState(history.state,'',url.href);
+ if(step==='review')inputReview.open();
+ else if(canReviewInput())moveToInputStage('q2');
+}
+window.OrderValidationState=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify(orderValidationProjection())),line:id=>JSON.parse(JSON.stringify(lineById(id)||null))});window.__orderReviewBoot=async()=>{const restored=await storageHydration;storageRevision=restored.revision;storageToken=restored.versionToken;document.documentElement.dataset.storageStatus=restored.status;if(restored.ok&&restored.data){S=ensureMigration(restored.data);lastCommitted=structuredClone(S);editorMode=S.lines.length?null:'initial';if(editorMode==='initial'&&S.bodyCheckpoint)editing={...empty(),...S.bodyCheckpoint.q1Selection};}else if(!restored.ok)storageFailure=restored;storageReady=true;$('app').inert=false;render();fromHash();if(storageFailure)storageFeedback(storageFailure);OrderEmailLifecycle.boot();document.documentElement.dataset.storageReady='true';storagePaint();openRequestedInput();};
+return Object.freeze({regularBridge:window.OrderRegularQ4Bridge,quoteService,simpleReview:window.OrderSimpleQuoteReview,quoteDocument,connectQ4(controller){if(q4ReviewUI)throw Error('Q4_ALREADY_CONNECTED');q4ReviewUI=controller;},boot:window.__orderReviewBoot});
 }
