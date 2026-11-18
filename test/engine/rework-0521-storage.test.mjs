@@ -43,3 +43,22 @@ test('R23 two tabs cannot overwrite another plan or resurrect reset, and duplica
  const results=await Promise.all([env.api.commit(one,opts(first,'a')),b.commit(two,opts(second,'b'))]);assert.equal(results.filter(r=>r.status==='COMMITTED').length,1);assert.equal(results.filter(r=>r.status==='CONFLICT').length,1);assert.equal(env.local.writes,1);assert.equal((await env.api.commit(one,opts(first,'a'))).status,'IDEMPOTENT');assert.equal(env.local.writes,1);
  const latest=await env.api.load();await env.api.reset(opts(latest,'reset'));assert.equal((await b.commit(two,opts(second,'late'))).status,'CONFLICT');assert.equal((await env.api.load()).status,'RESET');
 });
+
+test('concurrent browser renderers with stale Storage mirrors cannot both consume the same revision',async()=>{
+ const held=new Set(),queues=new Map();
+ const manager={query:async()=>({}),request(name,options,run){
+   if(options.ifAvailable){
+     if(held.has(name))return run(null);
+     held.add(name);
+     return Promise.resolve().then(()=>run({name})).finally(()=>held.delete(name));
+   }
+   const next=(queues.get(name)||Promise.resolve()).then(()=>run({name}));
+   queues.set(name,next.catch(()=>{}));return next;
+ }};
+ const a=setup({lock:manager}),b=setup({lock:manager});
+ const first=await a.api.load(),other=await b.api.load(),one=current(),two=current();
+ two.lines[0].qty='4999';
+ const results=await Promise.all([a.api.commit(one,opts(first,'a')),b.api.commit(two,opts(other,'b'))]);
+ assert.deepEqual(results.map(r=>r.status).sort(),['COMMITTED','CONFLICT']);
+ assert.equal(a.local.writes+b.local.writes,1);
+});

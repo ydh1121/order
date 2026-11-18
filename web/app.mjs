@@ -195,10 +195,10 @@ const issuedId=()=>{const raw=new URLSearchParams(location.search).get('quote');
 let issuedRequest=null;
 const resultStyle=document.createElement('style');resultStyle.textContent=quoteResultScreenCss;document.head.append(resultStyle);
 const guideKey='order_result_graph_guide_v1';
-const firstGuide=()=>{try{return localStorage.getItem(guideKey)!=='seen';}catch{return true;}};
+const isolatedResult=()=>location.protocol==='file:'||document.documentElement.dataset.qaLabStorage==='ISOLATED_MEMORY';
 const resultScreen=mountQuoteResult($('receipt'),{
- guide:firstGuide(),
- onGuideSeen(){try{localStorage.setItem(guideKey,'seen');}catch{}},
+ get guide(){try{return isolatedResult() || localStorage.getItem(guideKey)!=='seen';}catch{return true;}},
+ onGuideSeen(){if(!isolatedResult()){try{localStorage.setItem(guideKey,'seen');}catch{}}},
  onDetail:async()=>issuedId()?readIssuedResult(issuedId()):projectProductResult(quoteService.snapshot()),
  onAction(action){
    if(['consult','delivery','verify'].includes(action)){
