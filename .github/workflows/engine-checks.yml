@@ -177,7 +177,8 @@ jobs:
           retention-days: 14
 
   chromium-canonical-q4:
-    runs-on: ubuntu-latest
+    # Identical Noto CJK and Noble mirror contract for before/after capture.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
