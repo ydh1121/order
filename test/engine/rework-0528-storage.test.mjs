@@ -8,7 +8,7 @@ const checkpoint=()=>({...emptyStoredPayload(),bodyCheckpoint:{version:'1.0.0',q
 const body=()=>({...emptyStoredPayload(),lines:[{id:'sku',housing:'4',size:'특란',pack:'30',qty:'',price:''}],locations:[{id:'site',name:'',road:'',contactPhone:'',email:''}],allocations:[{id:'a',lineId:'sku',locationId:'site',qty:'',mode:'FLEX',modeExplicit:false}]});
 const envelope=(schemaVersion,data)=>JSON.stringify({schemaVersion,generation:'old',revision:7,state:'data',data,receipts:[],migration:null,updatedAt:1});
 test('C28 checkpoint keeps initial body selection apart from valid entities and writes only after a durable receipt',async()=>{
- assert.equal(STORAGE_SCHEMA_VERSION,8);const env=setup(),data=checkpoint(),loaded=await env.api.load();assert.equal(env.local.writes,0);
+ assert.equal(STORAGE_SCHEMA_VERSION,10);const env=setup(),data=checkpoint(),loaded=await env.api.load();assert.equal(env.local.writes,0);
  const saved=await env.api.commit(data,opts(loaded));assert.equal(saved.status,'COMMITTED');assert.equal(env.local.writes,1);assert.deepEqual(saved.data.lines,[]);assert.deepEqual((await setup(env.local,env.lock).api.load()).data,data);
  assert.equal((await env.api.commit(data,opts(loaded))).status,'IDEMPOTENT');assert.equal(env.local.writes,1);
  const confirmed=body();const next=await env.api.commit(confirmed,opts(saved,'confirm-sku'));assert.equal(next.ok,true);assert.equal(next.data.bodyCheckpoint,undefined);assert.equal(next.data.allocations[0].qty,'');assert.equal(next.data.locations[0].road,'');
