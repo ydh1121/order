@@ -17,6 +17,7 @@ import {CODE1_UI,CODE1_ORDER_VALIDATION,CODE1_ORDER_ERRORS} from './common-ui.mj
 import {addressFields,addressStatus,addressLines} from './address-contract.mjs';
 import {createAddressEditor} from './address-ui.mjs';
 import {blankSimpleQuote,projectSimpleQuote,upgradeSimpleQuote,projectSimpleInput,inspectSimpleQuote} from './simple-quote-contract.mjs';
+import {bindQuoteModeSwitch} from './quote-mode-switch.mjs';
 import {createSimpleQuoteUI} from './simple-quote-ui.mjs';
 import {buildQuoteDocumentModel} from './quote-document.mjs';
 export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null}={}){
@@ -144,6 +145,21 @@ $('save-checkpoint').onclick=async()=>{
  }else if(result.status==='CANCELLED')clearCheckpointStatus();
  else{paintCheckpointButton('idle');status.classList.remove('ui-feedback-sr');status.hidden=false;status.textContent=storageText(result);status.dataset.state=result.status==='CONFLICT'?'conflict':'failed';delete status.dataset.revision;delete status.dataset.transaction;}
 };
+bindQuoteModeSwitch({
+ simple:simpleMode,dialog:$('quote-mode-dialog'),trigger:$('quote-mode-switch'),shell:window.OrderModalShell,
+ source:bodyCheckpoint,guard:()=>guardPendingEdits('mode-switch'),detailedStore:()=>createBrowserStorage(),
+ saveCurrent:async canCommit=>{
+  const candidate=bodyCheckpoint(),signature=checkpointSignature(candidate);
+  if(checkpointSignature(lastCommitted)===signature){
+   const latest=await storage.inspectCurrent();
+   if(!latest.ok)return latest;
+   return latest.revision===storageRevision&&latest.versionToken===storageToken?{ok:true}:{ok:false,status:'CONFLICT'};
+  }
+  return save(candidate,{publish:false,canCommit:()=>canCommit()&&checkpointSignature(bodyCheckpoint())===signature,errorId:'quote-mode-error'});
+ },
+ navigate:toSimple=>{const target=new URL(location.href);if(toSimple)target.searchParams.set('mode','simple');else target.searchParams.delete('mode');target.hash='/form';location.assign(target.href);},
+ preference:{get:()=>{try{return location.protocol!=='file:'&&localStorage.getItem('order_quote_mode_notice_v1')==='dismissed';}catch{return false;}},set:()=>{try{if(location.protocol!=='file:')localStorage.setItem('order_quote_mode_notice_v1','dismissed');}catch{}}}
+});
 // Explicit reset is a revisioned tombstone, never removeItem plus legacy fallback.
 let resetAttempt=null;
 $('retry-input-save').onclick=()=>{if(inlineDraft&&!storagePending)void save(S,{publish:false});};

@@ -78,7 +78,7 @@ try{
  await mkdir(evidence,{recursive:true});report.build=JSON.parse(await readFile(join(dist,'build-identity.json'),'utf8'));assert.equal(report.build.scope,'INTEGRATED_PRODUCT');
  const referenceBytes=await readFile(join(dist,'assets/iana-reference.json')),reference=JSON.parse(referenceBytes),collected=Date.parse(reference.manifest?.collectedAt);assert.ok(Number.isFinite(collected));browserTime=new Date(collected+1000).toISOString();
  report.clock={asOf:browserTime,basis:'CURRENT_BUILT_IANA_COLLECTED_AT_PLUS_1000MS',ianaVersion:reference.manifest.version,ianaSha256:hash(referenceBytes)};
- report.sourceHashes=[];for(const path of ['test/browser/simple-quote-0581.smoke.mjs','web/main.mjs','web/app.mjs','web/simple-quote-ui.mjs','web/simple-quote-contract.mjs','web/storage.mjs','web/date-field.mjs','web/simple-region-ui.mjs','web/region-reference.mjs','web/date-field.css']){const bytes=await readFile(join(root,path));report.sourceHashes.push({path,bytes:bytes.length,sha256:hash(bytes)});}
+ report.sourceHashes=[];for(const path of ['test/browser/simple-quote-0581.smoke.mjs','web/main.mjs','web/app.mjs','web/simple-quote-ui.mjs','web/simple-quote-contract.mjs','web/storage.mjs','web/date-field.mjs','web/simple-region-ui.mjs','web/quote-mode-switch.mjs','web/region-reference.mjs','web/date-field.css']){const bytes=await readFile(join(root,path));report.sourceHashes.push({path,bytes:bytes.length,sha256:hash(bytes)});}
  const mime={'.html':'text/html; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.woff2':'font/woff2'},actual=await realpath(dist);
  server=createServer(async(req,res)=>{try{assert.equal(req.method,'GET');const url=new URL(req.url,'http://localhost');if(url.pathname==='/__simple0583-fixture'){res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}).end('<!doctype html><title>Test-only storage setup</title>');return;}const path=await realpath(resolve(dist,'.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname)));if(!path.startsWith(actual+sep))throw Error('PATH_OUTSIDE_DIST');res.writeHead(200,{'content-type':mime[extname(path)]||'application/octet-stream','cache-control':'no-store'}).end(await readFile(path));}catch{res.writeHead(404).end('Not found');}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${server.address().port}`;
@@ -186,6 +186,45 @@ try{
   await known(p);await stage(p,'q3');const host=shared(p);await selectRegion(p,'3611000000','3611000000');assert.equal(await host.locator('[data-region-query="leaf"]').isVisible(),false);assert.equal((await simple(p)).sharedRegionSelection.leafLabel,'');
   for(const [rootCode,leafCode,label]of [['5000000000','5013000000','서귀포시'],['2800000000','2871000000','강화군'],['4100000000','4111700000','수원시 영통구']]){await selectRegion(p,rootCode,leafCode);assert.equal((await simple(p)).sharedRegionSelection.leafLabel,label);}
   row.layout=[];for(const width of [320,390]){await p.setViewportSize({width,height:900});await host.locator('[data-region-query="root"]').fill('전남광주');const option=host.locator('[data-region-option="1200000000"]');assert.equal(await option.innerText(),'전남광주통합특별시');await option.scrollIntoViewIfNeeded();const measure=await option.evaluate(el=>{const r=el.getBoundingClientRect(),l=el.closest('[data-region-list]').getBoundingClientRect(),s=getComputedStyle(el),visible=el.ownerDocument.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {viewport:innerWidth,rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom},list:{left:l.left,right:l.right,top:l.top,bottom:l.bottom},font:s.fontFamily,fontSize:s.fontSize,hit:!!visible&&el.contains(visible),overflow:document.documentElement.scrollWidth>innerWidth+1};});assert.ok(measure.rect.left>=-1&&measure.rect.right<=width+1);assert.ok(measure.hit,'option is not clipped by an ancestor');assert.equal(measure.overflow,false);row.layout.push(measure);await capture(p,'candidate-region-long-root-'+width);await option.click();await host.locator('[data-region-option="1211000000"]').click();await ready(p);await selectRegion(p,'4100000000','4111700000');assert.equal(await host.locator('[data-region-query="leaf"]').inputValue(),'수원시 영통구');await capture(p,'candidate-region-compound-'+width);}
+ });
+ await check('R85_MODE_SWITCH_CANCEL_IMPORT_RESTORE',async({p})=>{
+  await known(p,{quantity:'6050',price:'10000'});const source=(await envelope(p)).data.lines[0];
+  const opener=p.locator('#quote-mode-switch'),dialog=p.locator('#quote-mode-dialog');
+  await opener.click();assert.equal(await dialog.locator('[data-mode-option]').isChecked(),false);
+  await dialog.locator('[data-mode-cancel]').click();await dialog.waitFor({state:'hidden'});assert.equal(await raw(p,DETAIL_KEY),null);
+  await opener.click();await dialog.locator('[data-mode-option]').check();await dialog.locator('[data-mode-confirm]').click();
+  await p.waitForURL(url=>!url.searchParams.has('mode'));await ready(p);
+  const copied=(await envelope(p,DETAIL_KEY)).data;assert.deepEqual(copied.lines,[source]);assert.equal(Object.hasOwn(copied,'simpleQuote'),false);
+  await p.reload();await ready(p);assert.deepEqual((await envelope(p,DETAIL_KEY)).data.lines,[source]);
+  await opener.click();assert.equal(await dialog.locator('[data-mode-option]').isChecked(),false);
+  await dialog.locator('[data-mode-confirm]').click();await p.waitForURL(url=>url.searchParams.get('mode')==='simple');await ready(p);
+  assert.deepEqual((await envelope(p)).data.lines,[source]);assert.deepEqual((await envelope(p,DETAIL_KEY)).data.lines,[source]);
+ });
+ await check('R85_E02_E03_REGION_OVERLAY_AND_TARGETS',async({p,row})=>{
+  await known(p);await stage(p,'q3');await selectRegion(p,'4100000000','4111700000');
+  const host=shared(p),leaf=host.locator('[data-region-query="leaf"]');
+  const control=host.locator('[data-region-toggle="leaf"]');
+  const bodyNext=()=>p.locator('#q3-next').evaluate(el=>el.getBoundingClientRect().top+scrollY);
+  row.widths=[];
+  for(const width of [320,390,768,1440]){
+   await p.setViewportSize({width,height:820});await control.scrollIntoViewIfNeeded();
+   const before=await bodyNext();const saved=await raw(p);
+   const label=await leaf.evaluate(el=>{
+    const s=getComputedStyle(el),ctx=document.createElement('canvas').getContext('2d');
+    ctx.font=[s.fontWeight,s.fontSize,s.fontFamily].join(' ');
+    return {actual:el.value,available:el.clientWidth-parseFloat(s.paddingInlineStart)-parseFloat(s.paddingInlineEnd),needed:ctx.measureText(el.value).width};
+   });
+   assert.equal(label.actual,'수원시 영통구');assert.ok(label.available+1>=label.needed,'selected label must fit');
+   await control.click();const opened=await bodyNext();assert.ok(Math.abs(opened-before)<=1,'opening must not shift following control');
+   const menu=host.locator('.simple-region-overlay:visible');
+   const rect=await menu.evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,height:r.height,hit:el.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2))};});
+   assert.ok(rect.hit&&rect.height>=44&&rect.left>=0&&rect.right<=width+1&&rect.top>=0&&rect.bottom<=821);
+   await capture(p,'r85-region-overlay-'+width);
+   await leaf.press('Escape');assert.equal(await leaf.getAttribute('aria-expanded'),'false');
+   assert.ok(Math.abs(await bodyNext()-before)<=1);assert.equal(await raw(p),saved);
+   const target=await control.boundingBox();assert.ok(target.width>=44&&target.height>=44);
+   row.widths.push({width,label,before,opened,rect,target});
+  }
  });
  await check('S83_16_INLINE_FLEX_WEEK_MONTH_FIXED_ONCE_RAW_INTENT',async({p,row})=>{
   await known(p);await order(p,'FLEX','WEEK');assert.equal(await p.locator('#simple-order-dialog,#simple-order-edit').count(),0);await order(p,'FLEX','MONTH');assert.equal((await simple(p)).flexBasis,'MONTH');await order(p,'FIXED');assert.equal((await p.locator('#simple-consult-fixed').innerText()).trim(),'협의');await order(p,'ONCE');

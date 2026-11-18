@@ -3,6 +3,8 @@
  * proof is created by this two-level legal-region catalog control. */
 import {listRegionRoots,listRegionLeaves,filterRegionOptions,regionSelection,inspectRegionSelection} from './region-reference.mjs';
 
+import {getMenuPlacement,menuViewport} from './quantity-menu.mjs';
+
 const owners=new WeakMap();
 const copy=value=>value?Object.freeze({...value}):null;
 const key=value=>JSON.stringify(value??null);
@@ -11,13 +13,14 @@ export function bindSimpleRegion(host,{idPrefix,label='사업장 1',value=null,l
  if(owners.has(host))return owners.get(host);
  if(!host?.ownerDocument||!idPrefix)throw TypeError('REGION_HOST_AND_ID_REQUIRED');
  const doc=host.ownerDocument,view=doc.defaultView,listeners=[],fields={};
+ let releaseMenu=()=>{};
  let accepted=null,acceptedKey='null',legacy='',rootChoice=null,leafChoice=null,baseline=null,openLevel=null,generation=0,destroyed=false,lastNotice='';
  const node=(tag,className='',text='')=>{const el=doc.createElement(tag);el.className=className;if(text)el.textContent=text;return el;};
  const on=(el,type,fn)=>{el.addEventListener(type,fn);listeners.push([el,type,fn]);};
  host.classList.add('simple-region-field');host.dataset.simpleRegion='true';
  const title=node('label','ui-field-title',label),pair=node('div','simple-region-pair');title.htmlFor=idPrefix+'-root';host.replaceChildren(title,pair);
  for(const [level,caption]of [['root','시·도'],['leaf','시·군·구']]){
-  const wrap=node('div','qa-combo'),control=node('div','qa-combo-trigger qa-combo-editable'),input=node('input'),toggle=node('button'),arrow=node('span','t-acc-chevron'),list=node('div','qa-combo-menu'),empty=node('p','muted');
+  const wrap=node('div','qa-combo'),control=node('div','qa-combo-trigger qa-combo-editable'),input=node('input'),toggle=node('button'),arrow=node('span','t-acc-chevron'),popup=node('div','simple-region-overlay'),list=node('div','qa-combo-menu'),empty=node('p','muted');
   wrap.dataset.simpleRegionLevel=level;control.dataset.variant='editable';control.dataset.selected='false';
   input.id=idPrefix+'-'+level;input.type='text';input.autocomplete='off';input.maxLength=1024;input.placeholder=caption;input.dataset.regionQuery=level;
   input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');input.setAttribute('aria-label',label+' '+caption);input.setAttribute('spellcheck','false');
@@ -25,7 +28,8 @@ export function bindSimpleRegion(host,{idPrefix,label='사업장 1',value=null,l
   toggle.type='button';toggle.dataset.regionToggle=level;toggle.dataset.combo=input.id;toggle.setAttribute('aria-label',label+' '+caption+' 선택 목록');toggle.setAttribute('aria-controls',list.id);toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-haspopup','listbox');
   arrow.setAttribute('aria-hidden','true');arrow.innerHTML=view?.OrderAccordionView?.chevron||'';toggle.append(arrow);control.append(input,toggle);
   empty.dataset.regionEmpty=level;empty.setAttribute('role','status');empty.textContent='일치하는 지역이 없습니다.';empty.hidden=true;
-  wrap.append(control,list,empty);pair.append(wrap);fields[level]={wrap,control,input,toggle,list,empty,composing:false,index:-1,options:[]};
+  popup.setAttribute('popover','manual');popup.hidden=true;popup.append(list,empty);
+  wrap.append(control,popup);pair.append(wrap);fields[level]={wrap,control,input,toggle,popup,list,empty,composing:false,index:-1,options:[]};
  }
  function inspect(){return Object.freeze({editing:editing(),composing:fields.root.composing||fields.leaf.composing,selection:copy(accepted),rootQuery:fields.root.input.value,leafQuery:fields.leaf.input.value,openLevel});}
  function editing(){return !!baseline&&(fields.root.input.value!==baseline.rootQuery||fields.leaf.input.value!==baseline.leafQuery||rootChoice?.code!==baseline.rootCode||leafChoice?.code!==baseline.leafCode);}
@@ -39,9 +43,33 @@ export function bindSimpleRegion(host,{idPrefix,label='사업장 1',value=null,l
   host.dataset.editing=String(editing());host.dataset.composing=String(fields.root.composing||fields.leaf.composing);
  }
  function close({notifyChange=true}={}){
-  openLevel=null;
-  for(const f of Object.values(fields)){f.list.hidden=true;f.empty.hidden=true;f.index=-1;f.input.setAttribute('aria-expanded','false');f.input.removeAttribute('aria-activedescendant');f.toggle.setAttribute('aria-expanded','false');}
+  releaseMenu();releaseMenu=()=>{};openLevel=null;
+  for(const f of Object.values(fields)){f.popup.hidden=true;f.list.hidden=true;f.empty.hidden=true;f.index=-1;f.input.setAttribute('aria-expanded','false');f.input.removeAttribute('aria-activedescendant');f.toggle.setAttribute('aria-expanded','false');}
   if(notifyChange)notify();
+ }
+ function placeOpenMenu(f){
+  const {popup,control}=f;
+  popup.hidden=false;
+  if(!control.getBoundingClientRect)return;
+  const native=typeof popup.showPopover==='function';
+  if(native)popup.showPopover();else doc.body.append(popup);
+  const position=()=>{
+   const rect=control.getBoundingClientRect(),viewport=menuViewport(view);
+   if(!rect.width||rect.bottom<=viewport.top||rect.top>=viewport.top+viewport.height){close();return;}
+   popup.style.width=Math.min(rect.width,viewport.width-16)+'px';
+   const height=Math.min(190,popup.scrollHeight+popup.offsetHeight-popup.clientHeight);
+   const placement=getMenuPlacement(rect,{width:rect.width,height},viewport);
+   Object.assign(popup.style,{left:placement.left+'px',top:placement.top+'px',maxHeight:placement.height+'px',transformOrigin:placement.up?'bottom left':'top left'});
+  };
+  const scroll=event=>{if(!popup.contains(event.target))position();};
+  doc.addEventListener('scroll',scroll,true);view.addEventListener('resize',position);
+  view.visualViewport?.addEventListener('resize',position);view.visualViewport?.addEventListener('scroll',position);
+  releaseMenu=()=>{
+   doc.removeEventListener('scroll',scroll,true);view.removeEventListener('resize',position);
+   view.visualViewport?.removeEventListener('resize',position);view.visualViewport?.removeEventListener('scroll',position);
+   if(native)popup.hidePopover();else f.wrap.append(popup);
+  };
+  position();
  }
  function highlight(level,index){
   const f=fields[level];f.index=index;
@@ -53,7 +81,7 @@ export function bindSimpleRegion(host,{idPrefix,label='사업장 1',value=null,l
   close({notifyChange:false});openLevel=level;
   f.options=filterRegionOptions(level==='root'?listRegionRoots():listRegionLeaves(rootChoice?.code),all?'':f.input.value);
   f.list.replaceChildren(...f.options.map(option=>{const b=node('button','',option.label);b.type='button';b.tabIndex=-1;b.id=f.list.id+'-option-'+option.code;b.dataset.regionOption=option.code;b.dataset.regionLevel=level;b.dataset.active='false';b.setAttribute('role','option');b.setAttribute('aria-selected','false');return b;}));
-  f.list.hidden=false;f.empty.hidden=!!f.options.length;f.input.setAttribute('aria-expanded','true');f.toggle.setAttribute('aria-expanded','true');highlight(level,-1);notify();
+  f.list.hidden=false;f.empty.hidden=!!f.options.length;f.input.setAttribute('aria-expanded','true');f.toggle.setAttribute('aria-expanded','true');highlight(level,-1);placeOpenMenu(f);notify();
  }
  function isChosenLabel(level){const chosen=level==='root'?rootChoice:leafChoice;return !!chosen&&fields[level].input.value===chosen.label;}
  function accept(selection,source){
@@ -112,11 +140,11 @@ export function bindSimpleRegion(host,{idPrefix,label='사업장 1',value=null,l
    }
   });
   on(f.toggle,'click',()=>{if(destroyed||f.input.disabled||f.composing)return;if(openLevel===level)close();else open(level,{all:isChosenLabel(level)});f.input.focus({preventScroll:true});});
-  on(f.list,'pointerdown',event=>{if(event.target.closest?.('[data-region-option]'))event.preventDefault();});
-  on(f.list,'pointermove',event=>{const option=event.target.closest?.('[data-region-option]');if(option&&f.list.contains(option))highlight(level,f.options.findIndex(row=>row.code===option.dataset.regionOption));});
+  on(f.list,'pointerdown',event=>{if(event.pointerType!=='touch'&&event.target.closest?.('[data-region-option]'))event.preventDefault();});
+  on(f.list,'pointermove',event=>{const option=event.target.closest?.('[data-region-option]');if(event.pointerType!=='touch'&&option&&f.list.contains(option))highlight(level,f.options.findIndex(row=>row.code===option.dataset.regionOption));});
   on(f.list,'click',event=>{const option=event.target.closest?.('[data-region-option]');if(option&&f.list.contains(option))choose(level,option.dataset.regionOption,'pointer');});
  }
- const outside=event=>{if(openLevel&&!host.contains(event.target))close();};on(doc,'pointerdown',outside);on(doc,'focusin',outside);
+ const outside=event=>{if(openLevel&&!host.contains(event.target)&&!fields[openLevel].popup.contains(event.target))close();};on(doc,'pointerdown',outside);on(doc,'focusin',outside);
  const destroy=()=>{if(destroyed)return;generation++;close({notifyChange:false});destroyed=true;listeners.forEach(([el,type,fn])=>el.removeEventListener(type,fn));owners.delete(host);};
  setValue(value,{legacyText,force:true});
  const api=Object.freeze({setValue,close,inspect,destroy});owners.set(host,api);return api;

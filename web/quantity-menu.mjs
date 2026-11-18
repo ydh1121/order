@@ -1,5 +1,24 @@
 // Shared Q2 unit popup. The hidden select remains the model/change event adapter;
 // only this listbox owns pointer/keyboard presentation, never an OS option menu.
+export function getMenuPlacement(anchor, size, viewport, {gap = 4, inset = 8, align = 'start'} = {}) {
+ const leftEdge = viewport.left + inset;
+ const rightEdge = viewport.left + viewport.width - inset;
+ const topEdge = viewport.top + inset;
+ const bottomEdge = viewport.top + viewport.height - inset;
+ const below = Math.max(0, bottomEdge - anchor.bottom - gap);
+ const above = Math.max(0, anchor.top - gap - topEdge);
+ const up = size.height > below && above > below;
+ const width = Math.min(size.width, Math.max(0, rightEdge - leftEdge));
+ const height = Math.min(size.height, up ? above : below);
+ const left = align === 'end' ? anchor.right - width : anchor.left;
+ return {width, height, up, left: Math.max(leftEdge, Math.min(left, rightEdge - width)),
+  top: up ? anchor.top - gap - height : anchor.bottom + gap};
+}
+export function menuViewport(view) {
+ const v = view.visualViewport;
+ return {left: v?.offsetLeft ?? 0, top: v?.offsetTop ?? 0,
+  width: v?.width ?? view.innerWidth, height: v?.height ?? view.innerHeight};
+}
 export function bindQuantityMenu(root){
  const document=root.ownerDocument,view=document.defaultView,menu=document.createElement('div');
  menu.id='order-quantity-menu';menu.className='ui-quantity-menu';menu.hidden=true;menu.setAttribute('role','listbox');menu.setAttribute('aria-label','월 구매량 단위');document.body.append(menu);
@@ -9,7 +28,14 @@ export function bindQuantityMenu(root){
  const options=()=>[...control(owner).options].filter(option=>!option.disabled);
  function close({focus=false}={}){const old=owner;owner=null;menu.hidden=true;menu.replaceChildren();if(old){old.dataset.open='false';button(old).setAttribute('aria-expanded','false');button(old).removeAttribute('aria-activedescendant');if(focus){const id=button(old).id;document.getElementById(id)?.focus({preventScroll:true});}}}
  function sync(choice){const select=control(choice),trigger=button(choice),label=select.options[select.selectedIndex]?.textContent||'단위 확인';choice.querySelector('.ui-quantity-label').textContent=label;trigger.setAttribute('aria-label','월 구매량 단위: '+label);trigger.dataset.value=select.value;}
- function position(){if(!owner?.isConnected){close();return;}const rect=button(owner).getBoundingClientRect(),o=origin.getBoundingClientRect(),width=menu.offsetWidth,height=menu.offsetHeight,below=rect.bottom+4,above=rect.top-height-4,up=below+height>view.innerHeight-8&&above>=8;menu.style.left=(Math.max(8,Math.min(view.innerWidth-width-8,rect.right-width))-o.left)+'px';menu.style.top=(Math.max(8,up?above:Math.min(below,view.innerHeight-height-8))-o.top)+'px';menu.style.transformOrigin=up?'bottom right':'top right';}
+ function position(){
+  if(!owner?.isConnected){close();return;}
+  const rect=button(owner).getBoundingClientRect(),o=origin.getBoundingClientRect();
+  const placement=getMenuPlacement(rect,{width:menu.offsetWidth,height:menu.scrollHeight+menu.offsetHeight-menu.clientHeight},menuViewport(view),{align:'end'});
+  menu.style.maxHeight=placement.height+'px';menu.style.overflowY='auto';
+  menu.style.left=(placement.left-o.left)+'px';menu.style.top=(placement.top-o.top)+'px';
+  menu.style.transformOrigin=placement.up?'bottom right':'top right';
+ }
  function highlight(next){const nodes=[...menu.children];index=Math.max(0,Math.min(nodes.length-1,next));nodes.forEach((node,i)=>node.dataset.active=String(i===index));button(owner).setAttribute('aria-activedescendant',nodes[index]?.id||'');}
  function open(choice,next){close();owner=choice;sync(choice);const select=control(choice);options().forEach((option,i)=>{const node=document.createElement('div');node.id='order-unit-option-'+i;node.setAttribute('role','option');node.setAttribute('aria-selected',String(select.value===option.value));node.dataset.index=String(i);const label=document.createElement('span');label.textContent=option.textContent;node.append(label);const mark=document.createElementNS('http://www.w3.org/2000/svg','svg');mark.setAttribute('viewBox','0 0 16 16');mark.setAttribute('class','ui-quantity-selected-mark');mark.setAttribute('aria-hidden','true');const path=document.createElementNS('http://www.w3.org/2000/svg','path');for(const [key,value]of Object.entries({d:'m3.5 8 3 3 6-6',fill:'none',stroke:'currentColor','stroke-width':'1.8','stroke-linecap':'round','stroke-linejoin':'round'}))path.setAttribute(key,value);mark.append(path);node.append(mark);menu.append(node);});choice.dataset.open='true';button(choice).setAttribute('aria-expanded','true');menu.hidden=false;highlight(next??Math.max(0,options().findIndex(option=>option.selected)));position();button(choice).focus({preventScroll:true});}
  function commit(){if(!owner)return;const choice=owner,select=control(choice),option=options()[index];if(!option)return;const triggerId=button(choice).id;close();select.value=option.value;select.dispatchEvent(new view.Event('change',{bubbles:true}));document.getElementById(triggerId)?.focus({preventScroll:true});}

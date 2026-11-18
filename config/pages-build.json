@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "96b812d405851c47b35b4ddde55c38974c63c8debd51957c144a4c2f9c60cca3"
+      "sha256": "7a35e0058d4af97a213295d83bd040f007a3334e44d1b3d49d64a06dbcd2719d"
     },
     {
       "source": "web/common-ui.mjs",
@@ -57,12 +57,12 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "c96784fbc65354d7a2cf73497c0c1964310186ccf436cae2a5cbbb8901170075"
+      "sha256": "0b461a3b0dca212abc9c3f645f07d279d5d47040fb74989971f0ebcf95f75acc"
     },
     {
       "source": "web/main.mjs",
       "output": "main.mjs",
-      "sha256": "50ae8a75c8843c07676b52c4aa75e0e29f188e1e4be2dfc98be6fda0d039fe19"
+      "sha256": "9a46ce14054af1a06f3fc47c9b8081c8f97601418619c31dc21b1106f188d875"
     },
     {
       "source": "web/numeric-input.mjs",
@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "259e61e66fe0de5a361635e134999ccbf0eff5e2ae6c0c3fd71f1d5db7ddcf65"
+      "sha256": "d73fc6a99a0a9c062d97385ba9cb877677881ce3aefb89582c0768971103b977"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -122,7 +122,7 @@
     {
       "source": "web/quantity-menu.mjs",
       "output": "quantity-menu.mjs",
-      "sha256": "aa3cbb6ac0efaf33e48697ecf29a39f6f9162f295e29c919b4b5781518e9dc27"
+      "sha256": "fbd0e6229f11f44487e157f6a852ac4246dabf1954cbf64b6318770f5a4d51b6"
     },
     {
       "source": "web/q4-date.mjs",
@@ -177,7 +177,27 @@
     {
       "source": "web/simple-region-ui.mjs",
       "output": "simple-region-ui.mjs",
-      "sha256": "59422d993653ffec776e4d77c66ff92b958b12389d45ae4dcf4371925f30434f"
+      "sha256": "4064aedf5d5f79bd4c5d4f1cc66292f815c77264ecbbe1efc3414e509e16a4bb"
+    },
+    {
+      "source": "web/assets/CODE1_jelly_interactive.svg",
+      "output": "assets/CODE1_jelly_interactive.svg",
+      "sha256": "162b77755b41ba108a2e165cb026ded5323a64b6852ddba95fb3f33a5b843171"
+    },
+    {
+      "source": "web/brand.mjs",
+      "output": "brand.mjs",
+      "sha256": "892e3c4c2ec9aa42ccd39cf32bd04a427f08fe4980345a4b39c735f981efc57d"
+    },
+    {
+      "source": "web/code1-jelly.mjs",
+      "output": "code1-jelly.mjs",
+      "sha256": "898187ee1488416cd2a18c205ca8636f5651c53a27eb5986a32a8d61a0f1ddff"
+    },
+    {
+      "source": "web/quote-mode-switch.mjs",
+      "output": "quote-mode-switch.mjs",
+      "sha256": "0ef07026f3f1914453c48b6f1f51e493cec3f8a4de12de78213a1ecc2aa8cd7f"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

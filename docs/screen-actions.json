@@ -535,6 +535,12 @@
           "type": "shared-owner-isolated-storage",
           "owner": "app",
           "proof": "BLOCKED_UNCONFIRMED_SCOPE"
+        },
+        {
+          "id": "quote-mode-switch",
+          "type": "confirm-mode-switch",
+          "owner": "app / quote-mode-switch / storage",
+          "transaction": "Cancel preserves current mode and draft. Confirm checks source revision and preserves separate latest simple and detailed drafts. Only a checked, known SKU can be copied to the detailed draft."
         }
       ],
       "continuation": "MSG0583"
