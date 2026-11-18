@@ -1,15 +1,33 @@
 // Cell strings deliberately distinguish an unanswered cell, an explicit zero, and a commercial condition.
 export function createPriceMatrixModel() {
-  const cellStates = new Set(['', '협의', '판매 안 함']);
+  const cellStates = new Set(['', '협의', '미판매']);
   const amount = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,4})?$/;
   const token = /^[a-zA-Z0-9_.:-]{1,80}$/;
+  // Remove currency decoration only when the entire amount (including grouping) is valid.
+  function normalize(value) {
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return value;
+      value=String(value);
+    }
+    if (typeof value!=='string') return value;
+    const text=value.trim();
+    if (text==='판매 안 함') return '미판매';
+    const match=/^(\+?)(0|[1-9]\d{0,11}|[1-9]\d{0,2}(?:,\d{3}){1,3})(\.\d{1,4})?(?:\s*원)?$/.exec(text);
+    if (!match) return text;
+    return match[1]+match[2].replaceAll(',','')+(match[3]||'');
+  }
+  function emptyRows(gradeCount) {
+    const limits=[10,20,30,40,50,60,70,80,90,100,150,200,250,300,350,400,450,500,null];
+    return limits.map((max,i)=>({min:i===0?1:limits[i-1]+1,max,cells:Array(gradeCount*2).fill('')}));
+  }
   function cellError(text, packed, raw) {
+    text=normalize(text); raw=normalize(raw);
     if (typeof text !== 'string') return '금액 또는 판매 상태를 입력해 주세요.';
     if (cellStates.has(text) || amount.test(text)) return '';
     if (packed && text.startsWith('+') && amount.test(text.slice(1))) {
       return amount.test(raw) ? '' : '포장비를 더하려면 원란 단가가 필요합니다.';
     }
-    return '0 이상 금액, 협의, 판매 안 함 중 하나를 입력해 주세요.';
+    return '0 이상 금액, 협의, 미판매 중 하나를 입력해 주세요.';
   }
   function errors(matrix) {
     const issues = [];
@@ -42,15 +60,17 @@ export function createPriceMatrixModel() {
     const row=matrix.rows.find(r=>qty>=r.min&&(r.max===null||qty<=r.max));
     const gradeIndex=matrix.grades.findIndex(g=>g.id===grade);
     if(!row||gradeIndex<0||!['raw','packed'].includes(packing)) return {error:'PRICE_VARIANT_REQUIRED'};
-    const raw=row.cells[gradeIndex*2], text=row.cells[gradeIndex*2+(packing==='packed'?1:0)];
+    const raw=normalize(row.cells[gradeIndex*2]), text=normalize(row.cells[gradeIndex*2+(packing==='packed'?1:0)]);
     if (text==='') return {error:'PRICE_NOT_SET'};
     if (text==='협의') return {error:'PRICE_CONSULT'};
-    if (text==='판매 안 함') return {error:'PRICE_NOT_OFFERED'};
+    if (text==='미판매') return {error:'PRICE_NOT_OFFERED'};
+    if (cellError(text,packing==='packed',raw)) return {error:'PRICE_NOT_SET'};
     const added=text.startsWith('+');
     return {min:row.min,max:row.max,price:added?raw:text,packMode:added?'ADD':'FINAL',packFee:added?text.slice(1):null};
   }
   function shifted(value, delta) {
-    if (!amount.test(value) || !/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,4})?$/.test(delta)) return null;
+    value=normalize(value);
+    if (typeof value!=='string'||!amount.test(value) || !/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,4})?$/.test(delta)) return null;
     const fixed = text => {
       const [whole,part='']=text.replace(/^-/,'').split('.');
       return BigInt(whole + part.padEnd(4,'0')) * (text.startsWith('-')?-1n:1n);
@@ -61,5 +81,16 @@ export function createPriceMatrixModel() {
     const normalized=valueText.replace(/0+$/,'').replace(/\.$/,'');
     return amount.test(normalized)?normalized:null;
   }
-  return {errors, select, shifted};
+  // Signed percentage adjustment, rounded once to the existing 4-decimal price precision.
+  function scaled(value, percent) {
+    const v=normalize(value), p=String(percent);
+    if (typeof v!=='string'||!amount.test(v)||!/^[-+]?(?:0|[1-9]\d{0,5})(?:\.\d{1,4})?$/.test(p)) return null;
+    const units=text=>{const [whole,frac='']=text.split('.');return BigInt(whole+frac.padEnd(4,'0'));};
+    const multiplier=1000000n+units(p.replace(/^[-+]/,''))*(p.startsWith('-')?-1n:1n);
+    if(multiplier<0n)return null;
+    const raw=(units(v)*multiplier+500000n)/1000000n;
+    const out=(String(raw/10000n)+'.'+String(raw%10000n).padStart(4,'0')).replace(/0+$/,'').replace(/\.$/,'');
+    return amount.test(out)?out:null;
+  }
+  return {errors, select, shifted, scaled, normalize, emptyRows};
 }

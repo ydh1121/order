@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "7e1f5743c497a70d3ce172ad8921248085792ba779b2ea57c2432ff897daec2e"
+      "sha256": "52302b09f54a2b56dc1c38ded27c8b815f8ab028dee3794efb29ebd3b03d08ff"
     },
     {
       "source": "web/common-ui.mjs",
@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "04465f58c8259c4adece8b96dfc39ef3d87b27aa46d2e1575afa27c4b4ea8256"
+      "sha256": "1da64bb71decf4f8db3e75df667a2f71b137e9f605081e29c7ce8280924a9cdc"
     },
     {
       "source": "web/main.mjs",
@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "c9f2215e1b3b1ad99ed251eec0ba67b41af79ec1618d3ba5166019c7934644a2"
+      "sha256": "ebf682d9155328223cb51509badd41c89ae7135afb93f3b735e2e4acfcdea41e"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -137,7 +137,7 @@
     {
       "source": "web/quote-result.mjs",
       "output": "quote-result.mjs",
-      "sha256": "33bce87145257df0766fbeb48cd9ce568685cbb367680091f1c6f0250067e05b"
+      "sha256": "d1f984537ca75c66ff3d1cab1213fa272aed416bfb950473281918d38c665bac"
     },
     {
       "source": "web/simple-quote-contract.mjs",
@@ -208,6 +208,11 @@
       "source": "web/quote-input-review.mjs",
       "output": "quote-input-review.mjs",
       "sha256": "317145c27c5495fdcaea1fd5c0ff826ce9ca69b5a105d048ce9c36bac0404476"
+    },
+    {
+      "source": "web/quote-result-screen.mjs",
+      "output": "quote-result-screen.mjs",
+      "sha256": "6c16d628fb7dfbbabe30c86fab9a4409520a59b490daa9d5823255f7e7ce0164"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

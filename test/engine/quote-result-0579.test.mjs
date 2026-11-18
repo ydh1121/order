@@ -122,3 +122,21 @@ test('actual request owner default, late response and retry notifications patch 
   assert.equal(document.getElementById('receipt').dataset.quoteStatus,'DETACHED');
   assert.equal(document.getElementById('quote-outcome-value'),node);
 });
+
+test('stored business result uses only a complete in-scope customer projection and its original deadline',async()=>{
+  const {projectIssuedQuoteResult}=await import('../../web/quote-result.mjs');
+  const issuedAt='2026-11-14T00:00:00.000Z',expiresAt='2026-11-21T00:00:00.000Z', now=Date.parse(issuedAt)+1;
+  const q=quote(),record={id:'example',issuedAt,expiresAt,status:'ISSUED',response:{status:'OK',completion:'COMPLETE',quotes:[q]},presentation:{productLabel:'시험 규격',quantityLabel:'2판',unreviewed:'discard'}};
+  const shown=projectIssuedQuoteResult(record,now);
+  assert.equal(shown.state,'saving');assert.equal(shown.end,Date.parse(expiresAt));
+  assert.equal(shown.savingRate,'4.00');assert.equal(shown.currentPremium,'4.17');
+  assert.equal(shown.annualSaving,undefined);assert.equal(shown.unreviewed,undefined);
+  for(const changed of [{response:{...record.response,completion:'PARTIAL'}},{status:'DENIED'},{id:null}]){
+    assert.deepEqual(projectIssuedQuoteResult({...record,...changed},now),{state:'unavailable'});
+  }
+  assert.equal(projectIssuedQuoteResult(record,Date.parse(expiresAt)).state,'expired');
+  assert.equal(projectIssuedQuoteResult(record,Date.parse(expiresAt)).proposed,undefined);
+  const inconsistent=structuredClone(record);inconsistent.response.quotes[0].comparison.difference=money('99','99');
+  assert.equal(projectIssuedQuoteResult(inconsistent,now).state,'offer');
+  assert.equal(projectIssuedQuoteResult(inconsistent,now).current,undefined);
+});

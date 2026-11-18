@@ -1806,3 +1806,11 @@ button,input,select,textarea{font-family:inherit}
 #input-review-dialog .ui-transaction-action{flex:1 1 auto;min-height:44px;white-space:normal}
 #q2-purpose{margin:0 0 12px;color:var(--muted,#555);font-size:.92rem;line-height:1.55}
 #q2-back{min-height:44px}
+
+body:has(#page-result.active) > .header{display:none}
+.main:has(#page-result.active){width:100%;max-width:none;padding:0 0 1rem}
+#page-result.active{padding:0;background:#fff}
+#page-result #receipt{padding:0;margin:0;background:none;box-shadow:none;border:0}
+#page-result #result-edit,#page-result .result-details,#page-result #email-notice{display:block;width:calc(100% - 48px);max-width:540px;margin:12px auto}
+#page-result #result-edit{min-height:44px}
+#page-result #email-notice[hidden],#page-result .result-details[hidden]{display:none}

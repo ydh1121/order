@@ -6,7 +6,8 @@ import {bindQuantityMenu} from './quantity-menu.mjs';
 import {createSpinningCounter} from './spinning-counter.mjs';
 import {projectQ2Costs} from './q2-cost.mjs';
 import {createQuoteRequestService} from '../src/engine/adapters/quote-request.mjs';
-import {projectQuoteInput,quoteResultView,patchQuoteResult} from './quote-result.mjs';
+import {projectQuoteInput,quoteResultView,patchQuoteResult,projectProductResult,projectIssuedQuoteResult} from './quote-result.mjs';
+import {mountQuoteResult,quoteResultScreenCss} from './quote-result-screen.mjs';
 
 
 
@@ -189,8 +190,62 @@ function reconcileQuoteInput(){
  if(signature!==quoteInputSignature){quoteInputSignature=signature;quoteInputRevision++;quoteService.reconcileRevision(quoteInputRevision);}
  return input;
 }
-function paintQuoteResult(){patchQuoteResult(document,quoteResultView(quoteSnapshot,{currentPurchaseTotal:buyerTotal()}));}
-window.addEventListener('pagehide',()=>quoteService.detach());
+const privateProduct=['simple','detailed'].includes(document.documentElement.dataset.r3QuoteMode);
+const issuedId=()=>{const raw=new URLSearchParams(location.search).get('quote');return privateProduct&&raw&&/^[a-z0-9_-]{1,128}$/i.test(raw)?raw:null;};
+let issuedRequest=null;
+const resultStyle=document.createElement('style');resultStyle.textContent=quoteResultScreenCss;document.head.append(resultStyle);
+const guideKey='order_result_graph_guide_v1';
+const firstGuide=()=>{try{return localStorage.getItem(guideKey)!=='seen';}catch{return true;}};
+const resultScreen=mountQuoteResult($('receipt'),{
+ guide:firstGuide(),
+ onGuideSeen(){try{localStorage.setItem(guideKey,'seen');}catch{}},
+ onDetail:async()=>issuedId()?readIssuedResult(issuedId()):projectProductResult(quoteService.snapshot()),
+ onAction(action){
+   if(['consult','delivery','verify'].includes(action)){
+     if(privateProduct){
+       const target=new URL('/ia',location.origin);
+       target.searchParams.set('view','roles-r3');
+       if(action==='verify')target.searchParams.set('menu','business');
+       else {target.searchParams.set('menu',action==='delivery'?'delivery':'consult');if(issuedId())target.searchParams.set('quote',issuedId());}
+       location.assign(target.href);
+     }else if(action==='verify'&&typeof onAuthRequest==='function')onAuthRequest();
+     else {$('email-notice').hidden=false;$('email-notice').scrollIntoView({block:'nearest'});}
+     return;
+   }
+   if(issuedId() && action==='same'){
+     // Server-scoped quote history retains the issued conditions when the browser has no original input draft.
+     location.assign('/ia?view=pricing-r3&quote='+encodeURIComponent(issuedId())+'#quote');return;
+   }
+   if(issuedId()){const url=new URL(location.href);url.searchParams.delete('quote');history.replaceState(history.state,'',url);}
+   show('form');
+   if(action==='new')moveToInputStage('q1');
+ }
+});
+async function readIssuedResult(id){
+ const response=await fetch('/api/ia/r3-price/quote?id='+encodeURIComponent(id),{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer',headers:{Accept:'application/json'},signal:issuedRequest?.signal});
+ if(!response.ok)throw Object.assign(new Error('QUOTE_READ_FAILED'),{status:response.status});
+ const data=await response.json();
+ if(data.id!==id)throw Error('QUOTE_MISMATCH');
+ return projectIssuedQuoteResult(data);
+}
+async function loadIssuedResult(id){
+ issuedRequest?.abort();const request=new AbortController();issuedRequest=request;
+ resultScreen.show({state:'pending'});
+ try{const model=await readIssuedResult(id);if(!request.signal.aborted)resultScreen.show(model);}
+ catch(error){if(!request.signal.aborted){if([401,403].includes(error.status))resultScreen.gate();else resultScreen.show({state:'unavailable'});}}
+}
+function paintQuoteResult(){
+ if(issuedId()||current!=='result')return;
+ patchQuoteResult(document,quoteResultView(quoteSnapshot,{currentPurchaseTotal:buyerTotal()}));
+ resultScreen.show(projectProductResult(quoteSnapshot));
+}
+function clearPrivateResult(){issuedRequest?.abort();issuedRequest=null;resultScreen.clear();}
+window.addEventListener('pagehide',()=>{quoteService.detach();clearPrivateResult();});
+document.addEventListener('visibilitychange',()=>{
+ if(current!=='result'||!issuedId())return;
+ if(document.hidden)clearPrivateResult();else void loadIssuedResult(issuedId());
+});
+window.addEventListener('pageshow',e=>{if(e.persisted&&current==='result'&&issuedId())void loadIssuedResult(issuedId());});
 // Field-owned error state, never animate or paint the entire accordion/dialog.
 function legacyErrorState(id,message){
  const candidates=id==='err-q1'?[...document.querySelectorAll('#sku-editor .picks')]:id==='err-q2'?[...document.querySelectorAll('#q2-lines input')]:id==='err-q3'?[...document.querySelectorAll('#site-editor input:not([type=hidden]),#q3-address-slot')]:[];
@@ -222,17 +277,21 @@ let pageSeq=0,emailGateAttempt=null;
 let routeAnimation=null;
 function show(page,record=true,{emailProofs=null}={}){
  if(page!==current&&!guardPendingEdits('page'))return false;
- if(page==='result'&&!complete(emailProofs)){page='form';err('form-error','구매조건을 먼저 모두 입력해 주세요.');}
+ if(page==='result'&&!issuedId()&&!complete(emailProofs)){page='form';err('form-error','구매조건을 먼저 모두 입력해 주세요.');}
  const prior=current,previous=$('page-'+prior),dest=$('page-'+page);
  if(prior==='form'&&page!=='form')settleQ2Costs();
- if(prior==='result'&&page!=='result')quoteService.detach();
+ if(prior==='result'&&page!=='result'){quoteService.detach();clearPrivateResult();}
  const seq=++pageSeq,ready=prior!==page&&page!=='qa'&&prior!=='qa';
  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  routeAnimation?.cancel();routeAnimation=null;
  const cleanup=node=>{node.classList.remove('active','leaving','entering');node.inert=true;node.setAttribute('aria-hidden','true');node.style.opacity='';};
  for(const p of ['home','form','result']){const n=$('page-'+p);if(n!==previous&&n!==dest)cleanup(n);}
  current=page;$('app').hidden=page==='qa';if($('qa-route'))$('qa-route').hidden=page!=='qa';
- if(page==='result'){
+ if(page==='result' && issuedId()){
+  $('result-details').hidden=true;$('result-details').open=false;$('result-detail-content').replaceChildren();
+  $('email-notice').hidden=true;void loadIssuedResult(issuedId());
+ }else if(page==='result'){
+  $('result-details').hidden=false;
   const input=reconcileQuoteInput();
   if(prior!==page||!$('quote-outcome-value')){if(prior!==page)$('result-details').open=false;renderResult();}
   if(prior!==page||quoteSnapshot?.inputRevision!==quoteInputRevision||['IDLE','STALE','DETACHED'].includes(quoteSnapshot?.status))quoteService.start({input,inputRevision:quoteInputRevision});
@@ -726,21 +785,16 @@ function invoiceDetails(stats){
   bySite=region.regionsDiffer?region.sites.map((site,i)=>`<div class="invoice-row"><span>사업장 ${i+1}</span><span>${esc(site.region)}</span></div>`).join(''):`<div class="invoice-row"><span>${esc(region.siteCount)}개 사업장</span><span>${esc(region.sharedRegion)}</span></div>`;
   const title={FLEX:'소진 시 주문',FIXED:'정기 주문 · 협의',ONCE:'1회 주문'}[order.kind]||'입력 필요';terms=`<div class="invoice-term"><strong>${esc(title)}</strong>${order.kind==='FLEX'?`<span>${order.flexBasis==='WEEK'?'주 단위':'월 단위'}</span>`:''}${order.preferredDate?`<span>${esc(order.preferredDate)}</span>`:''}</div>`;
  }
- const comparison='<div class="invoice-row invoice-compare"><span id="quote-detail-current-label">입력한 월 구매비용</span><strong id="quote-detail-current-value">비교 조건 확인 필요</strong></div><div class="invoice-row invoice-compare"><span>납품비용</span><strong id="quote-detail-supply-value">비교 조건 확인 필요</strong></div><div class="invoice-row invoice-compare"><span>비용 차이</span><strong id="quote-detail-difference-value">비교 조건 확인 필요</strong></div><p class="invoice-pending" id="quote-detail-status">실제 공급가와 비용 조건 확인이 필요합니다.</p>';
+ const comparison='<div class="invoice-row invoice-compare"><span id="quote-current-label">입력한 월 구매비용</span><strong id="quote-current-value">비교 조건 확인 필요</strong></div><div class="invoice-row invoice-compare"><span>납품비용</span><strong id="quote-supply-value">비교 조건 확인 필요</strong></div><div class="invoice-row invoice-compare"><span>비용 차이</span><strong id="quote-detail-difference-value">비교 조건 확인 필요</strong></div><p class="invoice-pending" id="quote-detail-status">실제 공급가와 비용 조건 확인이 필요합니다.</p>';
  return `<section class="invoice-block r1-buyer-lines"><h2>구매 내역</h2><div role="table" aria-label="계란별 구매 내역">${buyRows}</div><div class="invoice-total"><span>월 구매비용 합계</span><strong>${stats.buyer===null?'입력 필요':w(stats.buyer)}</strong></div></section><section class="invoice-block delivery-detail-card"><h2>납품지별 배정</h2>${bySite||'<p class="invoice-pending">등록된 납품지가 없습니다.</p>'}</section><section class="invoice-block invoice-terms"><h2>납품 조건</h2>${terms||'<p class="invoice-pending">설정된 납품 조건이 없습니다.</p>'}</section><section class="invoice-block invoice-comparison"><h2>비용 비교</h2>${comparison}</section>`;
 }
 
 
 function renderResult(){
  const stats={buyer:buyerTotal()};
- const outcome='<div class="r2-outcome is-unavailable" id="quote-outcome" role="status"><div class="r2-outcome-value"><strong id="quote-outcome-value">산출 전</strong><b id="quote-outcome-label">조건 확인 필요</b></div></div>';
- const comparison='<div class="r2-finance-compare"><div class="r2-finance-pair"><div class="r2-finance-card"><span id="quote-current-label">입력한 월 구매비용</span><strong id="quote-current-value">입력 필요</strong></div><div class="r2-finance-arrow" aria-label="비교">→</div><div class="r2-finance-card is-supply"><span id="quote-supply-label">납품비용</span><strong id="quote-supply-value" class="comparison-unavailable">비교 조건 확인 필요</strong></div></div></div>';
- const locationCount=new Set(S.allocations.map(a=>a.locationId).filter(id=>S.locations.some(loc=>loc.id===id))).size;
- const brief=`<p class="result-quicksummary" aria-label="입력 조건 요약">${S.lines.length}개 계란 품목 · ${simpleMode?esc(S.simpleQuote.siteCount):locationCount}개 사업장${simpleMode?'':` · ${S.allocations.length}개 납품 배정`}</p>`;
- // Unavailable information stays accessible but does not displace the user's sparse result layout.
- const unavailableNote='<span class="visually-hidden" role="status" id="quote-result-status">실제 공급가와 비용 조건 확인이 필요합니다.</span>';
- $('receipt').innerHTML=outcome+comparison+brief+unavailableNote;
- $('result-detail-content').innerHTML=invoiceDetails(stats);
+ // The inputs behind this result remain inspectable in their own invoice.
+ const status='<p id="quote-outcome" class="invoice-row"><span id="quote-outcome-label"></span><strong id="quote-outcome-value"></strong></p><p id="quote-result-status" role="status"></p>';
+ $('result-detail-content').innerHTML=invoiceDetails(stats)+status;
  paintQuoteResult();
  $('email-notice').hidden=true;
 }
@@ -783,7 +837,7 @@ async function upsertSku(confirmed=false){
 function finishQty(){if(!q2Numeric.inspect().valid)return;if(!S.lines.length)return errorAt('q1','계란을 먼저 선택해 주세요.');if(simpleMode?!inspectSimpleQuote(S).stages.q2.ready:buyerTotal()===null)return err('err-q2',simpleMode?'월 구매량을 확인해 주세요.':'계란별 월 구매량과 단가를 확인해 주세요.');err('err-q2','');if(changeOpen('q3'))navigateRegularStage('q3')}
 function finishAddress(){if(!guardPendingEdits('q3-next'))return;if(!S.locations.length)return err('err-q3','사업장을 먼저 추가해 주세요.');return withStoredEmailProofs('q3-next',proofs=>{const bad=S.locations.find(site=>OrderSiteContract.issues(site,{emailProof:proofs.get(site.id)}).length);if(bad){const issues=OrderSiteContract.issues(bad,{emailProof:proofs.get(bad.id)});if(issues.every(OrderSiteContract.isAwaiting)){refreshCompletionBadges();return false;}err('err-q3',issues[0].message);editSite(bad.id);q3PaintErrors(issues);return false;}err('err-q3','');if(changeOpen('q4'))navigateRegularStage('q4');return true;});}
 function finishMode(){if(!requestValidationFeedback('q4-finish'))return;err('err-q4','');if(changeOpen(''))navigateRegularStage(null)}
-$('start').onclick=()=>{if(!S.lines.length)S.open='q1';show('form')};$('form-back').onclick=()=>show('home');$('result-back').onclick=$('result-edit').onclick=()=>show('form');$('join-email').onclick=()=>{$('email-notice').hidden=false;$('email-notice').scrollIntoView({block:'nearest',behavior:'smooth'})};
+$('start').onclick=()=>{if(!S.lines.length)S.open='q1';show('form')};$('form-back').onclick=()=>show('home');$('result-edit').onclick=()=>{if(issuedId()){const url=new URL(location.href);url.searchParams.delete('quote');history.replaceState(history.state,'',url);}show('form');};
 document.querySelectorAll('.accordion-trigger[data-open]').forEach(b=>b.addEventListener('click',()=>changeOpen(S.open===b.dataset.open?'':b.dataset.open)));
 $('picks-housing').onclick=$('picks-size').onclick=$('picks-pack').onclick=e=>{
  const b=e.target.closest('[data-pick]');if(!b)return;
@@ -1143,7 +1197,7 @@ $('to-result').onclick=()=>{if(!guardPendingEdits('result'))return;if(simpleMode
 
 
 
-function fromHash(event){if(event?.defaultPrevented||document.querySelector('dialog[open]'))return;if(!guardPendingEdits('browser-back')){history.replaceState({},'',`#/${current}`);return;}let name=location.hash.replace('#/','');if(name==='result'&&!complete())show('form',false);else show(['home','form','result'].includes(name)?name:'home',false)}window.addEventListener('popstate',fromHash);
+function fromHash(event){if(event?.defaultPrevented||document.querySelector('dialog[open]'))return;if(!guardPendingEdits('browser-back')){history.replaceState({},'',`#/${current}`);return;}let name=location.hash.replace('#/','');if(name==='result'&&!issuedId()&&!complete())show('form',false);else show(['home','form','result'].includes(name)?name:'home',false)}window.addEventListener('popstate',fromHash);
 // MSG0460: explicit regular-state boundary. No provider, price or DB writes.
 let q4ReviewContext=null,q4ReviewPending=null,q4ReviewCommitCount=0;
 const q4ReviewClone=x=>JSON.parse(JSON.stringify(x));
