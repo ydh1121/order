@@ -226,16 +226,17 @@ export const quoteResultScreenCss = `
 [data-order-result] .oq-series[data-accent=true]{background:var(--blue);color:var(--blue)}
 [data-order-result] .oq-series[data-kind=current]{left:calc(50% - 68.5px)}
 [data-order-result] .oq-series[data-kind=proposed]{left:calc(50% + 16.5px)}
-[data-order-result][data-state=offer] .oq-series[data-kind=proposed]{left:calc(50% - 26.5px)}
+[data-order-result][data-state=offer][data-selection=""] .oq-series[data-kind=proposed]{left:calc(50% - 26.5px)}
+[data-order-result][data-state=offer][data-selection=proposed] .oq-series[data-front=true]{left:15%}
 [data-order-result] .oq-graph-label{position:absolute;display:grid;gap:2px;min-width:max-content;bottom:calc(100% + 11px);line-height:20px;font-weight:700}
 [data-order-result] [data-kind=current] .oq-graph-label{right:0;text-align:right}
 [data-order-result] [data-kind=proposed] .oq-graph-label{left:0;text-align:left}
 [data-order-result] .oq-name,[data-order-result] .oq-back-label{font-size:13px;letter-spacing:-.035em}
 [data-order-result] .oq-price{font-size:16px;letter-spacing:-.035em;line-height:20px}
 [data-order-result] .oq-price-unit{font-size:10px;margin-left:1px}
-[data-order-result] .oq-card-copy,[data-order-result] .oq-back-label{position:absolute;inset:0;opacity:0;visibility:hidden;pointer-events:none}
+[data-order-result] .oq-card-copy,[data-order-result] .oq-back-label{display:none;position:absolute;inset:0;opacity:0;visibility:hidden;pointer-events:none}
 [data-order-result][data-morph]:not([data-static]) .oq-series{transition:height .39s cubic-bezier(.25,.74,.2,1),width .39s cubic-bezier(.25,.74,.2,1),left .39s cubic-bezier(.25,.74,.2,1),border-radius .36s,background-color .34s,border-color .34s}
-[data-order-result]:not([data-selection=""]) .oq-graph-label{visibility:hidden}
+[data-order-result]:not([data-selection=""]) .oq-graph-label{display:none}
 [data-order-result]:not([data-selection=""]) .oq-series{border-radius:18px}
 [data-order-result]:not([data-selection=""]) [data-kind=current]{left:0;background:#dadada;color:var(--grey)}
 [data-order-result]:not([data-selection=""]) [data-kind=proposed]{background:var(--blue);color:white}

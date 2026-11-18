@@ -722,16 +722,32 @@ const addressEditor=createAddressEditor({
   q3PaintErrors(OrderSiteContract.issues(siteEditing).filter(i=>exposed.includes(i.key)),{focus:false});refreshCompletionBadges();return true;
  }
 });
+function deliveryQuantitySummary(line,allocation){
+ if(!line)return '회당 수량 미설정';
+ const suffix=unit(line.pack);
+ const split=q4SitesForLine(allocation.lineId).length>=2;
+ if(allocation.mode==='ONCE'&&split)return `1회 ${allocation.oneTimeDeliveryQty||'미입력'}${suffix}`;
+ let perDelivery='회당 수량 미설정';
+ if(!split||valid(allocation.qty)){
+  if(allocation.variableQty&&valid(allocation.qtyMin)&&valid(allocation.qtyMax))perDelivery=`1회 ${allocation.qtyMin}~${allocation.qtyMax}${suffix}`;
+  else if(valid(allocation.qty))perDelivery=`1회 ${allocation.qty}${suffix}`;
+ }
+ if(allocation.mode==='ONCE')return perDelivery;
+ const monthly=monthlyPlanSnapshot(line,allocation);
+ const monthlyLabel=monthly.status==='VALID'?`월 ${showComma(monthly.qty)}${suffix}`:'월 수량 —';
+ return `${monthlyLabel} · ${perDelivery}`;
+}
 function renderAddress(){
  const host=$('q3-sites');if(!host)return;const ids=new Set(S.locations.map(s=>s.id));for(const id of q3Expanded.keys())if(!ids.has(id))q3Expanded.delete(id);
  host.innerHTML=S.locations.map(site=>{
   const savedItems=S.allocations.filter(a=>a.locationId===site.id&&a.modeExplicit===true&&a.q4Review?.version==='0460');
   const itemCount=new Set(savedItems.map(a=>a.lineId)).size;
   const address=String(site.road||'').trim()?`<div class="q3-address-value ui-location-lines" data-q3-summary-value="address">${addressMarkup(site)}</div>`:'<div class="q3-address-value" data-q3-summary-value="address">소재지 미입력</div>';
-  const contacts=`<div class="q3-contact-grid"><div class="q3-contact-cell" data-q3-summary-field="contactPhone"><span class="q3-info-label">담당자</span><span>${esc(site.contactPhone||'—')}</span></div><div class="q3-contact-cell" data-q3-summary-field="storePhone"><span class="q3-info-label">대표번호</span><span>${esc(site.storePhone||'—')}</span></div><div class="q3-contact-cell q3-contact-cell--email" data-q3-summary-field="email"><span class="q3-info-label">이메일</span><span>${esc(site.email||'—')}</span></div></div>`;
-  const actions=`<div class="q3-info-management"><div class="q3-copy-slot">${S.locations.length>1?`<button class="ui-copy-action" data-copy-align="start" type="button" data-contact-copy="${esc(site.id)}">${OrderIcons.svg('clone')}<span>다른 사업장에 연락처 복사</span></button>`:''}</div><div class="q3-site-actions code1-text-actions">${CODE1_UI.textAction('수정','site-edit',esc(site.id))}${CODE1_UI.textAction('삭제','site-delete',esc(site.id),true)}</div></div>`;
-  const items=itemCount?`<section class="q3-products-frame" aria-label="납품받을 품목"><h4 class="q3-delivered-title"><span>납품받을 품목</span><span class="q3-product-count">${itemCount}종</span></h4>${savedItems.map(a=>{const line=lineById(a.lineId);return `<div class="q3-delivered-item" data-q3-item="${esc(a.id)}"><div class="q3-item-copy"><strong>${esc(itemIdentity(line))}</strong><span>${esc(deliveryLabel(a))}</span><span>${esc(a.mode==='ONCE'?'1회':'회당')} ${esc(a.qty)}${esc(unit(line?.pack))}</span></div><div class="code1-text-actions">${CODE1_UI.textAction('수정','q3-q4-edit',esc(a.id))}${CODE1_UI.textAction('해제','q3-unlink',esc(a.id),true)}</div></div>`;}).join('')}</section>`:'';
-  return CODE1_UI.accordion({id:'q3-site-'+site.id,label:esc(siteName(site)),content:`<div class="q3-information-group"><h4 class="q3-information-title q3-info-label" data-q3-summary-label="address">사업장 소재지</h4>${address}${contacts}${actions}</div>${items}`,complete:siteValid(site),expanded:q3Expanded.get(site.id)||false,extraClass:'q3-site-accordion'});
+  const contactCopy=S.locations.length>1?`<button class="ui-copy-action q3-contact-copy-action" data-copy-align="start" type="button" data-contact-copy="${esc(site.id)}">${OrderIcons.svg('clone')}<span>다른 사업장에 연락처 복사</span></button>`:'';
+  const actions=`<div class="q3-site-actions code1-text-actions">${CODE1_UI.textAction('수정','site-edit',esc(site.id))}${CODE1_UI.textAction('삭제','site-delete',esc(site.id),true)}</div>`;
+  const contacts=`<div class="q3-contact-grid"><div class="q3-contact-cell" data-q3-summary-field="contactPhone"><span class="q3-info-label">담당자</span><span>${esc(site.contactPhone||'—')}</span></div><div class="q3-contact-cell" data-q3-summary-field="storePhone"><span class="q3-info-label">대표번호</span><span>${esc(site.storePhone||'—')}</span></div><div class="q3-contact-cell q3-contact-cell--email" data-q3-summary-field="email"><span class="q3-info-label">이메일</span><span>${esc(site.email||'—')}</span></div>${contactCopy}</div>`;
+  const items=itemCount?`<section class="q3-products-frame" aria-label="납품받을 품목"><h4 class="q3-delivered-title"><span>납품받을 품목</span><span class="q3-product-count">${itemCount}종</span></h4>${savedItems.map(a=>{const line=lineById(a.lineId);return `<div class="q3-delivered-item" data-q3-item="${esc(a.id)}"><div class="q3-item-copy"><strong>${esc(itemIdentity(line))}</strong><span>${esc(deliveryLabel(a))}</span><span data-q3-summary-fields="monthly qty min max">${esc(deliveryQuantitySummary(line,a))}</span></div><div class="code1-text-actions">${CODE1_UI.textAction('수정','q3-q4-edit',esc(a.id))}${CODE1_UI.textAction('해제','q3-unlink',esc(a.id),true)}</div></div>`;}).join('')}</section>`:'';
+  return CODE1_UI.accordion({id:'q3-site-'+site.id,label:esc(siteName(site)),content:`<div class="q3-information-group"><div class="q3-address-row"><div><h4 class="q3-information-title q3-info-label" data-q3-summary-label="address">사업장 소재지</h4>${address}</div>${actions}</div>${contacts}</div>${items}`,complete:siteValid(site),expanded:q3Expanded.get(site.id)||false,extraClass:'q3-site-accordion'});
  }).join('');$('q3-empty').hidden=S.locations.length>0;
 }
 
@@ -765,8 +781,7 @@ function renderDelivery(){
   const id='q4-body-'+encodeURIComponent(key);
   const content=rows.map(a=>{
   const name=siteName(locationById(a.locationId));
-  const qtyLabel=a.mode!=='ONCE'&&q4SitesForLine(a.lineId).length>=2&&!valid(a.qty)?'회당 수량 미설정':a.mode==='ONCE'&&q4SitesForLine(a.lineId).length>=2?`1회 ${esc(a.oneTimeDeliveryQty||'미입력')}${unit(lineById(a.lineId)?.pack)}`:a.variableQty&&valid(a.qtyMin)&&valid(a.qtyMax)?`1회 ${esc(a.qtyMin)}~${esc(a.qtyMax)}${unit(l.pack)}`:valid(a.qty)?`1회 ${esc(a.qty)}${unit(l.pack)}`:'회당 수량 미설정';
-  return `<div class="allocation-item q4-body-site" data-allocation="${esc(a.id)}"><div class="allocation-summary"><div class="allocation-summary-copy"><h4 class="q4-body-site-title">${esc(name)}</h4>${addressLines(locationById(a.locationId)).length?`<span class="q4-body-site-detail ui-location-lines">${addressMarkup(locationById(a.locationId))}</span>`:''}<span class="q4-body-site-detail" data-q4-summary-fields="mode repeat">${esc(deliveryLabel(a))}</span><span class="allocation-quantity q4-body-site-detail" data-q4-summary-fields="monthly qty min max">${a.mode!=='ONCE'?(monthlyPlanSnapshot(l,a).status==='VALID'?'월 '+esc(showComma(monthlyPlanSnapshot(l,a).qty))+unit(l.pack)+' · ':'월 수량 — · '):''}${qtyLabel}</span></div><div class="q4-allocation-item-actions code1-text-actions">${CODE1_UI.textAction(a.modeExplicit||a.q4Review?.version==='0460'?'수정':'설정하기','edit-allocation',esc(a.id))}${CODE1_UI.textAction('삭제','delete-allocation',esc(a.id),false)}</div></div></div>`;
+  return `<div class="allocation-item q4-body-site" data-allocation="${esc(a.id)}"><div class="allocation-summary"><div class="allocation-summary-copy"><h4 class="q4-body-site-title">${esc(name)}</h4>${addressLines(locationById(a.locationId)).length?`<span class="q4-body-site-detail ui-location-lines">${addressMarkup(locationById(a.locationId))}</span>`:''}<span class="q4-body-site-detail" data-q4-summary-fields="mode repeat">${esc(deliveryLabel(a))}</span><span class="allocation-quantity q4-body-site-detail" data-q4-summary-fields="monthly qty min max">${esc(deliveryQuantitySummary(l,a))}</span></div><div class="q4-allocation-item-actions code1-text-actions">${CODE1_UI.textAction(a.modeExplicit||a.q4Review?.version==='0460'?'수정':'설정하기','edit-allocation',esc(a.id))}${CODE1_UI.textAction('삭제','delete-allocation',esc(a.id),false)}</div></div></div>`;
   }).join('')||'';
   return `<div class="delivery-product q4-body-item" data-q4-body-line="${esc(key)}" data-expanded="${expanded}" data-complete="${complete}" data-error="${error}"><h3 class="q4-body-heading"><button type="button" class="q4-body-toggle" id="${esc(id)}-header" data-q4-body-toggle="${esc(key)}" aria-expanded="${expanded}" aria-controls="${esc(id)}-panel"><span class="q4-body-heading-copy"><strong class="q4-body-title">${esc(itemIdentity(l))}</strong><span class="q4-body-subtitle">${esc(summary)}</span></span><span class="q4-body-chevron" aria-hidden="true">${CODE1_UI.chevron}</span></button></h3><div class="q4-body-panel" id="${esc(id)}-panel" role="region" aria-labelledby="${esc(id)}-header" aria-hidden="${!expanded}"><div class="q4-body-panel-inner"${expanded?'':' inert'}>${content}<button type="button" class="q4-body-assignment-action ${rows.length?'':'ui-copy-action--primary'}" data-q4-select-sites="${esc(key)}">${OrderIcons.svg(rows.length?'swap':'link')}<span>${rows.length?'납품 사업장 변경':'납품 사업장 선택'}</span></button></div></div></div>`;
  }).join('');

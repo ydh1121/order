@@ -31,6 +31,14 @@ async function editSite(id){await stage('q3');const trigger=page.locator(`[id="q
 async function phoneState(){return page.evaluate(()=>{const c=OrderPhone.instance(document.getElementById('site-contact-phone'));return {value:c.get(),valid:c.parse().valid,contract:typeof c.contract==='function'?c.contract():null,parts:c.parts.filter(p=>!p.hidden).map(p=>p.value)};});}
 async function phonePaste(text){await page.locator('#site-contact-phone').focus();await page.locator('#site-contact-phone').evaluate((el,text)=>{const data=new DataTransfer();data.setData('text/plain',text);el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));},text);}
 async function emailReady(){await page.waitForFunction(()=>window.OrderEmailDomain&&OrderEmailDomain.isSuccess(OrderEmailDomain.status('qa@example.com')),{},{timeout:10000});}
+async function assertActionSpacing(row){
+ const buttons=row.locator('.code1-text-action');
+ const [first,second]=await buttons.evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));
+ assert.ok(first.width>=44&&first.height>=44&&second.width>=44&&second.height>=44,'both actions meet 44px targets');
+ assert.ok(second.left-first.right>=7.5,'row actions retain an eight-pixel gap');
+ assert.equal(first.y,second.y,'row actions use one baseline');
+ assert.ok(await row.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'row fits its content width');
+}
 async function editAllocation(){await stage('q4');const toggle=page.locator('[data-q4-body-toggle="qa-line"]');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('[data-edit-allocation="qa-allocation"]').click();await page.locator('#q4-regular-dialog[open]').waitFor();}
 async function allocationSite(index){const trigger=page.locator(`[data-acc="site-${index}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();}
 
@@ -139,10 +147,51 @@ try{
  });
  await check('P07_Q4_MONTH_31_AND_LAST_REMAIN_DISTINCT_CANCELLED',async()=>{
   const prior=(await persisted()).allocations;await editAllocation();await page.locator('[data-choice="delivery"][data-value="FIXED"]').click();
-  await page.locator('[data-combo="period"]').click();await page.locator('[data-combo-choice="period"][data-value="매월"]').click();
+  const modalFields=page.locator('#q4-regular-fields');
+  const controlLayout=()=>modalFields.evaluate(root=>Array.from(root.querySelectorAll('input,button')).filter(el=>el.getClientRects().length).map(el=>[el.offsetLeft,el.offsetTop,el.offsetWidth,el.offsetHeight]));
+  const layout=await controlLayout();
+  await page.locator('[data-combo="period"]').click();
+  const overlay=page.locator('#qa-dropdown-host');
+  assert.equal(await overlay.evaluate(el=>getComputedStyle(el).position),'absolute');
+  assert.deepEqual(await controlLayout(),layout,'opening period menu leaves the fields in their original positions');
+  await overlay.locator('[data-combo-choice="period"][data-value="매월"]').click();
   const date=page.locator('[data-month-date="date"]');await date.fill('32');assert.equal(await date.inputValue(),'31');await date.press('Enter');
   await page.locator('[data-combo="date"]').click();await page.locator('[data-combo-choice="date"][data-value="말일"]').click();assert.equal(await date.inputValue(),'말일');
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
+ });
+ await check('P07B_Q3_Q4_SAVED_QUANTITIES_CONTACT_ACTIONS_AND_SPACING',async()=>{
+  const fixture=multiSiteFixture();
+  Object.assign(fixture.allocations[0],{variableQty:true,qtyMin:'8',qtyMax:'12'});
+  Object.assign(fixture.allocations[1],{mode:'ONCE',oneTimeDeliveryQty:'17'});
+  await seedDurable(fixture);await page.reload();await emailReady();
+  const originalViewport=page.viewportSize();
+  for(const width of [320,390,1440]){
+   await page.setViewportSize({width,height:844});
+   await stage('q3');
+   const q3Quantities=[];
+   for(const allocation of fixture.allocations){
+    const card=page.locator(`#q3-site-${allocation.locationId}`);
+    const toggle=card.locator(':scope > .accordion-trigger');
+    if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
+    assert.equal(await card.locator('.q3-contact-grid [data-contact-copy]').count(),1);
+    assert.equal(await card.locator('.q3-address-row [data-site-edit]').count(),1);
+    const item=card.locator(`[data-q3-item="${allocation.id}"]`);
+    q3Quantities.push(await item.locator('[data-q3-summary-fields]').innerText());
+    await assertActionSpacing(item);
+   }
+   assert.deepEqual(q3Quantities,['월 50판 · 1회 8~12판','1회 17판']);
+   await page.locator('#q3-sites').screenshot({path:join(evidence,`q3-saved-cards-${width}.png`)});
+   await stage('q4');
+   const toggle=page.locator('[data-q4-body-toggle="qa-line"]');
+   if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
+   for(const [index,allocation] of fixture.allocations.entries()){
+    const row=page.locator(`[data-allocation="${allocation.id}"]`);
+    assert.equal(await row.locator('.allocation-quantity').innerText(),q3Quantities[index]);
+    await assertActionSpacing(row);
+   }
+   await page.locator('#allocations-delivery').screenshot({path:join(evidence,`q4-saved-rows-${width}.png`)});
+  }
+  await page.setViewportSize(originalViewport);
  });
  await check('P08_C28_Q4_MULTISITE_DERIVED_REMAINDER_DIRECT_CAP_CANCEL',async()=>{
   const fixture=multiSiteFixture();await seedDurable(fixture);await page.reload();await emailReady();
