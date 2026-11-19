@@ -36,7 +36,7 @@ jobs:
       - run: npm run build:engine
       - run: npm run build
   chromium-adapter:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -61,10 +61,30 @@ jobs:
           fi
       - name: Install Korean glyphs for matched baseline and current captures
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y fonts-noto-cjk
-          fc-match ':lang=ko'
+          . /etc/os-release
+          test "$ID:$VERSION_ID:${VERSION_CODENAME:-}" = "ubuntu:24.04:noble"
+          expected='1:20230817+repack1-3'
+          if ! dpkg-query -W -f='${Version}' fonts-noto-cjk 2>/dev/null | grep -Fxq "$expected"; then
+            # Ubuntu Noble's package index supplies this exact all-architecture digest.
+            # https://packages.ubuntu.com/noble/all/fonts-noto-cjk/download
+            package='fonts-noto-cjk_20230817+repack1-3_all.deb'
+            digest='7d64b985f6fe128c99eae5610d5c047338e572bdcfb2bb09736be01b824a7f6c'
+            file="$RUNNER_TEMP/$package"
+            for archive in https://archive.ubuntu.com/ubuntu https://security.ubuntu.com/ubuntu https://mirrors.kernel.org/ubuntu; do
+              if curl --fail --location --silent --show-error --connect-timeout 10 --max-time 90 \
+                "$archive/pool/main/f/fonts-noto-cjk/$package" --output "$file" &&
+                echo "$digest  $file" | sha256sum --check --status; then
+                break
+              fi
+            done
+            echo "$digest  $file" | sha256sum --check
+            test "$(dpkg-deb -f "$file" Package)" = 'fonts-noto-cjk'
+            test "$(dpkg-deb -f "$file" Version)" = "$expected"
+            sudo dpkg -i "$file"
+          fi
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = "$expected"
           dpkg-query -W fonts-noto-cjk
+          fc-match ':lang=ko'
       - run: npm run build
       - name: Actual Chromium DOM with synthetic phone input
         run: |
@@ -119,7 +139,7 @@ jobs:
           path: browser-evidence/
           retention-days: 14
   chromium-user-rework:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -144,10 +164,30 @@ jobs:
           fi
       - name: Install Korean glyphs for matched b9d baseline and current captures
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y fonts-noto-cjk
-          fc-match ':lang=ko'
+          . /etc/os-release
+          test "$ID:$VERSION_ID:${VERSION_CODENAME:-}" = "ubuntu:24.04:noble"
+          expected='1:20230817+repack1-3'
+          if ! dpkg-query -W -f='${Version}' fonts-noto-cjk 2>/dev/null | grep -Fxq "$expected"; then
+            # Ubuntu Noble's package index supplies this exact all-architecture digest.
+            # https://packages.ubuntu.com/noble/all/fonts-noto-cjk/download
+            package='fonts-noto-cjk_20230817+repack1-3_all.deb'
+            digest='7d64b985f6fe128c99eae5610d5c047338e572bdcfb2bb09736be01b824a7f6c'
+            file="$RUNNER_TEMP/$package"
+            for archive in https://archive.ubuntu.com/ubuntu https://security.ubuntu.com/ubuntu https://mirrors.kernel.org/ubuntu; do
+              if curl --fail --location --silent --show-error --connect-timeout 10 --max-time 90 \
+                "$archive/pool/main/f/fonts-noto-cjk/$package" --output "$file" &&
+                echo "$digest  $file" | sha256sum --check --status; then
+                break
+              fi
+            done
+            echo "$digest  $file" | sha256sum --check
+            test "$(dpkg-deb -f "$file" Package)" = 'fonts-noto-cjk'
+            test "$(dpkg-deb -f "$file" Version)" = "$expected"
+            sudo dpkg -i "$file"
+          fi
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = "$expected"
           dpkg-query -W fonts-noto-cjk
+          fc-match ':lang=ko'
       - run: npm run build
       - name: MSG0521 dirty transactions, quantity and common UI on current source
         run: node test/browser/rework.smoke.mjs
