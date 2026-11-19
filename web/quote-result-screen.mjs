@@ -97,12 +97,18 @@ export function mountQuoteResult(host, options = {}) {
   const footer = node('footer','actions',stage);
   const first = node('button','secondary',footer), second = node('button','primary',footer);
   first.type = second.type = 'button';
+  const actionMotions=new Map();
+  function bindAction(button,fill){
+    const mount=options.magneticAction || doc.defaultView.OrderMagneticAction;
+    if(mount&&!actionMotions.has(button))actionMotions.set(button,mount(button,{fill,reducedMotion:()=>!motion()}));
+    return actionMotions.get(button);
+  }
   const stop = () => {
     clearTimeout(timer);cancelAnimationFrame(counter);
     activeReel?.remove();activeReel=null;series.proposed.priceValue.classList.remove('oq-rolling');
   };
   const clear = () => {
-    detailRequest++; stop(); brandMotion?.destroy();brandMotion=null;dialog?.close(); model = null; selection = null;
+    detailRequest++; stop(); for(const action of actionMotions.values())action.destroy();actionMotions.clear();brandMotion?.destroy();brandMotion=null;dialog?.close(); model = null; selection = null;
     host.replaceChildren(); delete host.dataset.state;
     // Remove sensitive text even from detached nodes owned by the controller.
     for(const el of [number,lead,ending,sub,...dates,note,basis,...Object.values(series).flatMap(s => [s.name,s.priceValue,s.priceUnit,s.detailName,s.detailValue,s.detailUnit,s.annual,s.rate,s.expiry,s.expiryNote,s.back])]) text(el,'');
@@ -255,7 +261,8 @@ export function mountQuoteResult(host, options = {}) {
     const buttons=active || m.state==='expired' ? [['consult','상담 예약'],detail?['delivery','납품 요청']:['recompare','다시 비교하기']]:
       m.state==='recompare'?[['new','새로운 견적'],['same','동일한 조건']]:m.state==='unverified'?[['back','내 입력 내용'],['verify','사업자 확인']]:[['back','이전 페이지로 돌아가기']];
     [first,second].forEach((b,i)=>{const choice=buttons[i];b.hidden=!choice;if(!choice)return;
-      text(b,choice[1]);b.dataset.action=choice[0];b.onclick=()=>choice[0]==='recompare'?chooseConditions():options.onAction?.(choice[0]);});
+      const action=bindAction(b,i?'var(--blue)':'#f1f3f6');
+      if(action)action.setLabel(choice[1]);else text(b,choice[1]);b.dataset.action=choice[0];b.onclick=()=>choice[0]==='recompare'?chooseConditions():options.onAction?.(choice[0]);});
     tick();
   }
   return {show,clear,chooseConditions,gate:()=>show({state:'unverified'}),empty:()=>show({state:'no-offer'})};

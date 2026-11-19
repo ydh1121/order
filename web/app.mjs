@@ -8,6 +8,7 @@ import {projectQ2Costs} from './q2-cost.mjs';
 import {createQuoteRequestService} from '../src/engine/adapters/quote-request.mjs';
 import {projectQuoteInput,quoteResultView,patchQuoteResult,projectProductResult,projectIssuedQuoteResult} from './quote-result.mjs';
 import code1Jelly from './code1-jelly.mjs';
+import {mountMagneticAction} from './magnetic-action.mjs';
 import {mountQuoteResult,quoteResultScreenCss} from './quote-result-screen.mjs';
 
 
@@ -198,7 +199,7 @@ const resultStyle=document.createElement('style');resultStyle.textContent=quoteR
 const guideKey='order_result_graph_guide_v1';
 const isolatedResult=()=>location.protocol==='file:'||document.documentElement.dataset.qaLabStorage==='ISOLATED_MEMORY';
 const resultScreen=mountQuoteResult($('receipt'),{
- jelly:code1Jelly,brandGuest:!privateProduct,
+ jelly:code1Jelly,brandGuest:!privateProduct,magneticAction:mountMagneticAction,
  get guide(){try{return isolatedResult() || localStorage.getItem(guideKey)!=='seen';}catch{return true;}},
  onGuideSeen(){if(!isolatedResult()){try{localStorage.setItem(guideKey,'seen');}catch{}}},
  onDetail:async()=>issuedId()?readIssuedResult(issuedId()):projectProductResult(quoteService.snapshot()),
