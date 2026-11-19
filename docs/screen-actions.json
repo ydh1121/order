@@ -25,6 +25,11 @@
           "id": "partners",
           "type": "navigate",
           "to": "/partners"
+        },
+        {
+          "id": "order-mode-menu",
+          "label": "Order 견적 모드 선택",
+          "description": "공개 설정에서 간편·상세 견적을 선택한 뒤 기존 모드 전환 확인과 초안 저장을 진행합니다."
         }
       ]
     },
@@ -284,6 +289,19 @@
           "id": "data-frequency-output",
           "type": "readonly-average-frequency",
           "requires": "FLEX plan/quantity or existing variable range; never fixed delivery count"
+        },
+        {
+          "id": "input-review-open",
+          "type": "review-current-form",
+          "route": "/#/form",
+          "requires": "Read active quote mode after Q1 and editor guards. Reuse existing stage navigation, checkpoint and result validation. Optional step=q2 or step=review is consumed on the form.",
+          "controls": {
+            "input-review-back": "Return to current form",
+            "input-review-save": "Existing save-checkpoint transaction, after closing the review",
+            "input-review-result": "Existing to-result validation and proof gate",
+            "q2-back": "Return to Q1 using the current input guard",
+            "q1/q2/q3/q4 수정": "Return to the matching live form accordion without a write"
+          }
         }
       ]
     },
@@ -443,7 +461,7 @@
     },
     {
       "id": "MSG0579_QUOTE_RESULT",
-      "route": "/#result",
+      "route": "/#/result",
       "owner": "web/app.mjs",
       "requestOwner": "src/engine/adapters/quote-request.mjs",
       "responseContract": "quote-response-1",
@@ -460,10 +478,25 @@
           "type": "detach-result-and-return-to-input",
           "requires": "Pending observation detaches; backend cancellation is not claimed; subsequent input revision invalidates late responses",
           "durableWrites": 0
+        },
+        {
+          "id": "oq-series",
+          "type": "toggle-price-detail",
+          "requires": "Existing authenticated snapshot reread for each private drill-down; a rejected scope clears all values."
+        },
+        {
+          "id": "consult / delivery / verify",
+          "type": "navigate-to-authorized-business",
+          "requires": "Private business origin only. Public input remains gated."
+        },
+        {
+          "id": "recompare / same / new / back",
+          "type": "select-recomparison",
+          "requires": "Explicit same/new decision, with prior issued quote preserved."
         }
       ],
       "resultPermissions": "Only a complete validated single quote may display its declared total. Comparison requires ELIGIBLE equal basis and supplied current amount. Unknown period is not monthly; no global minimum, order, stock or delivery grant. Partial, empty, failure and expiry are distinct.",
-      "visualIntegration": "Existing layout retained; rejected R3.1 screens/motion/company tokens not integrated."
+      "visualIntegration": "MSG0585 shared result presentation; authenticated saved quotes are scoped by the private business server."
     },
     {
       "id": "SIMPLE_QUOTE_0581",

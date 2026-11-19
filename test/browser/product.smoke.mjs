@@ -31,6 +31,14 @@ async function editSite(id){await stage('q3');const trigger=page.locator(`[id="q
 async function phoneState(){return page.evaluate(()=>{const c=OrderPhone.instance(document.getElementById('site-contact-phone'));return {value:c.get(),valid:c.parse().valid,contract:typeof c.contract==='function'?c.contract():null,parts:c.parts.filter(p=>!p.hidden).map(p=>p.value)};});}
 async function phonePaste(text){await page.locator('#site-contact-phone').focus();await page.locator('#site-contact-phone').evaluate((el,text)=>{const data=new DataTransfer();data.setData('text/plain',text);el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));},text);}
 async function emailReady(){await page.waitForFunction(()=>window.OrderEmailDomain&&OrderEmailDomain.isSuccess(OrderEmailDomain.status('qa@example.com')),{},{timeout:10000});}
+async function assertActionSpacing(row){
+ const buttons=row.locator('.code1-text-action');
+ const [first,second]=await buttons.evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));
+ assert.ok(first.width>=44&&first.height>=44&&second.width>=44&&second.height>=44,'both actions meet 44px targets');
+ assert.ok(second.left-first.right>=7.5,'row actions retain an eight-pixel gap');
+ assert.ok(Math.abs(first.y+first.height/2-second.y-second.height/2)<=2,'primary hit area and secondary action share a center line');
+ assert.ok(await row.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'row fits its content width');
+}
 async function editAllocation(){await stage('q4');const toggle=page.locator('[data-q4-body-toggle="qa-line"]');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('[data-edit-allocation="qa-allocation"]').click();await page.locator('#q4-regular-dialog[open]').waitFor();}
 async function allocationSite(index){const trigger=page.locator(`[data-acc="site-${index}"]`);if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();}
 
@@ -128,6 +136,20 @@ try{
   await page.reload();await stage('q3');assert.deepEqual((await persisted()).locations,saved);
   await editSite(saved[0].id);assert.equal((await phoneState()).value,'010-2345-6789');await page.locator('#cancel-site').click();await closed('site-editor-dialog');
  });
+ await check('P04B_FIELD_ERROR_DESCRIPTION_AND_FOCUS_WITHOUT_LAYOUT_SHIFT',async()=>{
+  const site=(await persisted()).locations[0];await editSite(site.id);
+  const email=page.locator('#site-email'),group=page.locator('#site-editor [data-q3-field="email"]');
+  const before=await group.evaluate(el=>el.getBoundingClientRect().height);
+  await email.fill('not-an-email');await page.locator('#save-site').click();
+  assert.equal(await email.getAttribute('aria-invalid'),'true');
+  const note=page.locator('#'+await email.getAttribute('aria-describedby'));
+  assert.match(await note.textContent(),/이메일/);
+  const metrics=await note.evaluate(el=>({clip:getComputedStyle(el).clipPath,height:el.getBoundingClientRect().height}));
+  assert.equal(metrics.clip,'inset(50%)');assert.ok(metrics.height<=1);
+  assert.equal(await group.evaluate(el=>el.getBoundingClientRect().height),before);
+  assert.equal(await email.evaluate(el=>el===document.activeElement),true);
+  await page.locator('#cancel-site').click();await closed('site-editor-dialog');
+ });
  await check('P05_Q4_SYNTHETIC_RESTORE_CANCEL_ATOMICITY',async()=>{
   const fixture=q4Fixture();await seedDurable(fixture);await page.reload();await page.locator('[data-open="q4"]').waitFor();await emailReady();
   const prior=(await persisted()).allocations;await editAllocation();await page.locator('[data-qty="0:base"]').fill('11');await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
@@ -135,14 +157,91 @@ try{
  await check('P06_Q4_SYNTHETIC_RESTORE_SAVE_AND_RELOAD',async()=>{
   await editAllocation();await page.locator('[data-qty="0:base"]').fill('12');await page.locator('#q4-regular-save').click();await closed('q4-regular-dialog');
   assert.equal((await persisted()).allocations[0].qty,'12');await page.reload();await editAllocation();assert.equal(await page.locator('[data-qty="0:base"]').inputValue(),'12');
+  const field=page.locator('[data-qty="0:base"]'),descriptor=await field.getAttribute('aria-describedby');
+  assert.ok(descriptor&&await page.locator('#'+descriptor).evaluate(el=>el.classList.contains('ui-feedback-sr')));
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');
  });
  await check('P07_Q4_MONTH_31_AND_LAST_REMAIN_DISTINCT_CANCELLED',async()=>{
   const prior=(await persisted()).allocations;await editAllocation();await page.locator('[data-choice="delivery"][data-value="FIXED"]').click();
-  await page.locator('[data-combo="period"]').click();await page.locator('[data-combo-choice="period"][data-value="매월"]').click();
+  const modalFields=page.locator('#q4-regular-fields');
+  const controlLayout=()=>modalFields.evaluate(root=>Array.from(root.querySelectorAll('input,button')).filter(el=>el.getClientRects().length).map(el=>[el.offsetLeft,el.offsetTop,el.offsetWidth,el.offsetHeight]));
+  const layout=await controlLayout();
+  await page.locator('[data-combo="period"]').click();
+  const overlay=page.locator('#qa-dropdown-host');
+  assert.equal(await overlay.evaluate(el=>getComputedStyle(el).position),'absolute');
+  assert.deepEqual(await controlLayout(),layout,'opening period menu leaves the fields in their original positions');
+  await overlay.locator('[data-combo-choice="period"][data-value="매월"]').click();
   const date=page.locator('[data-month-date="date"]');await date.fill('32');assert.equal(await date.inputValue(),'31');await date.press('Enter');
   await page.locator('[data-combo="date"]').click();await page.locator('[data-combo-choice="date"][data-value="말일"]').click();assert.equal(await date.inputValue(),'말일');
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
+ });
+ await check('P07B_Q3_Q4_SAVED_QUANTITIES_CONTACT_ACTIONS_AND_SPACING',async()=>{
+  const fixture=multiSiteFixture();
+  Object.assign(fixture.allocations[0],{variableQty:true,qtyMin:'8',qtyMax:'12'});
+  Object.assign(fixture.allocations[1],{mode:'ONCE',oneTimeDeliveryQty:'17'});
+  await seedDurable(fixture);await page.reload();await emailReady();
+  const originalViewport=page.viewportSize();
+  for(const width of [320,390,1440]){
+   await page.setViewportSize({width,height:844});
+   await stage('q3');
+   const q3Quantities=[];
+   for(const allocation of fixture.allocations){
+    const card=page.locator(`#q3-site-${allocation.locationId}`);
+    const toggle=card.locator(':scope > .accordion-trigger');
+    if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
+    assert.equal(await card.locator('.q3-contact-grid [data-contact-copy]').count(),1);
+    assert.equal(await card.locator('.q3-address-row [data-site-edit]').count(),1);
+    const item=card.locator(`[data-q3-item="${allocation.id}"]`);
+    q3Quantities.push(await item.locator('[data-q3-summary-fields]').innerText());
+    await assertActionSpacing(item);
+   }
+   assert.deepEqual(q3Quantities,['월 50판 · 1회 8~12판','1회 17판']);
+   await page.locator('#q3-sites').screenshot({path:join(evidence,`q3-saved-cards-${width}.png`)});
+   await stage('q4');
+   const toggle=page.locator('[data-q4-body-toggle="qa-line"]');
+   if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
+   for(const [index,allocation] of fixture.allocations.entries()){
+    const row=page.locator(`[data-allocation="${allocation.id}"]`);
+    assert.equal(await row.locator('.allocation-quantity').innerText(),q3Quantities[index]);
+    await assertActionSpacing(row);
+   }
+   await page.locator('#allocations-delivery').screenshot({path:join(evidence,`q4-saved-rows-${width}.png`)});
+  }
+  await page.setViewportSize(originalViewport);
+ });
+ await check('P07C_SAVED_STACK_GESTURES_EDIT_TAGS_AND_CANCEL',async()=>{
+  const fixture=multiSiteFixture();
+  fixture.open='q1';await seedDurable(fixture);await page.reload();await emailReady();await stage('q1');
+  const prior=await persisted();
+  const sku=page.locator('[data-line-id="qa-line"]');
+  assert.deepEqual(await sku.locator('.saved-quantity-tags>span').allTextContents(),['월 200판','월 구매액 1,600,000원']);
+  async function swipe(target,dx,dy){
+   await target.scrollIntoViewIfNeeded();
+   const box=await target.boundingBox();
+   const x=box.x+box.width/2,y=box.y+box.height/2;
+   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:5});await page.mouse.up();
+  }
+  for(const [name,selector] of [['q1','[data-edit="qa-line"]'],['q3','[data-site-edit="qa-site"]'],['q4','[data-edit-allocation="qa-allocation"]']]){
+   await stage(name);
+   if(name!=='q1'){
+    const toggle=name==='q3'?page.locator('#q3-site-qa-site > .accordion-trigger'):page.locator('[data-q4-body-toggle="qa-line"]');
+    if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();
+   }
+   const primary=page.locator(selector);
+   const row=primary.locator('xpath=ancestor::*[@data-saved-row][1]');
+   await swipe(primary,-50,2);
+   assert.equal(await row.getAttribute('data-saved-open'),'true');
+   assert.equal(await page.locator('dialog[open]').count(),0);
+   await swipe(primary,50,2);
+   assert.equal(await row.getAttribute('data-saved-open'),'false');
+   await primary.click();
+   const dialog={q1:'sku-dialog',q3:'site-editor-dialog',q4:'q4-regular-dialog'}[name];
+   await page.locator('#'+dialog+'[open]').waitFor();
+   await page.locator({q1:'#cancel-sku',q3:'#cancel-site',q4:'#q4-regular-cancel'}[name]).click();await closed(dialog);
+  }
+  assert.deepEqual((await persisted()).allocations,prior.allocations,'revealing an action and cancelling edits leave the saved allocations unchanged');
+  fixture.lines[0].qty='';fixture.lines[0].price='';await seedDurable(fixture);await page.reload();await stage('q1');
+  assert.equal(await page.locator('[data-line-id="qa-line"] .saved-quantity-tags').count(),0);
  });
  await check('P08_C28_Q4_MULTISITE_DERIVED_REMAINDER_DIRECT_CAP_CANCEL',async()=>{
   const fixture=multiSiteFixture();await seedDurable(fixture);await page.reload();await emailReady();
@@ -181,6 +280,19 @@ try{
   assert.equal(await page.locator('#q3-site-qa-site-b').getAttribute('data-complete'),'false');assert.equal(await page.locator('#section-q3').getAttribute('data-complete'),'false','copying contacts must not complete an address-pending site');
   await page.reload();await emailReady();await stage('q3');assert.deepEqual((await persisted()).locations,expected.locations);assert.deepEqual((await persisted()).allocations,expected.allocations);
   assert.equal(await page.locator('#q3-site-qa-site-b').getAttribute('data-complete'),'false');assert.equal(await page.locator('#section-q3').getAttribute('data-complete'),'false');
+ });
+ await check('B01_CODE1_GUEST_RANDOM_MOTION_AND_REST_INTERVAL',async()=>{
+  const brandPage=await context.newPage();
+  try{
+   await brandPage.emulateMedia({reducedMotion:'no-preference'});await brandPage.goto(base);
+   const brand=brandPage.locator('.header>.brand'),svg=brand.locator('svg');
+   await brand.scrollIntoViewIfNeeded();await brandPage.waitForFunction(()=>document.documentElement.dataset.storageReady==='true');
+   await svg.evaluate(el=>{window.__orderBrandTrace=[];el.addEventListener('code1:statechange',e=>window.__orderBrandTrace.push(e.detail));});
+   await brand.press('Enter');
+   await brandPage.waitForFunction(()=>window.__orderBrandTrace.some(s=>s.playing));
+   await brandPage.waitForFunction(()=>window.__orderBrandTrace.some(s=>!s.playing&&s.nextIn>=9900&&s.nextIn<=15000));
+   assert.equal(await brandPage.locator('[role=menu]:visible').count(),0);
+  }finally{await brandPage.close();}
  });
  await check('P11_BROWSER_ERRORS_NETWORK_SCOPE_AND_MOBILE_OVERFLOW',async()=>{
   assert.deepEqual(pageErrors,[]);assert.deepEqual(externalBlocked,[]);assert.deepEqual(transportErrors,[]);assert.ok(network.length>0,'the DNS transport fixture must actually have been exercised');

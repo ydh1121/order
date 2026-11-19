@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "7a35e0058d4af97a213295d83bd040f007a3334e44d1b3d49d64a06dbcd2719d"
+      "sha256": "db1e56d269f710d135f79b80b5143914323e5f74c99f99d23c494242318e62a2"
     },
     {
       "source": "web/common-ui.mjs",
@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "0b461a3b0dca212abc9c3f645f07d279d5d47040fb74989971f0ebcf95f75acc"
+      "sha256": "7ca8cf1dd5ce1ebccd81a66cce229282623c15d49ae40587535b46e356fd9bc2"
     },
     {
       "source": "web/main.mjs",
@@ -77,7 +77,7 @@
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "e08579f01ce513ac57c0066fb1f83acb77fa0ead1f3e978aa38622667113053f"
+      "sha256": "bd69048387195ca92ef540f1554bd53378dded08115ad3466d7ebe73362d0e54"
     },
     {
       "source": "web/quantity-contract.mjs",
@@ -87,12 +87,12 @@
     {
       "source": "web/storage.mjs",
       "output": "storage.mjs",
-      "sha256": "b6aee51195023d262270e84165e077f4a9d1a5a4c71dc19c026cfd8717d8b1a2"
+      "sha256": "7bbe65569b34ef9f1532d77735293d7dc9c49ca9ef3fb8a6790dd6b2eb92b836"
     },
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "d73fc6a99a0a9c062d97385ba9cb877677881ce3aefb89582c0768971103b977"
+      "sha256": "fbe176a9d7f2b1da071e605280c2ffd9bf029acf9bbfad7289caeaf97cf43cf3"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -112,7 +112,7 @@
     {
       "source": "web/date-field.mjs",
       "output": "date-field.mjs",
-      "sha256": "d8840baedda5893c3a076fdc28b4946a97695c7e118c1857646ebbcf9cbe7402"
+      "sha256": "6ac1d7d72319889287b5530d9ef291d1977b52f7cf932ba08a34f310f0113958"
     },
     {
       "source": "web/date-field.css",
@@ -137,7 +137,7 @@
     {
       "source": "web/quote-result.mjs",
       "output": "quote-result.mjs",
-      "sha256": "33bce87145257df0766fbeb48cd9ce568685cbb367680091f1c6f0250067e05b"
+      "sha256": "d1f984537ca75c66ff3d1cab1213fa272aed416bfb950473281918d38c665bac"
     },
     {
       "source": "web/simple-quote-contract.mjs",
@@ -147,7 +147,7 @@
     {
       "source": "web/simple-quote-ui.mjs",
       "output": "simple-quote-ui.mjs",
-      "sha256": "3c00da8bc8d92bf57967e37243243d93997b6dfe7c730fd028920c40a5564a53"
+      "sha256": "517aed632daab802fd99b38745254feef6d31ab1cc4684179954d4a706f32e3a"
     },
     {
       "source": "web/quote-document.mjs",
@@ -187,7 +187,7 @@
     {
       "source": "web/brand.mjs",
       "output": "brand.mjs",
-      "sha256": "892e3c4c2ec9aa42ccd39cf32bd04a427f08fe4980345a4b39c735f981efc57d"
+      "sha256": "58187403c2ac218ce6560df57d1b09240a0558c30742faa7535b95b6825ea5b0"
     },
     {
       "source": "web/code1-jelly.mjs",
@@ -197,7 +197,27 @@
     {
       "source": "web/quote-mode-switch.mjs",
       "output": "quote-mode-switch.mjs",
-      "sha256": "0ef07026f3f1914453c48b6f1f51e493cec3f8a4de12de78213a1ecc2aa8cd7f"
+      "sha256": "a34f0be1dd3505a4db6dcdcdcb9dbe9327ee24b721f1fc5a61d85e96473313cf"
+    },
+    {
+      "source": "web/order-menu.mjs",
+      "output": "order-menu.mjs",
+      "sha256": "4e433229ab138c3b8a0eb4d79ed99f244948fbcc655bb1f8787cb824897b6160"
+    },
+    {
+      "source": "web/quote-input-review.mjs",
+      "output": "quote-input-review.mjs",
+      "sha256": "317145c27c5495fdcaea1fd5c0ff826ce9ca69b5a105d048ce9c36bac0404476"
+    },
+    {
+      "source": "web/quote-result-screen.mjs",
+      "output": "quote-result-screen.mjs",
+      "sha256": "bb6a406733fd81a9e4ad4b336c26920dcfc532754270a7a9863ddb2c6e49eeab"
+    },
+    {
+      "source": "web/magnetic-action.mjs",
+      "output": "magnetic-action.mjs",
+      "sha256": "e42db57c16e32db5ddcba68362d1f738634b371f46623d68affbd0afe3e3db77"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",
@@ -207,6 +227,11 @@
       "source": "functions/api/address/search.js",
       "route": "/api/address/search",
       "sha256": "88909d4d22418fe4317d283db7ae6b18792082abd5b6ea2338125f1276b83543"
+    },
+    {
+      "source": "functions/api/order/features.js",
+      "route": "/api/order/features",
+      "sha256": "bdb8b129c202c45d1dc94bc5b47316d06d04d28919b97260c32426f2e8188a84"
     }
   ],
   "approvedIntegration": {

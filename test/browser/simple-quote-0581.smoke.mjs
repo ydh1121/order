@@ -85,6 +85,40 @@ try{
  const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});report.runtime={browser:browser.version(),node:process.version,platform:process.platform};report.status='RUNNING';
 
 
+ for(const [mode,width] of [['simple',390],['detailed',1440]]){
+  await check('S85_INPUT_REVIEW_'+mode.toUpperCase(),async({p,row})=>{
+   const prefix=mode==='simple'?'?mode=simple&':'?';
+   await p.goto(base+'/'+prefix+'step=review#/form');await ready(p);
+   assert.equal(await p.locator('#input-review-dialog').isVisible(),false);
+   assert.equal(await p.locator('#section-q1').getAttribute('data-open'),'true');
+   assert.equal(new URL(p.url()).searchParams.has('step'),false);
+   for(const [name,value] of [['housing','4'],['size','특란'],['pack','30']]){
+    await p.locator('[data-pick="'+name+'"][data-value="'+value+'"]').click();
+   }
+   await ready(p);
+   await p.goto(base+'/'+prefix+'step=q2#/form');await ready(p);
+   await p.waitForFunction(()=>document.querySelector('#section-q2').dataset.open==='true');
+   await p.locator('[data-line-qty]').fill('17');await p.locator('[data-line-price]').fill('8000');await ready(p);
+   const key=mode==='simple'?SIMPLE_KEY:DETAIL_KEY,before=await raw(p,key);
+   await p.locator('#input-review-open').click();
+   const dialog=p.locator('#input-review-dialog');await dialog.waitFor();
+   assert.deepEqual(await dialog.locator('h3').allTextContents(),['계란 규격','월 구매정보',mode==='simple'?'사업장 수와 지역':'납품 사업장','주문과 납품 조건']);
+   assert.match(await dialog.innerText(),/월 17판/);assert.match(await dialog.innerText(),/8,000원/);
+   assert.equal(await raw(p,key),before);await capture(p,'input-review-'+mode+'-'+width);
+   await dialog.getByRole('button',{name:'월 구매정보 수정'}).click();await dialog.waitFor({state:'hidden'});
+   await p.waitForFunction(()=>document.querySelector('#section-q2').dataset.open==='true');
+   await p.locator('#q2-back').click();await p.waitForFunction(()=>document.querySelector('#section-q1').dataset.open==='true');
+   await p.goto(base+'/'+prefix+'step=review#/form');await ready(p);await dialog.waitFor();
+   await dialog.getByRole('button',{name:'임시저장'}).click();
+   await p.waitForFunction(()=>document.querySelector('#checkpoint-status').dataset.state==='saved');
+   await p.reload();await ready(p);
+   await p.locator('#input-review-open').click();await dialog.waitFor();assert.match(await dialog.innerText(),/월 17판/);
+   await dialog.getByRole('button',{name:'납품가 비교 결과 보기'}).click();await dialog.waitFor({state:'hidden'});
+   assert.equal(await p.locator('#page-result').isVisible(),false);
+   assert.match(await p.locator('#to-result').innerText(),/미완료|확인/);
+   row.observed={width,mode,groups:4,q1Guard:true,restoredQuantity:'17판',packPrice:'8000',saveReceipt:true,invalidResultBlocked:true};
+  },{mode,width});
+ }
  await check('S83_01_DETAILED_DEFAULT_MULTI_SKU_CURRENT_WRITE_SCHEMA10',async({p})=>{
   assert.notEqual(await p.locator('html').getAttribute('data-quote-mode'),'simple');await start(p);
   for(const [field,value]of [['housing','4'],['size','특란'],['pack','30']])await p.locator(`[data-pick="${field}"][data-value="${value}"]`).click();

@@ -75,3 +75,62 @@ export function patchQuoteResult(document,view) {
   const outcome=document.getElementById('quote-outcome');outcome?.classList.toggle('is-unavailable',view.unavailable);outcome?.classList.toggle('is-loss',view.loss);
   document.getElementById('quote-supply-value')?.classList.toggle('comparison-unavailable',view.supply==='비교 조건 확인 필요');
 }
+
+/** A retrieved, scoped issued snapshot can be shown without a local form draft.
+ * Amounts come only from its single complete customer projection. */
+export function projectIssuedQuoteResult(snapshot, now=Date.now()) {
+  const end=Date.parse(snapshot?.expiresAt), issued=Date.parse(snapshot?.issuedAt);
+  if (!snapshot?.id || !Number.isFinite(end)) return {state:'unavailable'};
+  if (end<=now || snapshot.status==='EXPIRED') return {state:'expired',end,issued};
+  if (snapshot.status!=='ISSUED' || !Number.isFinite(issued) || issued>=end) return {state:'unavailable'};
+  const response=snapshot.response;
+  if (response?.status!=='OK'|| response.completion!=='COMPLETE' || response.quotes?.length!==1) return {state:'unavailable'};
+  const q=response.quotes[0], projected=projectDisplayQuote(q);
+  if (projected.state==='unavailable') return projected;
+  const info=snapshot.presentation||{}, view={...projected,end,issued};
+  for(const key of ['productLabel','quantityLabel','basis'])
+    if(typeof info[key]==='string' && info[key].length<=120) view[key]=info[key];
+  if(Number.isSafeInteger(info.annualCount) && info.annualCount>0) view.annualCount=info.annualCount;
+  for(const key of ['annualSaving','savingRate','currentPremium','unitDifference'])
+    if(typeof info[key]==='string' && /^\d{1,100}(?:\.\d{1,12})?$/.test(info[key])) view[key]=info[key];
+  return view;
+}
+
+function projectDisplayQuote(q) {
+  const exact=(value,signed=false)=>{
+    if (!value || !Number.isInteger(value.scale)||value.scale<0||value.scale>12||
+        typeof value.minorUnits!=='string'||!/^[-]?\d{1,100}$/.test(value.minorUnits))return null;
+    const units=BigInt(value.minorUnits);
+    if (!signed && units<0n) return null;
+    const digits=(units<0n?-units:units).toString().padStart(value.scale+1,'0');
+    const expected=(units<0n?'-':'')+(value.scale?digits.slice(0,-value.scale)+'.'+digits.slice(-value.scale):digits);
+    return value.decimal===expected?units:null;
+  };
+  const proposed=exact(q?.total);
+  if (q?.currency!=='KRW'||proposed===null) return {state:'unavailable'};
+  const view={state:'offer',proposed:q.total.decimal};
+  const current=exact(q.comparison?.current),diff=exact(q.comparison?.difference,true);
+  if(q.comparisonEligibility!=='ELIGIBLE' || current===null || diff===null ||
+     q.comparison.current.scale!==q.total.scale || q.comparison.difference.scale!==q.total.scale || current-proposed!==diff) return view;
+  const abs=diff<0n?-diff:diff;
+  const percentage=base=>{
+    if (base===0n) return undefined;
+    const hundredths=(abs*10000n+base/2n)/base;
+    return String(hundredths/100n)+'.'+String(hundredths%100n).padStart(2,'0');
+  };
+  return {...view, state:diff>0n?'saving':diff<0n?'current-lower':'equal',
+    current:q.comparison.current.decimal,difference:q.comparison.difference.decimal.replace(/^-/,''),
+    savingRate:percentage(current),currentPremium:percentage(proposed)};
+}
+
+export function projectProductResult(snapshot) {
+  if (snapshot?.status==='COMPLETE' && snapshot.proof?.amountAllowed && snapshot.response?.quotes?.length===1) {
+    const q=snapshot.response.quotes[0], result=projectDisplayQuote(q),end=Date.parse(q.validUntil);
+    return Number.isFinite(end)?{...result,end}:result;
+  }
+  if (['PENDING','PARTIAL','LONG_PENDING'].includes(snapshot?.status)) return {state:'pending'};
+  if (snapshot?.status==='EMPTY') return {state:'no-offer'};
+  if (snapshot?.status==='EXPIRED') return {state:'expired'};
+  if (snapshot?.response?.reasonCodes?.some(code=>['APPROVED_SOURCE_NOT_CONNECTED','SITE_NOT_AUTHORIZED','SOURCE_APPROVAL_REQUIRED'].includes(code))) return {state:'unverified'};
+  return {state:'unavailable'};
+}

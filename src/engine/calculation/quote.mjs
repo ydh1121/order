@@ -139,7 +139,7 @@ export function calculateQuote(request) {
       }
       quantitiesByOffer.set(offer.id,add(quantitiesByOffer.get(offer.id) || exact(0),pricedQuantity));
       const unitPrice = exact(offer.unitPrice);
-      if (unitPrice.n <= 0n) failure('UNIT_PRICE_NOT_POSITIVE');
+      if (unitPrice.n < 0n || (unitPrice.n === 0n && offer.explicitZero !== true)) failure('UNIT_PRICE_NOT_POSITIVE');
       if (currency !== null && currency !== offer.currency) failure('CURRENCY_CONVERSION_UNRESOLVED', 'POLICY_UNRESOLVED');
       currency = offer.currency;
       const amount = multiply(pricedQuantity, unitPrice);

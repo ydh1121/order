@@ -1,3 +1,4 @@
+import {mountOrderMenu} from './order-menu.mjs';
 // Both modes retain their own confirmed draft. The opt-in handoff copies the
 // selected egg and its raw purchase inputs, leaving site and order data private.
 export function copySimpleLine(source,destination){
@@ -20,6 +21,7 @@ export function bindQuoteModeSwitch({simple,dialog,trigger,shell,source,guard,sa
  const option=dialog.querySelector('[data-mode-option]'),row=option.closest('label');
  const cancel=dialog.querySelector('[data-mode-cancel]'),confirm=dialog.querySelector('[data-mode-confirm]');
  const error=dialog.querySelector('[data-mode-error]'),other=simple?'상세 견적':'간편 견적';
+ mountOrderMenu({simple,switchMode:()=>trigger.click()});
  trigger.textContent=other+'으로 전환';
  dialog.querySelector('[data-mode-title]').textContent=other+'으로 전환할까요?';
  dialog.querySelector('[data-mode-option-label]').textContent=simple?'선택한 계란 규격과 구매정보도 가져가기':'다시 표시하지 않기';

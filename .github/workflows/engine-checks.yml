@@ -177,7 +177,7 @@ jobs:
           retention-days: 14
 
   chromium-canonical-q4:
-    # Identical Noto CJK and Noble mirror contract for before/after capture.
+    # Pin the OS and Noto CJK version for identical before/after capture.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -205,24 +205,26 @@ jobs:
         run: |
           . /etc/os-release
           test "$ID:$VERSION_ID:${VERSION_CODENAME:-}" = "ubuntu:24.04:noble"
-          sudo python3 - <<'PY'
-          from pathlib import Path
-          import re
-          path = Path('/etc/apt/apt-mirrors.txt')
-          original = path.read_text()
-          updated, count = re.subn(
-              r'(?m)^http://azure\.archive\.ubuntu\.com/ubuntu/?(?=\s|$)',
-              'https://archive.ubuntu.com/ubuntu/',
-              original,
-          )
-          if count != 1:
-              raise SystemExit('Unexpected Ubuntu mirror configuration')
-          path.write_text(updated)
-          PY
-          font_apt_options=(-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=1)
-          sudo apt-get "${font_apt_options[@]}" -o APT::Update::Error-Mode=any update -qq
-          sudo apt-get "${font_apt_options[@]}" install -y 'fonts-noto-cjk=1:20230817+repack1-3'
-          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
+          expected='1:20230817+repack1-3'
+          if ! dpkg-query -W -f='${Version}' fonts-noto-cjk 2>/dev/null | grep -Fxq "$expected"; then
+            # Ubuntu Noble's package index supplies this exact all-architecture digest.
+            # https://packages.ubuntu.com/noble/all/fonts-noto-cjk/download
+            package='fonts-noto-cjk_20230817+repack1-3_all.deb'
+            digest='7d64b985f6fe128c99eae5610d5c047338e572bdcfb2bb09736be01b824a7f6c'
+            file="$RUNNER_TEMP/$package"
+            for archive in https://archive.ubuntu.com/ubuntu https://security.ubuntu.com/ubuntu https://mirrors.kernel.org/ubuntu; do
+              if curl --fail --location --silent --show-error --connect-timeout 10 --max-time 90 \
+                "$archive/pool/main/f/fonts-noto-cjk/$package" --output "$file" &&
+                echo "$digest  $file" | sha256sum --check --status; then
+                break
+              fi
+            done
+            echo "$digest  $file" | sha256sum --check
+            test "$(dpkg-deb -f "$file" Package)" = 'fonts-noto-cjk'
+            test "$(dpkg-deb -f "$file" Version)" = "$expected"
+            sudo dpkg -i "$file"
+          fi
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = "$expected"
           dpkg-query -W fonts-noto-cjk
           fc-match ':lang=ko'
       - run: npm run build

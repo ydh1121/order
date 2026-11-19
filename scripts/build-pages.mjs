@@ -12,6 +12,7 @@ const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const safeRelative=value=>typeof value==='string'&&value&&!value.includes('\\')&&!value.split('/').some(p=>!p||p==='.'||p==='..')&&!value.startsWith('/');
 const addressFunction='functions/api/address/search.js';
 const addressRoute='/api/address/search';
+const functionRoutes=new Map([[addressFunction,addressRoute],['functions/api/order/features.js','/api/order/features']]);
 async function readInside(root,path){
   if(!safeRelative(path))throw Error('BUILD_PATH_INVALID');
   const full=resolve(root,path),real=await realpath(full);
@@ -23,7 +24,7 @@ async function readInside(root,path){
 /** Functions are compiled by Pages from the repository, never copied as public assets. */
 export async function reviewedFunctions(root,config){
   const declared=config.functions??[];
-  if(!Array.isArray(declared)||declared.length>1||declared.some(item=>item.source!==addressFunction||item.route!==addressRoute||!/^[a-f0-9]{64}$/.test(item.sha256??'')))throw Error('BUILD_FUNCTION_SCOPE_INVALID');
+  if(!Array.isArray(declared)||declared.length>functionRoutes.size||new Set(declared.map(item=>item.source)).size!==declared.length||declared.some(item=>!functionRoutes.has(item.source)||functionRoutes.get(item.source)!==item.route||!/^[a-f0-9]{64}$/.test(item.sha256??'')))throw Error('BUILD_FUNCTION_SCOPE_INVALID');
   const found=[];
   async function scan(path){
     let entries;try{entries=await readdir(resolve(root,path),{withFileTypes:true});}catch(error){if(error.code==='ENOENT')return;throw error;}
@@ -104,7 +105,7 @@ export async function buildPages({root=repositoryRoot,engineOnly=false,outputDir
   }
   const reference=await buildBrowserReference({now});
   files.set('assets/iana-reference.json',Buffer.from(JSON.stringify(reference)+'\n'));
-  if(serverFunctions.length)files.set('_routes.json',Buffer.from(JSON.stringify({version:1,include:[addressRoute],exclude:[]},null,2)+'\n'));
+  if(serverFunctions.length)files.set('_routes.json',Buffer.from(JSON.stringify({version:1,include:serverFunctions.map(item=>item.route),exclude:[]},null,2)+'\n'));
   const sha=commitSha??process.env.CF_PAGES_COMMIT_SHA??execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   if(!/^[a-f0-9]{40}$/.test(sha))throw Error('BUILD_COMMIT_SHA_INVALID');
   const fileList=[...files].map(([path,bytes])=>({path,bytes:bytes.length,gzipBytes:gzipSync(bytes).length,sha256:digest(bytes)})).sort((a,b)=>a.path.localeCompare(b.path));

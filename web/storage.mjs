@@ -200,13 +200,19 @@ export function createBrowserStorage(options={}){
   const {expectedRevision,expectedToken,transactionId,canCommit=()=>true}=settings;let data;
   try{if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0||typeof expectedToken!=='string'||!expectedToken||typeof canCommit!=='function')fail('transaction','OPTIONS');id(transactionId,'transactionId');data=operation==='reset'?null:projectStoredPayload(payload);}catch(error){return output(false,'INVALID_DATA',last,{reason:error.reason||'TRANSACTION_OPTIONS',path:error.path});}
   // Snapshot before waiting: subsequent caller edits never leak into this transaction.
-  data=data===null?null:clone(data);let fingerprint;try{fingerprint=await digest(canonical({operation,data}));}catch{return output(false,'UNAVAILABLE',last,{reason:'SHA256_UNAVAILABLE'});}
-  return exclusive(async()=>{
+  data=data===null?null:clone(data);
+  const commitWithReservation=async mayWrite=>{
+   let fingerprint;try{fingerprint=await digest(canonical({operation,data}));}catch{return output(false,'UNAVAILABLE',last,{reason:'SHA256_UNAVAILABLE'});}
+   return exclusive(async()=>{
    const current=await read();const damaged=!!current.error&&['CORRUPT','UNSUPPORTED'].includes(current.error.status)&&typeof current.raw==='string';
    if(current.error&&!(damaged&&operation==='reset'))return current.error;
    const previous=current.envelope??null,revision=previous?.revision??current.revision??0;
    const receipt=previous?.receipts.find(item=>item.transactionId===transactionId);
    if(receipt){if(receipt.operation!==operation||receipt.fingerprint!==fingerprint)return output(false,'CONFLICT',previous,{reason:'TRANSACTION_ID_REUSED'});if(receipt.revision!==revision)return output(false,'CONFLICT',previous,{reason:'TRANSACTION_SUPERSEDED'});try{if(canCommit()!==true)return output(false,'CANCELLED',previous,{reason:'CALLER_CANCELLED'});}catch{return output(false,'CANCELLED',previous,{reason:'CALLER_CANCELLED'});}return output(true,'IDEMPOTENT',previous,{receiptRevision:receipt.revision});}
+   // A writer already submitting this revision may have updated a different
+   // renderer's Storage cache. A losing reservation may replay its known
+   // receipt, but must never issue another write from that cached base.
+   if(!mayWrite)return output(false,'CONFLICT',previous,{reason:'CONCURRENT_WRITER',versionToken:current.versionToken,revision});
    if(expectedToken!==current.versionToken||expectedRevision!==revision)return output(false,'CONFLICT',previous,{reason:'REVISION_MISMATCH',versionToken:current.versionToken,revision});
    if(!damaged&&revision===Number.MAX_SAFE_INTEGER)return output(false,'WRITE_FAILED',previous,{reason:'REVISION_EXHAUSTED'});
    if(!previous&&!damaged&&operation==='commit'){const old=legacy();if(old.error)return {...old.error,versionToken:'ABSENT'};if(old.key)return output(false,'CONFLICT',null,{reason:'MIGRATION_REQUIRED',versionToken:'ABSENT'});}
@@ -214,7 +220,14 @@ export function createBrowserStorage(options={}){
    const next=revision<Number.MAX_SAFE_INTEGER?revision+1:1,receipts=[...(previous?.receipts??[]),{transactionId,fingerprint,revision:next,operation}].slice(-MAX_RECEIPTS);
    const result=await write({schemaVersion:STORAGE_SCHEMA_VERSION,generation:epoch,revision:next,state:operation==='reset'?'reset':'data',data,receipts,migration:previous?.migration??null,updatedAt:0},previous,canCommit);
    if(damaged&&result.ok)result.recoveredFrom=current.error.status;return result;
-  });
+   });
+  };
+  // Native Web Locks can reserve a revision without queuing competing writers.
+  // Injected single-process adapters already serialize a single Storage object.
+  if(typeof locks?.query!=='function')return commitWithReservation(true);
+  const revisionLock=lockName+'-write-'+expectedRevision+'-'+expectedToken;
+  try{return await locks.request(revisionLock,{mode:'exclusive',ifAvailable:true},lock=>commitWithReservation(Boolean(lock)));}
+  catch{return output(false,'UNAVAILABLE',last,{reason:'LOCK_REQUEST_FAILED'});}
  }
  return Object.freeze({load,inspectCurrent,commit:(payload,settings)=>mutate('commit',payload,settings),reset:settings=>mutate('reset',null,settings),key,lockName});
 }
