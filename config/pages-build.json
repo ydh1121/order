@@ -42,7 +42,7 @@
     {
       "source": "web/app.mjs",
       "output": "app.mjs",
-      "sha256": "7094d098733e3c85ba5cf589c38eb80560c0b55640940d6f0eff2ee34ef28dee"
+      "sha256": "06172829dc189c4f4883d4c0bed774601fed8b3e952081e5612af3823a526c63"
     },
     {
       "source": "web/common-ui.mjs",
@@ -57,7 +57,7 @@
     {
       "source": "web/index.html",
       "output": "index.html",
-      "sha256": "1da64bb71decf4f8db3e75df667a2f71b137e9f605081e29c7ce8280924a9cdc"
+      "sha256": "7ca8cf1dd5ce1ebccd81a66cce229282623c15d49ae40587535b46e356fd9bc2"
     },
     {
       "source": "web/main.mjs",
@@ -77,7 +77,7 @@
     {
       "source": "web/q4-review.mjs",
       "output": "q4-review.mjs",
-      "sha256": "e08579f01ce513ac57c0066fb1f83acb77fa0ead1f3e978aa38622667113053f"
+      "sha256": "bd69048387195ca92ef540f1554bd53378dded08115ad3466d7ebe73362d0e54"
     },
     {
       "source": "web/quantity-contract.mjs",
@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "9bb159a540e2fecc4d5123a111caff1a0b37596cf0ccbba5f7ec29e4abb0ea3b"
+      "sha256": "fbe176a9d7f2b1da071e605280c2ffd9bf029acf9bbfad7289caeaf97cf43cf3"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -112,7 +112,7 @@
     {
       "source": "web/date-field.mjs",
       "output": "date-field.mjs",
-      "sha256": "d8840baedda5893c3a076fdc28b4946a97695c7e118c1857646ebbcf9cbe7402"
+      "sha256": "6ac1d7d72319889287b5530d9ef291d1977b52f7cf932ba08a34f310f0113958"
     },
     {
       "source": "web/date-field.css",
@@ -147,7 +147,7 @@
     {
       "source": "web/simple-quote-ui.mjs",
       "output": "simple-quote-ui.mjs",
-      "sha256": "3c00da8bc8d92bf57967e37243243d93997b6dfe7c730fd028920c40a5564a53"
+      "sha256": "517aed632daab802fd99b38745254feef6d31ab1cc4684179954d4a706f32e3a"
     },
     {
       "source": "web/quote-document.mjs",
@@ -212,7 +212,7 @@
     {
       "source": "web/quote-result-screen.mjs",
       "output": "quote-result-screen.mjs",
-      "sha256": "9b80ef87f6fee7ba25f4a3bdbc47505a5b374d7aec848e2d68b1ebb1439fc94b"
+      "sha256": "d451ac77034f94624923b03efb39033a85aff380d3e363b4ecea1cc077ede549"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",

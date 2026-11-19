@@ -7,6 +7,7 @@ import {createSpinningCounter} from './spinning-counter.mjs';
 import {projectQ2Costs} from './q2-cost.mjs';
 import {createQuoteRequestService} from '../src/engine/adapters/quote-request.mjs';
 import {projectQuoteInput,quoteResultView,patchQuoteResult,projectProductResult,projectIssuedQuoteResult} from './quote-result.mjs';
+import code1Jelly from './code1-jelly.mjs';
 import {mountQuoteResult,quoteResultScreenCss} from './quote-result-screen.mjs';
 
 
@@ -197,6 +198,7 @@ const resultStyle=document.createElement('style');resultStyle.textContent=quoteR
 const guideKey='order_result_graph_guide_v1';
 const isolatedResult=()=>location.protocol==='file:'||document.documentElement.dataset.qaLabStorage==='ISOLATED_MEMORY';
 const resultScreen=mountQuoteResult($('receipt'),{
+ jelly:code1Jelly,brandGuest:!privateProduct,
  get guide(){try{return isolatedResult() || localStorage.getItem(guideKey)!=='seen';}catch{return true;}},
  onGuideSeen(){if(!isolatedResult()){try{localStorage.setItem(guideKey,'seen');}catch{}}},
  onDetail:async()=>issuedId()?readIssuedResult(issuedId()):projectProductResult(quoteService.snapshot()),
@@ -403,6 +405,22 @@ function renderOrderPageFeedback({shake=false}={}){
  for(const row of surface.querySelectorAll('.allocation-item')){const a=allocationById(row.dataset.allocation),issue=issues.find(x=>a&&x.stage==='q4'&&x.lineId===a.lineId&&x.siteId===a.locationId);if(issue)row.dataset.orderErrorRow='true';}
 }
 
+// One native input animation per field. Formatting, composition and selection stay with their existing controllers.
+const entryMotion=new Map(),entryComposition=new WeakSet();
+function animateEntry(input,deleting){
+ if(document.hidden||!input?.matches?.('input:not([type=checkbox]):not([type=radio])')||!input.closest('#page-form,#site-editor-dialog,#address-editor-dialog,#q4-regular-dialog')||!input.animate||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ entryMotion.get(input)?.cancel();
+ const animation=input.animate([{translate:'0 0'},{translate:deleting?'0 1.25px':'0 -1.25px',offset:.38},{translate:'0 0'}],{duration:210,easing:'cubic-bezier(.22,1,.36,1)'});
+ entryMotion.set(input,animation);
+ animation.finished.then(()=>{if(entryMotion.get(input)===animation)entryMotion.delete(input);},()=>{});
+}
+document.addEventListener('compositionstart',e=>entryComposition.add(e.target));
+document.addEventListener('compositionend',e=>{entryComposition.delete(e.target);animateEntry(e.target,false);});
+document.addEventListener('input',e=>{if(!e.isComposing&&!entryComposition.has(e.target))animateEntry(e.target,e.inputType?.startsWith('delete'));});
+const cancelEntryMotion=()=>{for(const animation of entryMotion.values())animation.cancel();entryMotion.clear();};
+document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelEntryMotion();});
+window.addEventListener('pagehide',cancelEntryMotion);
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change',cancelEntryMotion);
 function orderShake(target){
  if(!target||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
  target.classList.remove('code1-validation-shake');void target.offsetWidth;target.classList.add('code1-validation-shake');
@@ -1052,7 +1070,7 @@ function q3PaintAddress(){
 }
 function q3PaintErrors(issues,{focus=true}={}){
  issues=issues.filter(i=>!OrderSiteContract.isAwaiting(i));const dialog=$('site-editor-dialog');dialog.querySelectorAll('[data-q3-field]').forEach(g=>{const issue=issues.find(i=>i.key===g.dataset.q3Field),input=$(q3FieldId(g.dataset.q3Field));g.dataset.error=String(!!issue);input?.setAttribute('aria-invalid',String(!!issue));if(g.dataset.q3Field.endsWith('Phone'))OrderPhone.instance(input)?.setInvalid(!!issue);
-  const note=g.querySelector('.ui-field-error');if(!note)return;const visual=issue?.key==='email'&&issue?.code==='INVALID_SYNTAX';note.classList.toggle('ui-feedback-sr',!visual);note.textContent=visual?'이메일 형식을 확인해 주세요.':issue?.message||'';note.hidden=!issue;note.id='q3-'+g.dataset.q3Field+'-error';if(issue)input?.setAttribute('aria-describedby',note.id);else input?.removeAttribute('aria-describedby');
+  const note=g.querySelector('.ui-field-error');if(!note)return;note.classList.add('ui-feedback-sr');note.textContent=issue?.key==='email'&&issue?.code==='INVALID_SYNTAX'?'이메일 형식을 확인해 주세요.':issue?.message||'';note.hidden=!issue;note.id='q3-'+g.dataset.q3Field+'-error';if(issue)input?.setAttribute('aria-describedby',note.id);else input?.removeAttribute('aria-describedby');
  });if(focus&&issues.length){const el=$(q3FieldId(issues[0].key));el?.scrollIntoView({block:'nearest',behavior:'instant'});el?.focus({preventScroll:true});orderShake(el?.closest('.ui-phone-shell')||el);}
 }
 function q3MountEditor(trigger){

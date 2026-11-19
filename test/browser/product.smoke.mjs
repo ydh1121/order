@@ -136,6 +136,20 @@ try{
   await page.reload();await stage('q3');assert.deepEqual((await persisted()).locations,saved);
   await editSite(saved[0].id);assert.equal((await phoneState()).value,'010-2345-6789');await page.locator('#cancel-site').click();await closed('site-editor-dialog');
  });
+ await check('P04B_FIELD_ERROR_DESCRIPTION_AND_FOCUS_WITHOUT_LAYOUT_SHIFT',async()=>{
+  const site=(await persisted()).locations[0];await editSite(site.id);
+  const email=page.locator('#site-email'),group=page.locator('#site-editor [data-q3-field="email"]');
+  const before=await group.evaluate(el=>el.getBoundingClientRect().height);
+  await email.fill('not-an-email');await page.locator('#save-site').click();
+  assert.equal(await email.getAttribute('aria-invalid'),'true');
+  const note=page.locator('#'+await email.getAttribute('aria-describedby'));
+  assert.match(await note.textContent(),/이메일/);
+  const metrics=await note.evaluate(el=>({clip:getComputedStyle(el).clipPath,height:el.getBoundingClientRect().height}));
+  assert.equal(metrics.clip,'inset(50%)');assert.ok(metrics.height<=1);
+  assert.equal(await group.evaluate(el=>el.getBoundingClientRect().height),before);
+  assert.equal(await email.evaluate(el=>el===document.activeElement),true);
+  await page.locator('#cancel-site').click();await closed('site-editor-dialog');
+ });
  await check('P05_Q4_SYNTHETIC_RESTORE_CANCEL_ATOMICITY',async()=>{
   const fixture=q4Fixture();await seedDurable(fixture);await page.reload();await page.locator('[data-open="q4"]').waitFor();await emailReady();
   const prior=(await persisted()).allocations;await editAllocation();await page.locator('[data-qty="0:base"]').fill('11');await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');assert.deepEqual((await persisted()).allocations,prior);
@@ -143,6 +157,8 @@ try{
  await check('P06_Q4_SYNTHETIC_RESTORE_SAVE_AND_RELOAD',async()=>{
   await editAllocation();await page.locator('[data-qty="0:base"]').fill('12');await page.locator('#q4-regular-save').click();await closed('q4-regular-dialog');
   assert.equal((await persisted()).allocations[0].qty,'12');await page.reload();await editAllocation();assert.equal(await page.locator('[data-qty="0:base"]').inputValue(),'12');
+  const field=page.locator('[data-qty="0:base"]'),descriptor=await field.getAttribute('aria-describedby');
+  assert.ok(descriptor&&await page.locator('#'+descriptor).evaluate(el=>el.classList.contains('ui-feedback-sr')));
   await page.locator('#q4-regular-cancel').click();await closed('q4-regular-dialog');
  });
  await check('P07_Q4_MONTH_31_AND_LAST_REMAIN_DISTINCT_CANCELLED',async()=>{

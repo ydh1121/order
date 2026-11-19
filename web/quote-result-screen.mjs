@@ -3,7 +3,7 @@
 export function mountQuoteResult(host, options = {}) {
   const doc = host.ownerDocument;
   const clock = options.now || Date.now;
-  const motion = () => !doc.defaultView.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motion = () => !options.reducedMotion?.() && !doc.defaultView.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const node = (tag, cls, parent) => {
     const el = doc.createElement(tag);
     el.className = 'oq-' + cls;
@@ -48,6 +48,23 @@ export function mountQuoteResult(host, options = {}) {
     circle.setAttribute('r','100'); circle.setAttribute('fill',fill); icon.append(circle);
   }
   brand.append(icon);
+  let brandMotion=null;
+  // Preserve the Figma artboard's resting geometry. Swap in the three native
+  // CODE1 paths only when the connected screen permits motion.
+  function syncBrand(){
+    const runtime=options.jelly || doc.defaultView.Code1Jelly;
+    if(brand.hidden || !runtime || !motion()) {brandMotion?.destroy();brandMotion=null;return;}
+    if(brandMotion)return;
+    if(!icon.querySelector('[data-jelly]')){
+      const source=new doc.defaultView.DOMParser().parseFromString(runtime.createSVG(),'image/svg+xml');
+      icon.replaceChildren(...[...source.querySelectorAll('svg > g')].map(group=>doc.importNode(group,true)));
+    }
+    brandMotion=runtime.mount(icon,{auto:true,interactive:false,minDelay:10000,maxDelay:15000});
+  }
+  function pokeBrand(){if(motion() && brandMotion){if(Math.random()<.5)brandMotion.gather();else brandMotion.play();}}
+  if(options.brandGuest===true){brand.tabIndex=0;brand.setAttribute('role','button');brand.setAttribute('aria-label','Order 로고');
+    brand.onclick=pokeBrand;brand.onkeydown=e=>{if(!e.repeat && ['Enter',' '].includes(e.key)){e.preventDefault();pokeBrand();}};}
+
   const heading = node('header','heading',stage);
   const lead = node('p','lead',heading), title = node('h2','title',heading);
   const number = node('span','number',heading), unit = node('span','unit',heading);
@@ -85,7 +102,7 @@ export function mountQuoteResult(host, options = {}) {
     activeReel?.remove();activeReel=null;series.proposed.priceValue.classList.remove('oq-rolling');
   };
   const clear = () => {
-    detailRequest++; stop(); dialog?.close(); model = null; selection = null;
+    detailRequest++; stop(); brandMotion?.destroy();brandMotion=null;dialog?.close(); model = null; selection = null;
     host.replaceChildren(); delete host.dataset.state;
     // Remove sensitive text even from detached nodes owned by the controller.
     for(const el of [number,lead,ending,sub,...dates,note,basis,...Object.values(series).flatMap(s => [s.name,s.priceValue,s.priceUnit,s.detailName,s.detailValue,s.detailUnit,s.annual,s.rate,s.expiry,s.expiryNote,s.back])]) text(el,'');
@@ -180,6 +197,7 @@ export function mountQuoteResult(host, options = {}) {
     const active=available.includes(m.state), detail=active && (selected==='proposed' || selected==='current' && m.current!==undefined);
     selection=detail ? selected : null;
     if (stage.parentNode !== host) host.replaceChildren(stage);
+    syncBrand();
     stage.dataset.state=host.dataset.state=m.state;
     stage.dataset.selection=selection||'';
     // The source uses a zoomed price axis. Its two original unequal states

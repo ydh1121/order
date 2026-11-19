@@ -1060,6 +1060,11 @@ dialog .code1-validation-shake{animation:code1-validation-shake .30s ease both}
 #page-form .order-incomplete-list .order-issue-jump{font-weight:650}
 
 /* MSG0485 role owners: nonvisual field feedback, B04 projection, A03 badge, shared inputs. */
+#site-editor :is([data-q3-field="name"],[data-q3-field="email"])>.ui-field-title{position:relative;z-index:1;transform-origin:left center;transition:transform var(--duration-quick,150ms) var(--ease-smooth-out,ease-out);pointer-events:none}
+#site-editor :is([data-q3-field="name"],[data-q3-field="email"]):has(input:placeholder-shown):not(:focus-within)>.ui-field-title{transform:translate(.7rem,calc(100% + .72rem));color:var(--text-secondary)}
+#site-editor :is([data-q3-field="name"],[data-q3-field="email"]):not(:focus-within) input::placeholder{opacity:0}
+.q4-regular-dialog .qa-date-error[data-error=true]:not([hidden]){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;margin:0}
+@media(prefers-reduced-motion:reduce){#site-editor :is([data-q3-field="name"],[data-q3-field="email"])>.ui-field-title{transition:none}}
 .ui-feedback-sr:not([hidden]){position:absolute!important;width:1px!important;height:1px!important;min-height:0!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important;pointer-events:none!important}
 #page-form>.stack>.accordion>.accordion-trigger>.qcopy>strong{display:flex;align-items:center;gap:.4375rem;min-width:0}
 .ui-incomplete-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;width:var(--ui-badge-size);min-width:var(--ui-badge-size);height:var(--ui-badge-size);padding:0;border-radius:50%;background:var(--ui-badge-bg);color:var(--ui-danger);font-size:var(--ui-badge-digit-one);font-weight:var(--type-weight-body);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:0}
