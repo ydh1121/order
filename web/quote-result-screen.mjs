@@ -28,7 +28,7 @@ export function mountQuoteResult(host, options = {}) {
     return fields.year + '.' + fields.month + '.' + fields.day;
   };
   let model = null, selection = null, detailRequest = 0, timer = 0, counter = 0;
-  let guideSeen = false, dialog = null;
+  let guideSeen = false, dialog = null, activeReel = null;
   const stage = node('article', 'screen');
   stage.setAttribute('data-order-result','');
   const brand = node('div','brand',stage);
@@ -80,7 +80,10 @@ export function mountQuoteResult(host, options = {}) {
   const footer = node('footer','actions',stage);
   const first = node('button','secondary',footer), second = node('button','primary',footer);
   first.type = second.type = 'button';
-  const stop = () => {clearTimeout(timer); cancelAnimationFrame(counter);};
+  const stop = () => {
+    clearTimeout(timer);cancelAnimationFrame(counter);
+    activeReel?.remove();activeReel=null;series.proposed.priceValue.classList.remove('oq-rolling');
+  };
   const clear = () => {
     detailRequest++; stop(); dialog?.close(); model = null; selection = null;
     host.replaceChildren(); delete host.dataset.state;
@@ -126,13 +129,44 @@ export function mountQuoteResult(host, options = {}) {
   function animatePrice(el,value) {
     const [whole,fraction=''] = value.split('.');
     const scale = 10n**BigInt(fraction.length), target = BigInt(whole+fraction);
-    const start = performance.now();
+    // Port the retained Transitions spinning-counter reel geometry to the graph's
+    // single timeline. Money is still exact, including fractional/long prices.
+    // The current-price element is never mounted to this decorative renderer.
+    const reel=node('span','price-reel');reel.setAttribute('aria-hidden','true');
+    el.after(reel);el.classList.add('oq-rolling');activeReel=reel;
+    let columns=[];
+    const start=performance.now();
+    function renderReel(formatted,remainder){
+      while(columns.length<formatted.length){
+        const col=node('span','reel-cell',reel);const face=node('i','reel-face',col),next=node('i','reel-face',col);
+        columns.push({col,face,next});
+      }
+      let position=0;
+      for(let i=formatted.length-1;i>=0;i--){
+        const ch=formatted[i],{col,face,next}=columns[i];
+        if(!/\d/.test(ch)){col.dataset.separator=ch;face.hidden=next.hidden=true;continue;}
+        delete col.dataset.separator;face.hidden=next.hidden=false;
+        const fractional=position===0?remainder:0;
+        // High places turn during the last fifth before their next decimal carry.
+        const tail=position?Number(formatted.slice(i+1).replace(/\D/g,'').slice(0,3).padEnd(3,'0'))/1000:fractional;
+        const turn=position?Math.max(0,(tail-.8)*5):fractional;
+        for(const [cell,digit,delta] of [[face,Number(ch),turn],[next,(Number(ch)+1)%10,turn-1]]){
+          cell.dataset.glyph=String(digit);
+          const angle=Math.min(1,Math.abs(delta))*50*Math.PI/180;
+          const lift=Math.sign(delta)*Math.sin(angle)/Math.sin(50*Math.PI/180)*.52;
+          cell.style.transform='translateY('+(-lift).toFixed(3)+'em) scale('+(1-.3*Math.abs(delta)).toFixed(3)+')';
+          cell.style.opacity=String(Math.max(0,1-Math.abs(delta)));
+        }
+        position++;
+      }
+    }
     function frame(t) {
-      const fractionDone = Math.min(1000,Math.max(0,Math.round((t-start)*1000/460)));
-      const n = target*BigInt(fractionDone)/1000n;
-      text(el,amount(String(n/scale)+(fraction?'.'+String(n%scale).padStart(fraction.length,'0'):'')));
-      series.proposed.button.style.setProperty('--grow',String(fractionDone/1000));
-      if (fractionDone<1000) counter=requestAnimationFrame(frame);
+      const fractionDone=Math.min(1000000,Math.max(0,Math.round((t-start)*1000000/460)));
+      const numerator=target*BigInt(fractionDone),n=numerator/1000000n;
+      const formatted=amount(String(n/scale)+(fraction?'.'+String(n%scale).padStart(fraction.length,'0'):''));
+      text(el,formatted);series.proposed.button.style.setProperty('--grow',String(fractionDone/1000000));
+      if(fractionDone<1000000){renderReel(formatted,Number(numerator%1000000n)/1000000);counter=requestAnimationFrame(frame);}
+      else {el.classList.remove('oq-rolling');reel.remove();activeReel=null;}
     }
     frame(start);
   }
@@ -239,6 +273,11 @@ export const quoteResultScreenCss = `
 [data-order-result] [data-kind=proposed] .oq-graph-label{left:0;text-align:left}
 [data-order-result] .oq-name,[data-order-result] .oq-back-label{font-size:13px;letter-spacing:-.035em}
 [data-order-result] .oq-price{font-size:16px;letter-spacing:-.035em;line-height:20px}
+[data-order-result] .oq-rolling{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
+[data-order-result] .oq-price-reel{display:inline-flex;align-items:center;height:1.25em;vertical-align:bottom;font-variant-numeric:tabular-nums}
+[data-order-result] .oq-reel-cell{position:relative;width:1ch;height:1.25em;display:inline-grid;place-items:center;overflow:hidden}
+[data-order-result] .oq-reel-cell[data-separator]{width:auto}[data-order-result] .oq-reel-cell[data-separator]::before{content:attr(data-separator)}
+[data-order-result] .oq-reel-face{position:absolute;inset:0;display:grid;place-items:center;font:inherit;will-change:transform,opacity}[data-order-result] .oq-reel-face::before{content:attr(data-glyph)}
 [data-order-result] .oq-price-unit{font-size:10px;margin-left:1px}
 [data-order-result] .oq-card-copy,[data-order-result] .oq-back-label{display:none;position:absolute;inset:0;opacity:0;visibility:hidden;pointer-events:none}
 [data-order-result][data-morph]:not([data-static]) .oq-series{transition:height .39s cubic-bezier(.25,.74,.2,1),width .39s cubic-bezier(.25,.74,.2,1),left .39s cubic-bezier(.25,.74,.2,1),border-radius .36s,background-color .34s,border-color .34s}

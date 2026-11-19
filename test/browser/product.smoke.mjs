@@ -265,6 +265,19 @@ try{
   await page.reload();await emailReady();await stage('q3');assert.deepEqual((await persisted()).locations,expected.locations);assert.deepEqual((await persisted()).allocations,expected.allocations);
   assert.equal(await page.locator('#q3-site-qa-site-b').getAttribute('data-complete'),'false');assert.equal(await page.locator('#section-q3').getAttribute('data-complete'),'false');
  });
+ await check('B01_CODE1_GUEST_RANDOM_MOTION_AND_REST_INTERVAL',async()=>{
+  const brandPage=await context.newPage();
+  try{
+   await brandPage.emulateMedia({reducedMotion:'no-preference'});await brandPage.goto(base);
+   const brand=brandPage.locator('.header>.brand'),svg=brand.locator('svg');
+   await brand.scrollIntoViewIfNeeded();await brandPage.waitForFunction(()=>document.documentElement.dataset.storageReady==='true');
+   await svg.evaluate(el=>{window.__orderBrandTrace=[];el.addEventListener('code1:statechange',e=>window.__orderBrandTrace.push(e.detail));});
+   await brand.press('Enter');
+   await brandPage.waitForFunction(()=>window.__orderBrandTrace.some(s=>s.playing));
+   await brandPage.waitForFunction(()=>window.__orderBrandTrace.some(s=>!s.playing&&s.nextIn>=9900&&s.nextIn<=15000));
+   assert.equal(await brandPage.locator('[role=menu]:visible').count(),0);
+  }finally{await brandPage.close();}
+ });
  await check('P11_BROWSER_ERRORS_NETWORK_SCOPE_AND_MOBILE_OVERFLOW',async()=>{
   assert.deepEqual(pageErrors,[]);assert.deepEqual(externalBlocked,[]);assert.deepEqual(transportErrors,[]);assert.ok(network.length>0,'the DNS transport fixture must actually have been exercised');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);

@@ -1848,3 +1848,7 @@ body:has(#page-result.active) > .header{display:none}
 #page-result #result-edit,#page-result .result-details,#page-result #email-notice{display:block;width:calc(100% - 48px);max-width:540px;margin:12px auto}
 #page-result #result-edit{min-height:44px}
 #page-result #email-notice[hidden],#page-result .result-details[hidden]{display:none}
+.header>.brand[role=button]{cursor:pointer}.header>.brand[role=button]:focus-visible{outline:2px solid #315de6;outline-offset:4px}
+.header>.brand[data-member=true]{flex:1;justify-content:space-between;min-width:0;padding-inline-end:clamp(8px,2vw,18px)}
+.header>.brand[data-member=true] .brand-dot{opacity:0;transition:opacity .25s ease-out}
+@media(prefers-reduced-motion:reduce){.header>.brand[data-member=true] .brand-dot{transition:none}}

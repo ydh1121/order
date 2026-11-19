@@ -92,7 +92,7 @@
     {
       "source": "web/styles.css",
       "output": "styles.css",
-      "sha256": "8aa1e2be8833cd2274b2beb72aa6b7b0506471a92501cdfeafed834a77279f3d"
+      "sha256": "9bb159a540e2fecc4d5123a111caff1a0b37596cf0ccbba5f7ec29e4abb0ea3b"
     },
     {
       "source": "web/cadence-contract.mjs",
@@ -187,7 +187,7 @@
     {
       "source": "web/brand.mjs",
       "output": "brand.mjs",
-      "sha256": "892e3c4c2ec9aa42ccd39cf32bd04a427f08fe4980345a4b39c735f981efc57d"
+      "sha256": "58187403c2ac218ce6560df57d1b09240a0558c30742faa7535b95b6825ea5b0"
     },
     {
       "source": "web/code1-jelly.mjs",
@@ -212,7 +212,7 @@
     {
       "source": "web/quote-result-screen.mjs",
       "output": "quote-result-screen.mjs",
-      "sha256": "4519cb6a4aaddee370bc4472bc7f299943802cff720a2c0cd5f263ce57bebfcb"
+      "sha256": "9b80ef87f6fee7ba25f4a3bdbc47505a5b374d7aec848e2d68b1ebb1439fc94b"
     }
   ],
   "engineEntry": "src/browser/engine.mjs",
