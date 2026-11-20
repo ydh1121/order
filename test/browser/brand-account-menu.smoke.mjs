@@ -155,6 +155,13 @@ try{
   await page.screenshot({path:join(evidence,'result-member-390.png')});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  });
+ await check('mobile canonical page retains native keyboard scrolling',async()=>{
+  await page.setViewportSize({width:375,height:420});await fresh();
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),true,'actual canonical page overflows the short viewport');
+  await page.keyboard.press('End');await page.waitForFunction(()=>scrollY>0);
+  assert.notEqual(await page.locator('html').evaluate(el=>getComputedStyle(el).overflowY),'hidden');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ });
  assert.deepEqual(errors,[]);
  report.status='PASS';
 }catch(error){report.status='FAIL';report.error=String(error.stack||error);process.exitCode=1;}

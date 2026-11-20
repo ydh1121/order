@@ -128,10 +128,10 @@ small{font-size:var(--type-meta)}
 #page-form > .stack > .accordion > .accordion-trigger[aria-expanded="true"] > .t-acc-chevron{transform:rotate(-180deg)}
 @media(prefers-reduced-motion:reduce){#page-form > .stack > .accordion > .accordion-trigger > .t-acc-chevron{transition:none}}
 .t-page-slide{position:relative}
-.t-page-slide .t-page{position:absolute;top:0;left:0;width:100%;visibility:hidden;opacity:0;pointer-events:none;transform:none;transition:none}
-.t-page-slide .t-page.active{position:relative;visibility:visible;opacity:1;pointer-events:auto;transform:none}
-.t-page-slide .t-page.leaving{position:absolute;visibility:visible;pointer-events:none;transform:none}
-.t-page-slide .t-page.entering{visibility:visible;transform:none}
+#app.t-page-slide > .t-page{position:absolute;top:0;left:0;width:100%;visibility:hidden;opacity:0;pointer-events:none;transform:none;transition:none}
+#app.t-page-slide > .t-page.active{position:relative;visibility:visible;opacity:1;pointer-events:auto;transform:none}
+#app.t-page-slide > .t-page.leaving{position:absolute;visibility:visible;pointer-events:none;transform:none}
+#app.t-page-slide > .t-page.entering{visibility:visible;transform:none}
 .postcode-modal{border:0;border-radius:17px;padding:0;width:min(100% - 24px,520px);max-height:calc(100dvh - 26px);box-shadow:0 16px 60px rgba(13,28,45,.25);background:#fff;color:var(--ink)}
 .postcode-modal::backdrop{background:rgba(15,30,45,.5)}
 .postcode-modal-head{height:57px;padding:0 14px 0 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}
@@ -407,7 +407,7 @@ html.dialog-open{overflow:hidden}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 
 /* Hidden route pages must not contribute to horizontal scroll at 200% text size. Preserve animated leaving/entering routes. */
-.t-page-slide .t-page:not(.active):not(.leaving):not(.entering){display:none}
+#app.t-page-slide > .t-page:not(.active):not(.leaving):not(.entering){display:none}
 
 /* MSG0280: one app-owned detail-address dialog, display-only focused-site preview. */
 .site-focus-detail-block{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 10px;margin:12px 0 8px}.site-focus-detail-block .subheading{grid-column:1/-1;margin:0;font-size:var(--type-small);font-weight:var(--type-weight-field)}.site-focus-detail-preview{font-size:var(--type-body);color:var(--ink);overflow-wrap:anywhere}.site-focus-detail-block .site-detail-popup-trigger{font-size:var(--type-small);min-height:2.75rem}.site-focus-detail-block .site-detail-popup-trigger:focus-visible{outline:3px solid #89a7ff;outline-offset:2px}
