@@ -1854,6 +1854,6 @@ body:has(#page-result.active) > .header{display:none}
 #page-result #result-edit{min-height:44px}
 #page-result #email-notice[hidden],#page-result .result-details[hidden]{display:none}
 .header>.brand[role=button]{cursor:pointer}.header>.brand[role=button]:focus-visible{outline:2px solid #315de6;outline-offset:4px}
-.header>.brand[data-member=true]{flex:1;justify-content:space-between;min-width:0;padding-inline-end:clamp(8px,2vw,18px)}
-.header>.brand[data-member=true] .brand-dot{opacity:0;transition:opacity .25s ease-out}
-@media(prefers-reduced-motion:reduce){.header>.brand[data-member=true] .brand-dot{transition:none}}
+.header:has(>.order-product-brand){position:relative;width:min(calc(100% - 48px),var(--max));height:78px}
+.header:has(>.order-product-brand)>.order-menu{position:absolute;left:140px;top:17px;margin:0}
+.header:has(>.order-product-brand[data-authenticated=true])>.order-menu{left:80px}

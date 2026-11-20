@@ -577,6 +577,101 @@
         }
       ],
       "continuation": "MSG0583"
+    },
+    {
+      "id": "PRODUCT_SHARED_BRAND_ACCOUNT",
+      "route": "/*",
+      "status": "CANONICAL_SOURCE_SERVER_CONTEXT",
+      "source": [
+        "web/brand.mjs",
+        "web/brand-account-menu.mjs",
+        "web/quote-result-screen.mjs"
+      ],
+      "actions": [
+        {
+          "id": "data-order-account-trigger",
+          "type": "state",
+          "target": "guest-random-code1 / authenticated-account-panel",
+          "requires": "authenticated === true from supplied server account context for menu",
+          "description": "로그인 전에는 원본 CODE1 랜덤 모션, 로그인 후에는 같은 세 점에서 계정 메뉴를 엽니다."
+        },
+        {
+          "id": "data-obm-item=profile",
+          "type": "panel-state",
+          "target": "account-panel/profile"
+        },
+        {
+          "id": "data-obm-item=notifications",
+          "type": "panel-state",
+          "target": "account-panel/notifications",
+          "requires": "supplied renderPanel account transport"
+        },
+        {
+          "id": "data-obm-item=manage",
+          "type": "panel-state",
+          "target": "account-panel/manage"
+        },
+        {
+          "id": "data-obm-item=profile.account",
+          "type": "panel-state",
+          "target": "account-panel/profile.account",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-item=profile.personal",
+          "type": "panel-state",
+          "target": "account-panel/profile.personal",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-item=profile.connections",
+          "type": "panel-state",
+          "target": "account-panel/profile.connections",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-item=manage.delivery",
+          "type": "panel-state",
+          "target": "account-panel/manage.delivery",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-item=manage.payments",
+          "type": "panel-state",
+          "target": "account-panel/manage.payments",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-item=manage.quotes",
+          "type": "panel-state",
+          "target": "account-panel/manage.quotes",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-item=manage.business",
+          "type": "panel-state",
+          "target": "account-panel/manage.business",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-item=manage.dashboard",
+          "type": "panel-state",
+          "target": "account-panel/manage.dashboard",
+          "requires": "supplied renderPanel and canAccess account adapter"
+        },
+        {
+          "id": "data-obm-back",
+          "type": "panel-history",
+          "target": "previous account-panel stack entry",
+          "description": "동일 패널에서 상위 메뉴로 돌아갑니다. 스와이프·ArrowLeft도 같은 상태 전환을 사용합니다."
+        },
+        {
+          "id": "obm-retry",
+          "type": "retry",
+          "target": "current account-panel leaf through supplied renderPanel"
+        }
+      ],
+      "note": "정상 헤더와 실제 결과 헤더가 같은 제품 소스를 사용합니다. URL·저장 파티션·결과 상태로 인증을 만들지 않습니다. consumeArrival는 서버 인증 결과 뒤의 일회성 화면 전환 표시이며 권한을 부여하지 않습니다."
     }
   ]
 }

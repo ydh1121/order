@@ -31,40 +31,18 @@ export function mountQuoteResult(host, options = {}) {
   let guideSeen = false, dialog = null, activeReel = null;
   const stage = node('article', 'screen');
   stage.setAttribute('data-order-result','');
-  const brand = node('div','brand',stage);
-  brand.setAttribute('role','img'); brand.setAttribute('aria-label','Order.'); brand.hidden=options.brand===false;
-  const ns='http://www.w3.org/2000/svg', word=doc.createElementNS(ns,'svg');
-  word.setAttribute('viewBox','0 0 76 33'); word.setAttribute('aria-hidden','true');
-  const letters=doc.createElementNS(ns,'text');letters.setAttribute('x','0');letters.setAttribute('y','26');
-  letters.setAttribute('textLength','76');letters.setAttribute('lengthAdjust','spacingAndGlyphs');
-  letters.setAttribute('font-size','25');letters.setAttribute('font-weight','900');
-  letters.setAttribute('font-family','Arial Black,Arial,sans-serif');letters.setAttribute('fill','#20272b');
-  letters.textContent='Order.';word.append(letters);brand.append(word);
-  const icon=doc.createElementNS(ns,'svg');
-  icon.setAttribute('viewBox','0 0 500 200'); icon.setAttribute('aria-hidden','true');
-  // Resting geometry of the product's CODE1 jelly mark, in its native 200-unit circles.
-  for(const [cx,fill] of [[100,'#F5800B'],[250,'#F59E0B'],[400,'#FFCC00']]){
-    const circle=doc.createElementNS(ns,'circle'); circle.setAttribute('cx',cx); circle.setAttribute('cy','100');
-    circle.setAttribute('r','100'); circle.setAttribute('fill',fill); icon.append(circle);
-  }
-  brand.append(icon);
-  let brandMotion=null;
-  // Preserve the Figma artboard's resting geometry. Swap in the three native
-  // CODE1 paths only when the connected screen permits motion.
+  const brandFactory=options.brandFactory||doc.defaultView.OrderProductBrand;
+  if(options.brand!==false&&(!brandFactory?.createOrderBrand||!brandFactory?.mountOrderBrandElement))throw new TypeError('Pass the canonical product brand factory.');
+  const brand=options.brand===false?doc.createElement('div'):brandFactory.createOrderBrand(doc);
+  brand.classList.add('oq-brand');brand.hidden=options.brand===false;stage.append(brand);
+  let brandMenu=null;
   function syncBrand(){
-    const runtime=options.jelly || doc.defaultView.Code1Jelly;
-    if(brand.hidden || !runtime || !motion()) {brandMotion?.destroy();brandMotion=null;return;}
-    if(brandMotion)return;
-    if(!icon.querySelector('[data-jelly]')){
-      const source=new doc.defaultView.DOMParser().parseFromString(runtime.createSVG(),'image/svg+xml');
-      icon.replaceChildren(...[...source.querySelectorAll('svg > g')].map(group=>doc.importNode(group,true)));
-    }
-    brandMotion=runtime.mount(icon,{auto:true,interactive:false,minDelay:10000,maxDelay:15000});
+    if(brand.hidden){brandMenu?.destroy();brandMenu=null;return;}
+    const context=options.brandAccount||doc.defaultView.ORDER_BRAND_ACCOUNT_CONTEXT||{};
+    const supplied={...context,authenticated:context.authenticated===true,jelly:options.jelly||context.jelly,reducedMotion:()=>!motion()};
+    if(!brandMenu)brandMenu=brandFactory.mountOrderBrandElement(brand,supplied);
+    else brandMenu.update(supplied);
   }
-  function pokeBrand(){if(motion() && brandMotion){if(Math.random()<.5)brandMotion.gather();else brandMotion.play();}}
-  if(options.brandGuest===true){brand.tabIndex=0;brand.setAttribute('role','button');brand.setAttribute('aria-label','Order 로고');
-    brand.onclick=pokeBrand;brand.onkeydown=e=>{if(!e.repeat && ['Enter',' '].includes(e.key)){e.preventDefault();pokeBrand();}};}
-
   const heading = node('header','heading',stage);
   const lead = node('p','lead',heading), title = node('h2','title',heading);
   const number = node('span','number',heading), unit = node('span','unit',heading);
@@ -108,7 +86,7 @@ export function mountQuoteResult(host, options = {}) {
     activeReel?.remove();activeReel=null;series.proposed.priceValue.classList.remove('oq-rolling');
   };
   const clear = () => {
-    detailRequest++; stop(); for(const action of actionMotions.values())action.destroy();actionMotions.clear();brandMotion?.destroy();brandMotion=null;dialog?.close(); model = null; selection = null;
+    detailRequest++; stop(); for(const action of actionMotions.values())action.destroy();actionMotions.clear();brandMenu?.destroy();brandMenu=null;dialog?.close(); model = null; selection = null;
     host.replaceChildren(); delete host.dataset.state;
     // Remove sensitive text even from detached nodes owned by the controller.
     for(const el of [number,lead,ending,sub,...dates,note,basis,...Object.values(series).flatMap(s => [s.name,s.priceValue,s.priceUnit,s.detailName,s.detailValue,s.detailUnit,s.annual,s.rate,s.expiry,s.expiryNote,s.back])]) text(el,'');
@@ -275,7 +253,7 @@ export const quoteResultScreenCss = `
 [data-order-result] :where(p,h2,footer){margin:0;padding:0;border:0;background:none}
 [data-order-result] button{appearance:none;border:0;cursor:pointer;font:inherit;text-transform:none;letter-spacing:inherit;box-shadow:none}
 [data-order-result] button:focus-visible{outline:3px solid #197ac4;outline-offset:3px}
-[data-order-result] .oq-brand{position:absolute;left:var(--pad);top:25px;height:33px;display:flex;align-items:center;gap:4px;color:#20272b}[data-order-result] .oq-brand svg:first-child{width:76px;height:33px}[data-order-result] .oq-brand svg:last-child{width:52px;height:21px;display:block}
+[data-order-result] .oq-brand{position:absolute;left:24px;right:24px;top:0;width:auto;height:78px;text-align:left;z-index:1}
 [data-order-result] .oq-heading{position:absolute;left:var(--pad);right:var(--pad);top:clamp(80px,13.4%,122px);padding:0;display:block;text-align:center;color:var(--ink);font:inherit;background:none}
 [data-order-result] .oq-heading>*{padding:0;margin:0;color:inherit}
 [data-order-result] .oq-lead{font-size:16px;font-weight:700;line-height:24px;margin-bottom:6px}

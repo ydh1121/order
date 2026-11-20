@@ -86,6 +86,17 @@ jobs:
           dpkg-query -W fonts-noto-cjk
           fc-match ':lang=ko'
       - run: npm run build
+      - name: Canonical brand authentication boundary and product result consumers
+        if: always()
+        run: node test/browser/brand-account-menu.smoke.mjs
+      - name: Preserve the exact built product and identity for downstream sealing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-product-build-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
       - name: Actual Chromium DOM with synthetic phone input
         run: |
           mkdir -p browser-evidence
