@@ -1857,3 +1857,10 @@ body:has(#page-result.active) > .header{display:none}
 .header:has(>.order-product-brand){position:relative;width:min(calc(100% - 48px),var(--max));height:78px}
 .header:has(>.order-product-brand)>.order-menu{position:absolute;left:140px;top:17px;margin:0}
 .header:has(>.order-product-brand[data-authenticated=true])>.order-menu{left:80px}
+
+/* The mobile Figma frame has no desktop scrollbar gutters. Keep native page
+   scrolling while preventing reserved side gutters from moving the shared brand. */
+@media(max-width:767px){
+ html:has(.order-product-brand){scrollbar-gutter:auto;scrollbar-width:none}
+ html:has(.order-product-brand)::-webkit-scrollbar{display:none}
+}
