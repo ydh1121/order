@@ -44,7 +44,11 @@ test.returnHome=()=>{test.result?.clear();document.querySelectorAll('.page').for
 test.receipt=()=>({arrivalConsumed,rendered:[...test.rendered]});
 document.documentElement.dataset.brandFixtureReady='true';
 `;
-async function check(id,fn){const item={id,status:'RUNNING'};checks.push(item);try{await fn();item.status='PASS';}catch(error){item.status='FAIL';item.error=String(error.stack||error);throw error;}}
+async function check(id,fn){const item={id,status:'RUNNING'};checks.push(item);try{await fn();item.status='PASS';}catch(error){
+ item.status='FAIL';item.error=String(error.stack||error);
+ if(page){try{await page.screenshot({path:join(evidence,'failed-check.png')});report.failedGeometry=await bounds('header.header .brand');}catch(capture){report.captureError=String(capture);}}
+ throw error;
+}}
 async function fresh({authenticated=false,arrival=false,reduced=true}={}){
  await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
  await page.goto(base+'/?authenticated=true&view=member');
@@ -54,7 +58,9 @@ async function fresh({authenticated=false,arrival=false,reduced=true}={}){
 async function bounds(selector){return page.locator(selector).evaluate(brand=>{
  const paths=[...brand.querySelectorAll('.brand-mark g>path')].map(el=>el.getBoundingClientRect());
  const left=Math.min(...paths.map(r=>r.left)),top=Math.min(...paths.map(r=>r.top)),right=Math.max(...paths.map(r=>r.right)),bottom=Math.max(...paths.map(r=>r.bottom));
- return {left,top,width:right-left,height:bottom-top,word:brand.querySelector('.brand-word').getBoundingClientRect().toJSON(),auth:brand.dataset.authenticated,source:brand.dataset.orderBrandSource};
+ const inspect=el=>{const style=getComputedStyle(el);return {rect:el.getBoundingClientRect().toJSON(),style:Object.fromEntries(['display','position','width','height','left','top','margin','padding','gap','alignItems','justifyContent','transform','translate','fontSize'].map(key=>[key,style[key]]))};};
+ return {left,top,width:right-left,height:bottom-top,word:brand.querySelector('.brand-word').getBoundingClientRect().toJSON(),auth:brand.dataset.authenticated,source:brand.dataset.orderBrandSource,
+  geometry:{viewport:{width:innerWidth,height:innerHeight},header:inspect(brand.parentElement),brand:inspect(brand),trigger:inspect(brand.querySelector('.obm-trigger')),svg:inspect(brand.querySelector('svg')),groups:[...brand.querySelectorAll('svg>g')].map(el=>({transform:el.getAttribute('transform'),...inspect(el)})),variables:Object.fromEntries([...brand.style].filter(key=>key.startsWith('--obm')).map(key=>[key,brand.style.getPropertyValue(key)]))}};
 });}
 function closeTo(value,expected,label){assert.ok(Math.abs(value-expected)<.65,`${label}: ${value} vs ${expected}`);}
 function geometry(actual,{width=375,authenticated=true}={}){
@@ -158,5 +164,5 @@ finally{
   try{report.sourceHashes[name]=createHash('sha256').update(await readFile(join(root,name))).digest('hex');}catch{}
  }
  await mkdir(evidence,{recursive:true});await writeFile(join(evidence,'report.json'),JSON.stringify(report,null,2)+'\n');
- console.log(JSON.stringify({status:report.status,checks:checks.map(({id,status})=>({id,status})),errors,evidence,error:report.error}));
+ console.log(JSON.stringify({status:report.status,checks:checks.map(({id,status})=>({id,status})),errors,evidence,error:report.error,failedGeometry:report.failedGeometry}));
 }
